@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Top Crop - Agri-Direct</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        .chart-card { min-height: 320px; }
+    </style>
+</head>
+<body>
+    <div class="container py-5">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h1><i class="fas fa-crown"></i> Top Crop</h1>
+                <p class="text-muted">See which crop leads your harvest today.</p>
+            </div>
+            <a href="/dashboard" class="btn btn-success"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+        </div>
+
+        <div class="row g-4 mb-4">
+            <div class="col-md-6">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h5 class="card-title">Top Performing Crop</h5>
+                        {% if top %}
+                        <p class="display-5 mb-1 text-success">{{ top['crop_name'] }}</p>
+                        <p class="mb-0 text-muted">Total quantity: <strong>{{ top['total'] }}</strong></p>
+                        {% else %}
+                        <p class="text-muted">No crop data available yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card shadow-sm chart-card">
+                    <div class="card-body">
+                        <h5 class="card-title">Top 5 Crops</h5>
+                        {% if top_crops %}
+                        <canvas id="topCropChart" height="220"></canvas>
+                        {% else %}
+                        <p class="text-muted">No crop data available yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i class="fas fa-list"></i> Top Crop List</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Crop</th>
+                                <th>Total Quantity</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if top_crops %}
+                                {% for crop in top_crops[:5] %}
+                                <tr>
+                                    <td>{{ crop['crop_name'] }}</td>
+                                    <td>{{ crop['total'] }}</td>
+                                </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td colspan="2" class="text-center text-muted">No crop data yet.</td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        {% if top_crops %}
+        const topCropLabels = {{ top_crops[:5] | map(attribute='crop_name') | list | tojson }};
+        const topCropValues = {{ top_crops[:5] | map(attribute='total') | list | tojson }};
+
+        new Chart(document.getElementById('topCropChart'), {
+            type: 'doughnut',
+            data: {
+                labels: topCropLabels,
+                datasets: [{
+                    data: topCropValues,
+                    backgroundColor: [
+                        'rgba(54, 162, 235, 0.7)',
+                        'rgba(255, 99, 132, 0.7)',
+                        'rgba(255, 205, 86, 0.7)',
+                        'rgba(75, 192, 192, 0.7)',
+                        'rgba(153, 102, 255, 0.7)'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { position: 'bottom' } }
+            }
+        });
+        {% endif %}
+    </script>
+</body>
+</html>

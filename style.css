@@ -1,0 +1,18 @@
+body {
+    font-family: Arial, sans-serif;
+    background: #f4f4f4;
+}
+
+h1, h2 {
+    color: green;
+}
+
+.btn-custom {
+    background: green;
+    color: white;
+    border: none;
+}
+
+.btn-custom:hover {
+    background: darkgreen;
+}

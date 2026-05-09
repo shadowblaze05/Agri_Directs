@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile - Agri-Direct</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+</head>
+<body>
+    <div class="container py-5">
+        <div class="card shadow-sm border-0">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <div>
+                        <h1 class="card-title"><i class="fas fa-user-circle"></i> Profile</h1>
+                        <p class="text-muted">Your account details and role-based access.</p>
+                    </div>
+                    <a href="/dashboard" class="btn btn-outline-success"><i class="fas fa-arrow-left"></i> Dashboard</a>
+                </div>
+
+                <dl class="row">
+                    <dt class="col-sm-3">Username</dt>
+                    <dd class="col-sm-9"><strong>{{ session.get('user') }}</strong></dd>
+
+                    <dt class="col-sm-3">Role</dt>
+                    <dd class="col-sm-9 text-capitalize"><strong>{{ session.get('role', 'buyer') }}</strong></dd>
+
+                    <dt class="col-sm-3">Location</dt>
+                    <dd class="col-sm-9">{{ user.location if user.location else 'Not set' }}</dd>
+
+                    <dt class="col-sm-3">Member since</dt>
+                    <dd class="col-sm-9">Data stored on each upload and profile usage.</dd>
+                </dl>
+
+                <form method="POST" class="mt-4">
+                    <div class="mb-3">
+                        <label class="form-label">Update Location</label>
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <select class="form-select" id="region" name="region">
+                                    <option value="">Select Region</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select" id="province" name="province" disabled>
+                                    <option value="">Select Province</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select" id="city" name="city" disabled>
+                                    <option value="">Select City/Municipality</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select" id="barangay" name="barangay" disabled>
+                                    <option value="">Select Barangay</option>
+                                </select>
+                            </div>
+                        </div>
+                        <input type="hidden" id="location" name="location" value="{{ user.location }}">
+                        <div class="form-text">Farmers must set their location to post crops. Select your location using the Philippine Standard Geographic Code (PSGC) dropdowns.</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Update Profile</button>
+                </form>
+
+                <div class="mt-4">
+                    <a href="/about" class="btn btn-secondary me-2"><i class="fas fa-info-circle"></i> About</a>
+                    <a href="/logout" class="btn btn-danger"><i class="fas fa-sign-out-alt"></i> Logout</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function() {
+    // Initialize Select2 for searchable dropdowns
+    $('#region, #province, #city, #barangay').select2({
+        placeholder: function() {
+            return $(this).data('placeholder');
+        },
+        allowClear: true
+    });
+
+    // Load regions on page load
+    loadRegions();
+
+    // Event handlers for cascading dropdowns
+    $('#region').on('change', function() {
+        const regionCode = $(this).val();
+        if (regionCode) {
+            loadProvinces(regionCode);
+            $('#province').prop('disabled', false);
+        } else {
+            resetDropdowns('province');
+        }
+        updateLocation();
+    });
+
+    $('#province').on('change', function() {
+        const provinceCode = $(this).val();
+        if (provinceCode) {
+            loadCities(provinceCode);
+            $('#city').prop('disabled', false);
+        } else {
+            resetDropdowns('city');
+        }
+        updateLocation();
+    });
+
+    $('#city').on('change', function() {
+        const cityCode = $(this).val();
+        if (cityCode) {
+            loadBarangays(cityCode);
+            $('#barangay').prop('disabled', false);
+        } else {
+            resetDropdowns('barangay');
+        }
+        updateLocation();
+    });
+
+    $('#barangay').on('change', updateLocation);
+
+    function loadRegions() {
+        $.getJSON('https://psgc.gitlab.io/api/regions/')
+            .done(function(data) {
+                const $region = $('#region');
+                $region.empty().append('<option value="">Select Region</option>');
+                data.forEach(function(region) {
+                    $region.append(`<option value="${region.code}">${region.name}</option>`);
+                });
+                // If user has existing location, try to pre-select
+                const currentLocation = $('#location').val();
+                if (currentLocation) {
+                    // This would need parsing logic for existing locations
+                }
+            })
+            .fail(function() {
+                console.error('Failed to load regions');
+                $('#region').append('<option value="">Unable to load regions</option>');
+            });
+    }
+
+    function loadProvinces(regionCode) {
+        $.getJSON(`https://psgc.gitlab.io/api/regions/${regionCode}/provinces/`)
+            .done(function(data) {
+                const $province = $('#province');
+                $province.empty().append('<option value="">Select Province</option>');
+                data.forEach(function(province) {
+                    $province.append(`<option value="${province.code}">${province.name}</option>`);
+                });
+            })
+            .fail(function() {
+                console.error('Failed to load provinces');
+            });
+    }
+
+    function loadCities(provinceCode) {
+        $.getJSON(`https://psgc.gitlab.io/api/provinces/${provinceCode}/cities-municipalities/`)
+            .done(function(data) {
+                const $city = $('#city');
+                $city.empty().append('<option value="">Select City/Municipality</option>');
+                data.forEach(function(city) {
+                    $city.append(`<option value="${city.code}">${city.name}</option>`);
+                });
+            })
+            .fail(function() {
+                console.error('Failed to load cities');
+            });
+    }
+
+    function loadBarangays(cityCode) {
+        $.getJSON(`https://psgc.gitlab.io/api/cities-municipalities/${cityCode}/barangays/`)
+            .done(function(data) {
+                const $barangay = $('#barangay');
+                $barangay.empty().append('<option value="">Select Barangay</option>');
+                data.forEach(function(barangay) {
+                    $barangay.append(`<option value="${barangay.code}">${barangay.name}</option>`);
+                });
+            })
+            .fail(function() {
+                console.error('Failed to load barangays');
+            });
+    }
+
+    function resetDropdowns(fromLevel) {
+        const levels = ['province', 'city', 'barangay'];
+        const startIndex = levels.indexOf(fromLevel);
+        for (let i = startIndex; i < levels.length; i++) {
+            $(`#${levels[i]}`).empty().append(`<option value="">Select ${levels[i].charAt(0).toUpperCase() + levels[i].slice(1)}</option>`).prop('disabled', true).trigger('change');
+        }
+    }
+
+    function updateLocation() {
+        const region = $('#region option:selected').text();
+        const province = $('#province option:selected').text();
+        const city = $('#city option:selected').text();
+        const barangay = $('#barangay option:selected').text();
+
+        let location = '';
+        if (region && region !== 'Select Region') location += region;
+        if (province && province !== 'Select Province') location += ', ' + province;
+        if (city && city !== 'Select City/Municipality') location += ', ' + city;
+        if (barangay && barangay !== 'Select Barangay') location += ', ' + barangay;
+
+        $('#location').val(location.replace(/^, /, ''));
+    }
+});
+</script>
+</html>

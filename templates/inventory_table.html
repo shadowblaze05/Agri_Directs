@@ -1,0 +1,24 @@
+<tbody>
+    {% if inventory %}
+        {% for row in inventory %}
+            <tr>
+                <td><strong>{{ row['farmer'] }}</strong></td>
+                <td><strong>{{ row['crop_name'] }}</strong></td>
+                <td><span class="badge bg-success">{{ row['quantity'] }}</span></td>
+                <td title="{{ row['date_received'] }}">{{ row['date_received'][:19] }}</td>
+                <td>
+                    {% if session.get('role') == 'admin' or (session.get('role') == 'farmer' and row['farmer'] == session.get('user')) %}
+                    <a href="/inventory/edit/{{ row['id'] }}" class="btn btn-sm btn-outline-primary me-1">Edit</a>
+                    <a href="/inventory/delete/{{ row['id'] }}" class="btn btn-sm btn-outline-danger">Delete</a>
+                    {% else %}
+                    <span class="text-muted">-</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+    {% else %}
+        <tr>
+            <td colspan="4" class="text-center text-muted">No inventory data yet</td>
+        </tr>
+    {% endif %}
+</tbody>
