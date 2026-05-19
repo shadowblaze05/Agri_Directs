@@ -414,68 +414,124 @@ def upload():
             conn.close()
             return redirect("/profile")
 
-        file = request.files["file"]
+        file = request.files.get("file")
+        manual_crop = request.form.get("manual_crop_name", "").strip()
+        manual_quantity = request.form.get("manual_quantity", "").strip()
+        manual_date = request.form.get("manual_date", "").strip()
 
-        if file.filename == '':
-            flash("No file selected")
-            conn.close()
-            return redirect(request.url)
+        processed_any = False
 
-        if not file.filename.endswith('.csv'):
-            flash("Only CSV files are allowed")
-            conn.close()
-            return redirect(request.url)
+        if file and file.filename:
+            if not file.filename.endswith('.csv'):
+                flash("Only CSV files are allowed")
+                conn.close()
+                return redirect(request.url)
 
-        filename = secure_filename(file.filename)
-        path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-        file.save(path)
+            filename = secure_filename(file.filename)
+            path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+            file.save(path)
 
-        try:
-            with open(path) as csvfile:
+            try:
+                with open(path, newline='', encoding='utf-8') as csvfile:
+                    reader = csv.DictReader(csvfile)
 
-                reader = csv.DictReader(csvfile)
-
-                for row in reader:
-                    try:
-                        # Strip whitespace from column names and values to handle formatting issues
-                        cleaned_row = {k.strip(): (v.strip() if v else '') for k, v in row.items()}
-                        
-                        crop = cleaned_row.get("crop_name", "").strip()
-                        quantity_str = cleaned_row.get("quantity", "").strip()
-                        
-                        # Validate required fields
-                        if not crop:
-                            logger.warning(f"Skipped row with empty crop_name")
-                            continue
-                        
+                    for row in reader:
                         try:
-                            quantity = int(quantity_str)
-                        except ValueError:
-                            logger.error(f"Invalid quantity: {quantity_str}")
-                            flash(f"Error: Invalid quantity '{quantity_str}' in row")
-                            continue
+                            cleaned_row = {k.strip(): (v.strip() if v else '') for k, v in row.items()}
+                            crop = cleaned_row.get("crop_name", "").strip()
+                            quantity_str = cleaned_row.get("quantity", "").strip()
 
-                        if quantity <= 0:
-                            logger.warning(f"Skipped row with non-positive quantity: {quantity}")
-                            continue
+                            if not crop:
+                                logger.warning(f"Skipped row with empty crop_name")
+                                continue
 
-                        cur.execute("""
-                        INSERT INTO inventory(crop_name,quantity,farmer,date_received,location)
-                        VALUES(?,?,?,?,?)
-                        """, (crop, quantity, session["user"], datetime.now().strftime("%Y-%m-%d %H:%M:%S"), location))
+                            try:
+                                quantity = int(quantity_str)
+                            except ValueError:
+                                logger.error(f"Invalid quantity: {quantity_str}")
+                                flash(f"Error: Invalid quantity '{quantity_str}' in CSV row")
+                                continue
 
-                    except Exception as e:
-                        logger.error(f"Error processing row: {row}, {e}")
-                        flash(f"Error processing row: {row}")
+                            if quantity <= 0:
+                                logger.warning(f"Skipped row with non-positive quantity: {quantity}")
+                                continue
 
-                conn.commit()
+                            cur.execute("""
+                            INSERT INTO inventory(crop_name,quantity,farmer,date_received,location)
+                            VALUES(?,?,?,?,?)
+                            """, (
+                                crop,
+                                quantity,
+                                session["user"],
+                                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                location
+                            ))
+                            processed_any = True
 
-            flash("Upload successful!")
-            logger.info(f"User {session['user']} uploaded {filename}")
+                        except Exception as e:
+                            logger.error(f"Error processing row: {row}, {e}")
+                            flash(f"Error processing CSV row: {row}")
 
-        except Exception as e:
-            flash(f"Error processing file: {str(e)}")
-            logger.error(f"Upload error: {str(e)}")
+                if processed_any:
+                    conn.commit()
+                    flash("CSV upload successful!")
+                    logger.info(f"User {session['user']} uploaded {filename}")
+                else:
+                    flash("CSV upload completed, but no valid records were added.")
+
+            except Exception as e:
+                flash(f"Error processing file: {str(e)}")
+                logger.error(f"Upload error: {str(e)}")
+                conn.close()
+                return redirect(request.url)
+
+        elif manual_crop:
+            if not manual_quantity:
+                flash("Quantity is required for manual crop entry")
+                conn.close()
+                return redirect(request.url)
+
+            try:
+                quantity = int(manual_quantity)
+            except ValueError:
+                flash("Quantity must be a valid number")
+                conn.close()
+                return redirect(request.url)
+
+            if quantity <= 0:
+                flash("Quantity must be greater than zero")
+                conn.close()
+                return redirect(request.url)
+
+            try:
+                if manual_date:
+                    date_received = datetime.strptime(manual_date, "%Y-%m-%d").strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    date_received = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                flash("Invalid date format. Use YYYY-MM-DD.")
+                conn.close()
+                return redirect(request.url)
+
+            cur.execute("""
+            INSERT INTO inventory(crop_name,quantity,farmer,date_received,location)
+            VALUES(?,?,?,?,?)
+            """, (
+                manual_crop,
+                quantity,
+                session["user"],
+                date_received,
+                location
+            ))
+            conn.commit()
+            processed_any = True
+            flash("Manual harvest entry added successfully!")
+            logger.info(f"User {session['user']} manually posted crop {manual_crop} x{quantity}")
+
+        else:
+            flash("Please upload a CSV file or enter harvest details manually.")
+            conn.close()
+            return redirect(request.url)
 
         conn.close()
         return redirect("/dashboard")
@@ -609,6 +665,19 @@ def api_stats():
     current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     previous_month_end = current_month_start - timedelta(seconds=1)
     previous_month_start = previous_month_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    current_year_start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    cur.execute(
+        "SELECT crop_name, SUM(quantity) as total FROM inventory WHERE date_received >= ? GROUP BY crop_name ORDER BY total DESC LIMIT 10",
+        (current_month_start.strftime("%Y-%m-%d %H:%M:%S"),)
+    )
+    top_monthly = [{"name": row["crop_name"], "total": row["total"]} for row in cur.fetchall()]
+
+    cur.execute(
+        "SELECT crop_name, SUM(quantity) as total FROM inventory WHERE date_received >= ? GROUP BY crop_name ORDER BY total DESC LIMIT 10",
+        (current_year_start.strftime("%Y-%m-%d %H:%M:%S"),)
+    )
+    top_yearly = [{"name": row["crop_name"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
         "SELECT crop_name, SUM(quantity) as total FROM inventory WHERE date_received >= ? GROUP BY crop_name",
@@ -641,7 +710,9 @@ def api_stats():
         "entry_count": entry_count,
         "location_count": location_count,
         "crops": [{"name": crop["crop_name"], "quantity": crop["total"]} for crop in crops],
-        "monthly_comparison": monthly_comparison
+        "monthly_comparison": monthly_comparison,
+        "top_monthly": top_monthly,
+        "top_yearly": top_yearly
     })
 
 

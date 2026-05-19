@@ -153,7 +153,7 @@
                     <i class="fas fa-file-csv"></i>
                     <p><strong>Click to select CSV file or drag it here</strong></p>
                     <p style="font-size: 12px; color: #999;">Only .csv files are accepted</p>
-                    <input type="file" name="file" id="file" accept=".csv" class="d-none" required>
+                    <input type="file" name="file" id="file" accept=".csv" class="d-none">
                 </div>
 
                 <!-- Selected File Display -->
@@ -161,9 +161,27 @@
                     <small>📄 Selected: <strong id="selectedName"></strong></small>
                 </div>
 
+                <div class="csv-template mt-4">
+                    <h6>Manual Entry</h6>
+                    <div class="mb-3">
+                        <label for="manual_crop_name" class="form-label">Crop Name</label>
+                        <input type="text" class="form-control" id="manual_crop_name" name="manual_crop_name" placeholder="e.g. Rice, Corn, Banana">
+                    </div>
+                    <div class="mb-3">
+                        <label for="manual_quantity" class="form-label">Quantity</label>
+                        <input type="number" min="1" class="form-control" id="manual_quantity" name="manual_quantity" placeholder="Enter quantity">
+                    </div>
+                    <div class="mb-3">
+                        <label for="manual_date" class="form-label">Date</label>
+                        <input type="date" class="form-control" id="manual_date" name="manual_date">
+                        <div class="form-text">Leave blank to use today&apos;s date.</div>
+                    </div>
+                    <div class="form-text">You can either upload a CSV file or submit one manual harvest entry.</div>
+                </div>
+
                 <!-- Upload Button -->
                 <button type="submit" class="btn btn-upload w-100 text-white mt-4">
-                    <i class="fas fa-arrow-up"></i> Upload File
+                    <i class="fas fa-arrow-up"></i> Submit Harvest Data
                 </button>
             </form>
 

@@ -314,15 +314,43 @@
                     <div class="card-header bg-light border-0">
                         <h5 class="mb-0"><i class="fas fa-seedling"></i> Crop Summary</h5>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body" style="max-height: 480px; overflow: hidden; display: flex; flex-direction: column;">
                         {% if crops %}
-                        <div class="chart-container mb-4">
-                            <canvas id="crop-summary-chart" height="220"></canvas>
+                        <div class="row gy-1" style="flex: 1; overflow: hidden;">
+                            <div class="col-lg-6">
+                                <div class="chart-container" style="min-height: 140px; max-height: 140px;">
+                                    <h6 class="mb-1" style="font-size: 0.95rem;">Monthly Harvest</h6>
+                                    <canvas id="monthly-summary-chart" height="110"></canvas>
+                                </div>
+                                <div class="card shadow-sm mt-2" style="max-height: 100px; overflow: hidden;">
+                                    <div class="card-header bg-light py-1" style="padding: 0.5rem 0.75rem !important;">
+                                        <h6 class="mb-0" style="font-size: 0.9rem;">Month Top</h6>
+                                    </div>
+                                    <div class="card-body p-2" style="overflow: hidden;">
+                                        <ul class="list-group list-group-sm" id="monthly-most-bought">
+                                            <li class="list-group-item text-muted" style="font-size: 0.8rem; padding: 0.25rem 0.5rem;">Loading...</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-6">
+                                <div class="chart-container" style="min-height: 140px; max-height: 140px;">
+                                    <h6 class="mb-1" style="font-size: 0.95rem;">Yearly Harvest</h6>
+                                    <canvas id="yearly-summary-chart" height="110"></canvas>
+                                </div>
+                                <div class="card shadow-sm mt-2" style="max-height: 100px; overflow: hidden;">
+                                    <div class="card-header bg-light py-1" style="padding: 0.5rem 0.75rem !important;">
+                                        <h6 class="mb-0" style="font-size: 0.9rem;">Year Top</h6>
+                                    </div>
+                                    <div class="card-body p-2" style="overflow: hidden;">
+                                        <ul class="list-group list-group-sm" id="yearly-most-bought">
+                                            <li class="list-group-item text-muted" style="font-size: 0.8rem; padding: 0.25rem 0.5rem;">Loading...</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="chart-container">
-                            <canvas id="crop-comparison-chart" height="220"></canvas>
-                        </div>
-                        <p class="text-muted small mt-3">Crop summary and month-over-month comparisons show harvest performance over time.</p>
+                        <p class="text-muted" style="font-size: 0.8rem; margin-top: 0.75rem; margin-bottom: 0;">Top crops by monthly & yearly harvest volume.</p>
                         {% else %}
                         <p class="text-muted">No crop data available</p>
                         {% endif %}
@@ -417,11 +445,13 @@
         // Sort state tracking
         let sortDir = {};
         let currentSort = { column: null, direction: null };
-        let cropChart = null;
         const sortableHeaders = document.querySelectorAll('.sortable');
-        
-        function createCropChart(labels, values) {
-            const chartCanvas = document.getElementById('crop-summary-chart');
+        let comparisonChart = null;
+        let monthlySummaryChart = null;
+        let yearlySummaryChart = null;
+
+        function createSummaryChart(canvasId, labels, values, labelText) {
+            const chartCanvas = document.getElementById(canvasId);
             if (!chartCanvas) return;
 
             const config = {
@@ -429,50 +459,67 @@
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: 'Harvest Quantity',
+                        label: labelText,
                         data: values,
-                        backgroundColor: 'rgba(76, 175, 80, 0.65)',
-                        borderColor: 'rgba(56, 142, 60, 0.95)',
-                        borderWidth: 1,
-                        hoverBackgroundColor: 'rgba(56, 142, 60, 0.8)'
+                        backgroundColor: 'rgba(54, 162, 235, 0.75)',
+                        borderColor: 'rgba(33, 150, 243, 0.95)',
+                        borderWidth: 1
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
                     scales: {
-                        x: {
-                            ticks: { color: '#333' },
-                            grid: { display: false }
-                        },
-                        y: {
-                            beginAtZero: true,
-                            ticks: { color: '#333' }
-                        }
+                        x: { ticks: { color: '#333' }, grid: { display: false } },
+                        y: { beginAtZero: true, ticks: { color: '#333' } }
                     },
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: { enabled: true }
-                    }
+                    plugins: { legend: { display: false }, tooltip: { enabled: true } }
                 }
             };
 
-            if (cropChart) {
-                cropChart.data.labels = labels;
-                cropChart.data.datasets[0].data = values;
-                cropChart.update();
+            const chartVar = canvasId === 'monthly-summary-chart' ? monthlySummaryChart : yearlySummaryChart;
+            if (chartVar) {
+                chartVar.data.labels = labels;
+                chartVar.data.datasets[0].data = values;
+                chartVar.update();
             } else {
-                cropChart = new Chart(chartCanvas, config);
+                if (canvasId === 'monthly-summary-chart') {
+                    monthlySummaryChart = new Chart(chartCanvas, config);
+                } else {
+                    yearlySummaryChart = new Chart(chartCanvas, config);
+                }
             }
         }
 
-        let comparisonChart = null;
+        function updateMonthlySummaryChart(topMonthly) {
+            const labels = topMonthly.map(item => item.name);
+            const values = topMonthly.map(item => item.total);
+            createSummaryChart('monthly-summary-chart', labels, values, 'Monthly Harvest');
+            renderMostBoughtList('monthly-most-bought', topMonthly);
+        }
 
-        function updateCropSummaryChart(crops) {
-            if (!crops || crops.length === 0) return;
-            const labels = crops.map(c => c.name);
-            const values = crops.map(c => c.quantity);
-            createCropChart(labels, values);
+        function updateYearlySummaryChart(topYearly) {
+            const labels = topYearly.map(item => item.name);
+            const values = topYearly.map(item => item.total);
+            createSummaryChart('yearly-summary-chart', labels, values, 'Yearly Harvest');
+            renderMostBoughtList('yearly-most-bought', topYearly);
+        }
+
+        function renderMostBoughtList(listId, items) {
+            const list = document.getElementById(listId);
+            if (!list) return;
+            list.innerHTML = '';
+            if (!items || items.length === 0) {
+                list.innerHTML = '<li class="list-group-item text-muted" style="font-size: 0.8rem; padding: 0.25rem 0.5rem;">No data.</li>';
+                return;
+            }
+            items.slice(0, 4).forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                li.style.cssText = 'font-size: 0.8rem; padding: 0.25rem 0.5rem;';
+                li.innerHTML = `<span style="overflow: hidden; text-overflow: ellipsis;">${item.name}</span><span class="badge bg-success rounded-pill" style="font-size: 0.7rem; margin-left: 0.5rem;">${item.total}</span>`;
+                list.appendChild(li);
+            });
         }
 
         function createComparisonChart(labels, currentValues, previousValues) {
@@ -645,8 +692,8 @@
                         (data.crops[0].quantity + ' units') : 'No data';
                     document.getElementById('crops-count').textContent = data.crops_count;
                     document.getElementById('location-count').textContent = data.location_count;
-                    updateCropSummaryChart(data.crops);
-                    updateMonthlyComparisonChart(data.monthly_comparison);
+                    updateMonthlySummaryChart(data.top_monthly);
+                    updateYearlySummaryChart(data.top_yearly);
                 })
                 .catch(error => console.error('Error updating stats:', error));
         }

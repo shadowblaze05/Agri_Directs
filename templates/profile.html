@@ -70,6 +70,46 @@
                     <a href="/about" class="btn btn-secondary me-2"><i class="fas fa-info-circle"></i> About</a>
                     <a href="/logout" class="btn btn-danger"><i class="fas fa-sign-out-alt"></i> Logout</a>
                 </div>
+
+                {% if session.get('role') == 'farmer' %}
+                <div class="card shadow-sm border-0 mt-4">
+                    <div class="card-body">
+                        <h2 class="h5 mb-3"><i class="fas fa-warehouse"></i> Your Inventory</h2>
+                        {% if inventory %}
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>Crop</th>
+                                        <th>Total Quantity</th>
+                                        <th>Last Received</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in inventory %}
+                                    <tr>
+                                        <td>{{ item['crop_name'] }}</td>
+                                        <td><span class="badge bg-success">{{ item['total_quantity'] }}</span></td>
+                                        <td>{{ item['last_received'][:19] if item['last_received'] else 'N/A' }}</td>
+                                        <td>
+                                            <button type="button" class="btn btn-sm btn-outline-primary me-1" onclick="editCrop('{{ item['crop_name']|replace("'", "\\'") }}', {{ item['total_quantity'] }})">Edit</button>
+                                            <button type="button" class="btn btn-sm btn-outline-danger me-1" onclick="deleteCrop('{{ item['crop_name']|replace("'", "\\'") }}')">Delete</button>
+                                            <button type="button" class="btn btn-sm btn-outline-success" onclick="buyCrop('{{ item['crop_name']|replace("'", "\\'") }}')">Buy</button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info mb-0">
+                            No inventory found yet. Upload harvest or enter manual crop data to start tracking your farm stock.
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -209,6 +249,69 @@ $(document).ready(function() {
 
         $('#location').val(location.replace(/^, /, ''));
     }
-});
-</script>
-</html>
+
+        window.buyCrop = function(cropName) {
+            const quantity = prompt(`How many units of ${cropName} were bought?`);
+            if (!quantity) return;
+            const qty = parseInt(quantity, 10);
+            if (Number.isNaN(qty) || qty <= 0) {
+                alert('Please enter a valid positive number');
+                return;
+            }
+            fetch('/inventory/buy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ crop_name: cropName, quantity: qty })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    location.reload();
+                } else {
+                    alert(data.error || 'Unable to complete buy action');
+                }
+            })
+            .catch(() => alert('Error contacting server'));
+        };
+
+        window.editCrop = function(cropName, currentTotal) {
+            const quantity = prompt(`Set new total quantity for ${cropName}:`, currentTotal);
+            if (quantity === null) return;
+            const qty = parseInt(quantity, 10);
+            if (Number.isNaN(qty) || qty <= 0) {
+                alert('Please enter a valid positive number');
+                return;
+            }
+            fetch('/inventory/edit_crop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ crop_name: cropName, quantity: qty })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    location.reload();
+                } else {
+                    alert(data.error || 'Unable to update inventory');
+                }
+            })
+            .catch(() => alert('Error contacting server'));
+        };
+
+        window.deleteCrop = function(cropName) {
+            if (!confirm(`Delete all inventory for ${cropName}? This cannot be undone.`)) return;
+            fetch('/inventory/delete_crop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ crop_name: cropName })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    location.reload();
+                } else {
+                    alert(data.error || 'Unable to delete inventory');
+                }
+            })
+            .catch(() => alert('Error contacting server'));
+        };
