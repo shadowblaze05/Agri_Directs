@@ -260,8 +260,156 @@ def profile():
         flash("Profile updated successfully")
         return redirect("/profile")
 
+    inventory = []
+    if session.get("role") == "farmer":
+        cur.execute(
+            "SELECT crop_name, SUM(quantity) as total_quantity, MAX(date_received) as last_received "
+            "FROM inventory WHERE farmer=? GROUP BY crop_name ORDER BY last_received DESC",
+            (session["user"],)
+        )
+        inventory = cur.fetchall()
+
     conn.close()
-    return render_template("profile.html", user=user)
+    return render_template("profile.html", user=user, inventory=inventory)
+
+
+@app.route("/inventory/buy", methods=["POST"])
+def inventory_buy():
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    if session.get("role") != "farmer":
+        return jsonify({"error": "Only farmers can perform this action"}), 403
+
+    data = request.get_json() or {}
+    crop_name = str(data.get("crop_name", "")).strip()
+    quantity = data.get("quantity")
+
+    try:
+        quantity = int(quantity)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Quantity must be a valid number"}), 400
+
+    if not crop_name:
+        return jsonify({"error": "Crop name is required"}), 400
+    if quantity <= 0:
+        return jsonify({"error": "Quantity must be greater than zero"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT SUM(quantity) AS total FROM inventory WHERE farmer=? AND crop_name=?", (session["user"], crop_name))
+    row = cur.fetchone()
+    total = row["total"] or 0
+
+    if quantity > total:
+        conn.close()
+        return jsonify({"error": "Buy quantity exceeds available inventory"}), 400
+
+    needed = quantity
+    cur.execute(
+        "SELECT id, quantity FROM inventory WHERE farmer=? AND crop_name=? ORDER BY date_received DESC",
+        (session["user"], crop_name)
+    )
+    rows = cur.fetchall()
+
+    for item in rows:
+        if needed <= 0:
+            break
+        item_qty = item["quantity"]
+        if item_qty <= needed:
+            cur.execute("DELETE FROM inventory WHERE id=?", (item["id"],))
+            needed -= item_qty
+        else:
+            cur.execute("UPDATE inventory SET quantity=? WHERE id=?", (item_qty - needed, item["id"]))
+            needed = 0
+
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Inventory updated after purchase"})
+
+
+@app.route("/inventory/edit_crop", methods=["POST"])
+def inventory_edit_crop():
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    if session.get("role") != "farmer":
+        return jsonify({"error": "Only farmers can perform this action"}), 403
+
+    data = request.get_json() or {}
+    crop_name = str(data.get("crop_name", "")).strip()
+    quantity = data.get("quantity")
+
+    try:
+        quantity = int(quantity)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Quantity must be a valid number"}), 400
+
+    if not crop_name:
+        return jsonify({"error": "Crop name is required"}), 400
+    if quantity < 0:
+        return jsonify({"error": "Quantity cannot be negative"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT SUM(quantity) AS total FROM inventory WHERE farmer=? AND crop_name=?", (session["user"], crop_name))
+    row = cur.fetchone()
+    current_total = row["total"] or 0
+
+    if quantity == current_total:
+        conn.close()
+        return jsonify({"status": "success", "message": "Inventory unchanged"})
+
+    if quantity > current_total:
+        add_amount = quantity - current_total
+        cur.execute("SELECT location FROM users WHERE username=?", (session["user"],))
+        user_loc = cur.fetchone()["location"]
+        cur.execute(
+            "INSERT INTO inventory(crop_name,quantity,farmer,date_received,location) VALUES(?,?,?,?,?)",
+            (crop_name, add_amount, session["user"], datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_loc)
+        )
+    else:
+        remove_amount = current_total - quantity
+        cur.execute(
+            "SELECT id, quantity FROM inventory WHERE farmer=? AND crop_name=? ORDER BY date_received DESC",
+            (session["user"], crop_name)
+        )
+        rows = cur.fetchall()
+        needed = remove_amount
+        for item in rows:
+            if needed <= 0:
+                break
+            item_qty = item["quantity"]
+            if item_qty <= needed:
+                cur.execute("DELETE FROM inventory WHERE id=?", (item["id"],))
+                needed -= item_qty
+            else:
+                cur.execute("UPDATE inventory SET quantity=? WHERE id=?", (item_qty - needed, item["id"]))
+                needed = 0
+
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "success", "message": "Inventory adjusted successfully"})
+
+
+@app.route("/inventory/delete_crop", methods=["POST"])
+def inventory_delete_crop():
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    if session.get("role") != "farmer":
+        return jsonify({"error": "Only farmers can perform this action"}), 403
+
+    data = request.get_json() or {}
+    crop_name = str(data.get("crop_name", "")).strip()
+
+    if not crop_name:
+        return jsonify({"error": "Crop name is required"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM inventory WHERE farmer=? AND crop_name=?", (session["user"], crop_name))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"status": "success", "message": "Crop inventory deleted"})
 
 
 @app.route("/about")
