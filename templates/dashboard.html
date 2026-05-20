@@ -165,6 +165,27 @@
             min-height: 280px;
             position: relative;
         }
+        .summary-card-body {
+            min-height: 540px;
+            display: flex;
+            flex-direction: column;
+        }
+        .summary-row {
+            flex: 1;
+        }
+        .summary-chart-area {
+            min-height: 180px;
+            max-height: 180px;
+            position: relative;
+        }
+        .summary-chart-area canvas {
+            width: 100% !important;
+            height: 170px !important;
+        }
+        .summary-list-card {
+            max-height: 120px;
+            overflow: hidden;
+        }
         /* Sortable Table Headers */
         .sortable {
             cursor: pointer;
@@ -314,15 +335,15 @@
                     <div class="card-header bg-light border-0">
                         <h5 class="mb-0"><i class="fas fa-seedling"></i> Crop Summary</h5>
                     </div>
-                    <div class="card-body" style="max-height: 480px; overflow: hidden; display: flex; flex-direction: column;">
+                    <div class="card-body summary-card-body">
                         {% if crops %}
-                        <div class="row gy-1" style="flex: 1; overflow: hidden;">
+                        <div class="row gy-3 summary-row">
                             <div class="col-lg-6">
-                                <div class="chart-container" style="min-height: 140px; max-height: 140px;">
+                                <div class="chart-container summary-chart-area">
                                     <h6 class="mb-1" style="font-size: 0.95rem;">Monthly Harvest</h6>
-                                    <canvas id="monthly-summary-chart" height="110"></canvas>
+                                    <canvas id="monthly-summary-chart" height="170"></canvas>
                                 </div>
-                                <div class="card shadow-sm mt-2" style="max-height: 100px; overflow: hidden;">
+                                <div class="card shadow-sm mt-2 summary-list-card">
                                     <div class="card-header bg-light py-1" style="padding: 0.5rem 0.75rem !important;">
                                         <h6 class="mb-0" style="font-size: 0.9rem;">Month Top</h6>
                                     </div>
@@ -334,11 +355,11 @@
                                 </div>
                             </div>
                             <div class="col-lg-6">
-                                <div class="chart-container" style="min-height: 140px; max-height: 140px;">
+                                <div class="chart-container summary-chart-area">
                                     <h6 class="mb-1" style="font-size: 0.95rem;">Yearly Harvest</h6>
-                                    <canvas id="yearly-summary-chart" height="110"></canvas>
+                                    <canvas id="yearly-summary-chart" height="170"></canvas>
                                 </div>
-                                <div class="card shadow-sm mt-2" style="max-height: 100px; overflow: hidden;">
+                                <div class="card shadow-sm mt-2 summary-list-card">
                                     <div class="card-header bg-light py-1" style="padding: 0.5rem 0.75rem !important;">
                                         <h6 class="mb-0" style="font-size: 0.9rem;">Year Top</h6>
                                     </div>
