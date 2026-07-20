@@ -239,6 +239,9 @@
             <a class="nav-link" href="/upload">
                 <i class="fas fa-upload"></i> Upload Harvest
             </a>
+            <a class="nav-link" href="/market-intelligence">
+                <i class="fas fa-brain"></i> Market Intelligence
+            </a>
             <a class="nav-link" href="#" onclick="toggleChat()">
                 <i class="fas fa-comments"></i> Chat
             </a>
@@ -252,7 +255,7 @@
     <nav class="navbar navbar-dark navbar-custom fixed-top">
         <div class="container-fluid">
             <span class="navbar-brand mb-0 h1 ms-5">
-                <i class="fas fa-leaf"></i> Agri-Direct Middleware
+                <i class="fas fa-leaf"></i> Agri-Direct 
             </span>
             <div class="dropdown">
                 <button class="btn btn-outline-light dropdown-toggle" type="button" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
@@ -267,7 +270,7 @@
                     <li><hr class="dropdown-divider"></li>
                     <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
                 </ul>
-                <div class="text-white small mt-1">Role: {{ session.get('role', 'User') | capitalize }}</div>
+
             </div>
         </div>
     </nav>
@@ -342,6 +345,47 @@
             </div>
         </div>
 
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-light border-0">
+                        <h5 class="mb-0"><i class="fas fa-history"></i> Monthly Analytics History</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if analytics_history %}
+                        <div class="table-container">
+                            <table class="table table-striped table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Month</th>
+                                        <th>Total Harvest</th>
+                                        <th>Top Crop</th>
+                                        <th>Top Crop Volume</th>
+                                        <th>Top Location</th>
+                                        <th>Top Location Volume</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in analytics_history %}
+                                    <tr>
+                                        <td>{{ row['period_value'] }}</td>
+                                        <td>{{ row['total_harvest'] }}</td>
+                                        <td>{{ row['top_crop'] or '-' }}</td>
+                                        <td>{{ row['top_crop_volume'] or 0 }}</td>
+                                        <td>{{ row['top_location'] or '-' }}</td>
+                                        <td>{{ row['top_location_volume'] or 0 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted mb-0">No monthly analytics history available yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Crop Summary Graph -->
         <div class="row">
@@ -353,9 +397,26 @@
                     <div class="card-body summary-card-body">
                         {% if crops %}
                         <div class="row gy-3 summary-row">
+                            <div class="col-12 mb-3">
+                                <div class="row gx-2 gy-2">
+                                    <div class="col-md-6">
+                                        <label for="monthly-offset" class="form-label mb-1">Monthly offset (months ago)</label>
+                                        <input id="monthly-offset" type="number" class="form-control" min="0" max="24" value="0" step="1">
+                                        <div class="form-text">View data for a previous month. 0 = this month.</div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="yearly-offset" class="form-label mb-1">Yearly offset (years ago)</label>
+                                        <input id="yearly-offset" type="number" class="form-control" min="0" max="10" value="0" step="1">
+                                        <div class="form-text">View data for a previous year. 0 = this year.</div>
+                                    </div>
+                                </div>
+                            </div>
                             <div class="col-lg-6">
                                 <div class="chart-container summary-chart-area">
-                                    <h6 class="mb-1" style="font-size: 0.95rem;">Monthly Harvest</h6>
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <h6 class="mb-0" style="font-size: 0.95rem;">Monthly Harvest</h6>
+                                        <small class="text-muted" id="monthly-date-range" style="font-size: 0.8rem;">This Month</small>
+                                    </div>
                                     <canvas id="monthly-summary-chart" height="170"></canvas>
                                 </div>
                                 <div class="card shadow-sm mt-2 summary-list-card">
@@ -371,7 +432,10 @@
                             </div>
                             <div class="col-lg-6">
                                 <div class="chart-container summary-chart-area">
-                                    <h6 class="mb-1" style="font-size: 0.95rem;">Yearly Harvest</h6>
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <h6 class="mb-0" style="font-size: 0.95rem;">Yearly Harvest</h6>
+                                        <small class="text-muted" id="yearly-date-range" style="font-size: 0.8rem;">This Year</small>
+                                    </div>
                                     <canvas id="yearly-summary-chart" height="170"></canvas>
                                 </div>
                                 <div class="card shadow-sm mt-2 summary-list-card">
@@ -413,12 +477,11 @@
                     <table class="table table-striped table-hover mb-0" id="inventory-table-header">
                         <thead class="table-light">
                             <tr>
-                                <th class="sortable" data-sort="farmer">Farmer <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="farmer">Posted By <span class="sort-icon"></span></th>
                                 <th class="sortable" data-sort="crop_name">Crop Name <span class="sort-icon"></span></th>
                                 <th class="sortable" data-sort="quantity">Quantity <span class="sort-icon"></span></th>
                                 <th class="sortable" data-sort="location">Location <span class="sort-icon"></span></th>
                                 <th class="sortable" data-sort="date_received">Date Received <span class="sort-icon"></span></th>
-                                <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="inventory-table">
@@ -429,14 +492,6 @@
                                 <td><span class="badge bg-success">{{ row['quantity'] }}</span></td>
                                 <td>{{ row['location'] or '-' }}</td>
                                 <td title="{{ row['date_received'] }}">{{ row['date_received'][:19] }}</td>
-                                <td>
-                                    {% if session.get('role') == 'admin' or (session.get('role') == 'farmer' and row['farmer'] == session.get('user')) %}
-                                    <a href="/inventory/edit/{{ row['id'] }}" class="btn btn-sm btn-outline-primary me-1">Edit</a>
-                                    <a href="/inventory/delete/{{ row['id'] }}" class="btn btn-sm btn-outline-danger">Delete</a>
-                                    {% else %}
-                                    <span class="text-muted">-</span>
-                                    {% endif %}
-                                </td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -714,6 +769,12 @@
         }
 
         // Real-time dashboard updates every 2 seconds
+        function getStatsUrl() {
+            const monthOffset = parseInt(document.getElementById('monthly-offset').value, 10) || 0;
+            const yearOffset = parseInt(document.getElementById('yearly-offset').value, 10) || 0;
+            return `/api/stats?monthly_offset=${monthOffset}&yearly_offset=${yearOffset}`;
+        }
+
         function updateDashboard() {
             // Update inventory table
             fetch('/dashboard-data')
@@ -730,7 +791,7 @@
                 .catch(error => console.error('Error updating table:', error));
 
             // Update statistics
-            fetch('/api/stats')
+            fetch(getStatsUrl())
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('total-quantity').textContent = data.total_quantity;
@@ -741,8 +802,18 @@
                     document.getElementById('location-count').textContent = data.location_count;
                     updateMonthlySummaryChart(data.top_monthly);
                     updateYearlySummaryChart(data.top_yearly);
+                    updateDateRanges(data);
                 })
                 .catch(error => console.error('Error updating stats:', error));
+        }
+
+        function updateDateRanges(data) {
+            if (data && data.selected_month_label && data.previous_month_label) {
+                document.getElementById('monthly-date-range').textContent = `${data.selected_month_label} vs ${data.previous_month_label}`;
+            }
+            if (data && data.selected_year_label && data.previous_year_label) {
+                document.getElementById('yearly-date-range').textContent = `${data.selected_year_label} vs ${data.previous_year_label}`;
+            }
         }
 
         function filterInventory() {
@@ -767,6 +838,14 @@
         // Initial update on page load
         document.addEventListener('DOMContentLoaded', function() {
             initializeSort();
+            document.getElementById('monthly-offset').addEventListener('input', function() {
+                if (this.value < 0) this.value = 0;
+                updateDashboard();
+            });
+            document.getElementById('yearly-offset').addEventListener('input', function() {
+                if (this.value < 0) this.value = 0;
+                updateDashboard();
+            });
             updateDashboard();
         });
 

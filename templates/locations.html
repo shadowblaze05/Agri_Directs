@@ -9,6 +9,9 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         .chart-card { min-height: 320px; }
+        .analytics-summary-card { min-height: 280px; display: flex; flex-direction: column; }
+        .analytics-summary-card canvas { width: 100% !important; max-height: 180px; }
+        .analytics-summary-list { max-height: 220px; overflow-y: auto; }
         #map { height: 400px; }
     </style>
 </head>
@@ -41,6 +44,42 @@
                         {% else %}
                         <p class="text-muted">No location data available yet.</p>
                         {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Monthly/Yearly summary (similar to dashboard) -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <div class="row gx-2 gy-2 mb-2">
+                    <div class="col-md-6">
+                        <label class="form-label mb-1">Monthly offset (months ago)</label>
+                        <input id="monthly-offset" type="number" class="form-control" min="0" max="24" value="0" step="1">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label mb-1">Yearly offset (years ago)</label>
+                        <input id="yearly-offset" type="number" class="form-control" min="0" max="10" value="0" step="1">
+                    </div>
+                </div>
+                <div class="row gy-2">
+                    <div class="col-md-6">
+                        <div class="card p-2 analytics-summary-card">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <h6 class="mb-0">Monthly Top by Location</h6>
+                            </div>
+                            <canvas id="loc-monthly-chart" height="120"></canvas>
+                            <ul class="list-group list-group-sm mt-2 analytics-summary-list" id="loc-monthly-list"><li class="list-group-item text-muted">Loading...</li></ul>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card p-2 analytics-summary-card">
+                            <div class="d-flex justify-content-between align-items-center mb-1">
+                                <h6 class="mb-0">Yearly Top by Location</h6>
+                            </div>
+                            <canvas id="loc-yearly-chart" height="120"></canvas>
+                            <ul class="list-group list-group-sm mt-2 analytics-summary-list" id="loc-yearly-list"><li class="list-group-item text-muted">Loading...</li></ul>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -125,9 +164,71 @@
 
         // Add markers for user locations
         const userLocations = {{ user_locations | tojson }};
+        const markers = [];
         userLocations.forEach(user => {
-            L.marker([user.lat, user.lng]).addTo(map)
+            const marker = L.marker([user.lat, user.lng]).addTo(map)
                 .bindPopup(`<b>${user.username}</b><br>Location: ${user.location}`);
+            markers.push(marker);
+        });
+
+        if (markers.length > 0) {
+            const group = L.featureGroup(markers);
+            map.fitBounds(group.getBounds().pad(0.2));
+        }
+    </script>
+    <script>
+        // Summary for locations page
+        let locMonthlyChart = null;
+        let locYearlyChart = null;
+
+        function renderLocList(listId, items) {
+            const list = document.getElementById(listId);
+            list.innerHTML = '';
+            if (!items || items.length === 0) {
+                list.innerHTML = '<li class="list-group-item text-muted">No data.</li>';
+                return;
+            }
+            items.slice(0,5).forEach(it => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                li.innerHTML = `<span>${it.name}</span><span class="badge bg-success">${it.total}</span>`;
+                list.appendChild(li);
+            });
+        }
+
+        function createSmallChart(canvasId, labels, values, existingChartRef) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return null;
+            const cfg = { type: 'bar', data: { labels: labels, datasets: [{ data: values, backgroundColor: 'rgba(255,159,64,0.7)'}] }, options: { responsive: true, maintainAspectRatio: false } };
+            if (existingChartRef) {
+                existingChartRef.data.labels = labels;
+                existingChartRef.data.datasets[0].data = values;
+                existingChartRef.update();
+                return existingChartRef;
+            }
+            return new Chart(canvas, cfg);
+        }
+
+        function fetchAndRenderLoc() {
+            const m = parseInt(document.getElementById('monthly-offset').value || '0',10);
+            const y = parseInt(document.getElementById('yearly-offset').value || '0',10);
+            fetch(`/api/stats?monthly_offset=${m}&yearly_offset=${y}`)
+                .then(r=>r.json())
+                .then(data=>{
+                    locMonthlyChart = createSmallChart('loc-monthly-chart', data.top_monthly_locations.map(i=>i.name), data.top_monthly_locations.map(i=>i.total), locMonthlyChart);
+                    locYearlyChart = createSmallChart('loc-yearly-chart', data.top_yearly_locations.map(i=>i.name), data.top_yearly_locations.map(i=>i.total), locYearlyChart);
+                    renderLocList('loc-monthly-list', data.top_monthly_locations);
+                    renderLocList('loc-yearly-list', data.top_yearly_locations);
+                })
+                .catch(err=>console.error('Error loading stats',err));
+        }
+
+        document.addEventListener('DOMContentLoaded', function(){
+            const mo = document.getElementById('monthly-offset');
+            const yo = document.getElementById('yearly-offset');
+            if (mo) mo.addEventListener('input', fetchAndRenderLoc);
+            if (yo) yo.addEventListener('input', fetchAndRenderLoc);
+            fetchAndRenderLoc();
         });
     </script>
 </body>

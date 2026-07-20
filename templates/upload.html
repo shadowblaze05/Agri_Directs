@@ -165,7 +165,13 @@
                     <h6>Manual Entry</h6>
                     <div class="mb-3">
                         <label for="manual_crop_name" class="form-label">Crop Name</label>
-                        <input type="text" class="form-control" id="manual_crop_name" name="manual_crop_name" placeholder="e.g. Rice, Corn, Banana">
+                        <input type="text" class="form-control" id="manual_crop_name" name="manual_crop_name" list="cropOptions" autocomplete="off" placeholder="Start typing a crop name">
+                        <datalist id="cropOptions">
+                            {% for crop in crops %}
+                                <option value="{{ crop[1] }}" data-id="{{ crop[0] }}">{{ crop[1] }}</option>
+                            {% endfor %}
+                        </datalist>
+                        <input type="hidden" name="crop_id" id="crop_id" value="">
                     </div>
                     <div class="mb-3">
                         <label for="manual_quantity" class="form-label">Quantity</label>
@@ -200,6 +206,8 @@
         const fileInput = document.getElementById('file');
         const fileName = document.getElementById('fileName');
         const selectedName = document.getElementById('selectedName');
+        const cropInput = document.getElementById('manual_crop_name');
+        const cropIdInput = document.getElementById('crop_id');
 
         // Click to select file
         dropZone.addEventListener('click', () => fileInput.click());
@@ -236,6 +244,18 @@
                 fileName.style.display = 'none';
             }
         }
+
+        function syncCropSelection() {
+            const value = cropInput.value.trim().toLowerCase();
+            const option = Array.from(document.querySelectorAll('#cropOptions option')).find((item) => {
+                return item.value.toLowerCase() === value;
+            });
+
+            cropIdInput.value = option ? option.getAttribute('data-id') || '' : '';
+        }
+
+        cropInput.addEventListener('input', syncCropSelection);
+        cropInput.addEventListener('change', syncCropSelection);
     </script>
 </body>
 </html>

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agri-Direct Market Intelligence</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        body { background: linear-gradient(135deg, #f4f9f2 0%, #e6f5e0 100%); color: #1f2d1f; }
+        .card { border: none; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); }
+        .hero { background: linear-gradient(135deg, #2d5016 0%, #1a3408 100%); color: white; border-radius: 16px; }
+    </style>
+</head>
+<body>
+    <div class="container py-4">
+        <div class="hero p-4 mb-4">
+            <h1 class="h3 mb-2"><i class="fas fa-brain"></i> Agri-Direct Market Intelligence</h1>
+            <p class="mb-0">Algorithm-driven insights for price monitoring, oversupply and undersupply risk detection, crop recommendation, and forecasting.</p>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-4">
+                <div class="card p-3">
+                    <h5><i class="fas fa-chart-bar"></i> Summary</h5>
+                    <div id="summary-card" class="mt-3 text-muted">Loading insights...</div>
+                </div>
+            </div>
+            <div class="col-lg-8">
+                <div class="card p-3">
+                    <h5><i class="fas fa-exclamation-triangle"></i> Risk Alerts</h5>
+                    <div id="risk-card" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4 mt-1">
+            <div class="col-lg-7">
+                <div class="card p-3">
+                    <h5><i class="fas fa-seedling"></i> Recommended Crops</h5>
+                    <div id="recommendation-card" class="mt-3"></div>
+                </div>
+            </div>
+            <div class="col-lg-5">
+                <div class="card p-3">
+                    <h5><i class="fas fa-chart-line"></i> Forecast</h5>
+                    <div id="forecast-card" class="mt-3"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-4 text-center">
+            <a href="/dashboard" class="btn btn-success"><i class="fas fa-arrow-left"></i> Return to Dashboard</a>
+        </div>
+    </div>
+
+    <script>
+        async function loadInsights() {
+            const response = await fetch('/api/market-insights');
+            const data = await response.json();
+            const summary = document.getElementById('summary-card');
+            summary.innerHTML = `
+                <ul class="list-unstyled mb-0">
+                    <li><strong>Total quantity:</strong> ${data.summary.total_quantity}</li>
+                    <li><strong>Active crops:</strong> ${data.summary.active_crops}</li>
+                    <li><strong>Average monthly supply:</strong> ${data.summary.average_monthly_supply}</li>
+                    <li><strong>Market pressure:</strong> <span class="badge bg-${data.summary.market_pressure === 'oversupply' ? 'warning' : data.summary.market_pressure === 'undersupply' ? 'danger' : 'success'}">${data.summary.market_pressure}</span></li>
+                    <li><strong>Current month:</strong> ${data.summary.current_month}</li>
+                </ul>`;
+
+            const risks = document.getElementById('risk-card');
+            if (data.risk_alerts.length) {
+                risks.innerHTML = data.risk_alerts.map(item => `
+                    <div class="border rounded p-2 mb-2">
+                        <strong>${item.crop}</strong> - ${item.type}<br>
+                        <small>${item.message}</small>
+                    </div>`).join('');
+            } else {
+                risks.innerHTML = '<div class="text-muted">No significant risks detected.</div>';
+            }
+
+            const recommendations = document.getElementById('recommendation-card');
+            if (data.recommendations.length) {
+                recommendations.innerHTML = data.recommendations.map(item => `
+                    <div class="border rounded p-2 mb-2">
+                        <strong>${item.crop}</strong><br>
+                        <small>Score: ${item.score} • ${item.reason}</small>
+                    </div>`).join('');
+            } else {
+                recommendations.innerHTML = '<div class="text-muted">No recommendations available yet.</div>';
+            }
+
+            const forecast = document.getElementById('forecast-card');
+            const forecastData = await fetch('/api/forecast').then(res => res.json());
+            if (forecastData.forecast.length) {
+                forecast.innerHTML = forecastData.forecast.map(item => `
+                    <div class="border rounded p-2 mb-2">
+                        <strong>${item.crop}</strong><br>
+                        <small>Forecast quantity: ${item.forecast_quantity} • Trend: ${item.trend} • Seasonal fit: ${item.seasonal_fit}</small>
+                    </div>`).join('');
+            } else {
+                forecast.innerHTML = '<div class="text-muted">No forecast data available.</div>';
+            }
+        }
+        loadInsights();
+    </script>
+</body>
+</html>
