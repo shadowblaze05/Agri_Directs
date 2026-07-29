@@ -155,24 +155,6 @@
             background: #f1f1f1;
             color: #333;
         }
-        .chat-toggle {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 60px;
-            height: 60px;
-            background: #4caf50;
-            color: white;
-            border: none;
-            border-radius: 50%;
-            font-size: 24px;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            z-index: 1049;
-        }
-        .chat-toggle:hover {
-            background: #2d5016;
-        }
         .chart-container {
             min-height: 280px;
             position: relative;
@@ -242,8 +224,11 @@
             <a class="nav-link" href="/market-intelligence">
                 <i class="fas fa-brain"></i> Market Intelligence
             </a>
-            <a class="nav-link" href="#" onclick="toggleChat()">
-                <i class="fas fa-comments"></i> Chat
+            <a class="nav-link" href="/messages">
+                <i class="fas fa-comments"></i> Messages
+            </a>
+            <a class="nav-link" href="/profile">
+                <i class="fas fa-user-circle"></i> Profile
             </a>
             <a class="nav-link" href="/logout">
                 <i class="fas fa-sign-out-alt"></i> Logout
@@ -499,45 +484,6 @@
                 </div>
             </div>
         </div>
-
-
-    <!-- Chat Toggle Button -->
-    <button class="chat-toggle" onclick="toggleChat()" title="Open Chat">
-        <i class="fas fa-comments"></i>
-    </button>
-
-    <!-- Chatbox -->
-    <div class="chatbox" id="chatbox">
-        <div class="chatbox-header">
-            <span><i class="fas fa-comments"></i> Chat</span>
-            <button class="btn btn-sm btn-outline-light" onclick="toggleChat()">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <div class="chatbox-body">
-            <div class="mb-3">
-                <label for="recipient-select" class="form-label text-white small">Select Recipient:</label>
-                <select class="form-select form-select-sm" id="recipient-select" onchange="loadMessages()">
-                    <option value="">Choose a user...</option>
-                </select>
-            </div>
-            <div class="chat-messages" id="chat-messages" style="height: 300px; overflow-y: auto;">
-                <!-- Messages will be loaded here -->
-                <div class="text-center text-muted small mt-3">
-                    <i class="fas fa-comments"></i><br>
-                    Select a recipient to start chatting
-                </div>
-            </div>
-        </div>
-        <div class="chatbox-footer">
-            <div class="input-group">
-                <input type="text" class="form-control" id="chat-input" placeholder="Type a message..." onkeypress="handleKeyPress(event)">
-                <button class="btn btn-primary" onclick="sendMessage()">
-                    <i class="fas fa-paper-plane"></i>
-                </button>
-            </div>
-        </div>
-    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

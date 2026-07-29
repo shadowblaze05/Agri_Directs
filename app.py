@@ -1568,8 +1568,6 @@ def api_stats():
     })
     
     
-
-
 @app.route("/api/users", methods=["GET"])
 def get_users():
     """Get list of all users for chat recipient selection"""
@@ -1625,7 +1623,7 @@ def bot_response():
 
 
 @app.route("/api/messages", methods=["GET"])
-def get_messages():
+def get_messagess():
     """Get chat messages for current conversation"""
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
@@ -1740,40 +1738,29 @@ def top_crop():
 
     conn = get_db()
     cur = conn.cursor()
+
+    # Get Top 5 crops
     cur.execute("""
-    SELECT crop_name,
-        SUM(quantity) as total
-    FROM inventory
-    GROUP BY crop_name
-    ORDER BY total DESC
-    LIMIT 1
+        SELECT crop_name,
+               SUM(quantity) AS total
+        FROM inventory
+        GROUP BY crop_name
+        ORDER BY total DESC
+        LIMIT 5
     """)
 
-    top_crop = cur.fetchone()
+    top_crops = cur.fetchall()
 
-    if top_crop:
-        crop_name = top_crop[0]
-        crop_volume = top_crop[1]
-    else:
-        crop_name = None
-        crop_volume = 0
+    top = top_crops[0] if top_crops else None
 
     conn.close()
-    return render_template("top_crop.html", top=top, top_crops=top_crops)
 
-@app.route("/crop-types")
-def crop_types():
-    if "user" not in session:
-        return redirect(url_for("login"))
-
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT crop_name, SUM(quantity) AS total FROM inventory GROUP BY crop_name ORDER BY crop_name")
-    crops = cur.fetchall()
-    crop_types_count = len(crops)
-    conn.close()
-    return render_template("crop_types.html", crops=crops, crop_types_count=crop_types_count)
-
+    return render_template(
+        "top_crop.html",
+        top=top,
+        top_crops=top_crops
+    )
+    
 @app.route("/locations")
 def locations():
     if "user" not in session:
@@ -1781,43 +1768,204 @@ def locations():
 
     conn = get_db()
     cur = conn.cursor()
-    # Group by location instead of farmer
+
+    # All locations
     cur.execute("""
-    SELECT location,
-        SUM(quantity) as total
-    FROM inventory
-    GROUP BY location
-    ORDER BY total DESC
-    LIMIT 1
+        SELECT location,
+               SUM(quantity) AS total
+        FROM inventory
+        WHERE location IS NOT NULL
+          AND location != ''
+        GROUP BY location
+        ORDER BY total DESC
     """)
 
-    top_location = cur.fetchone()
+    locations_data = cur.fetchall()
+    location_count = len(locations_data)
 
-    if top_location:
-        location_name = top_location[0]
-        location_volume = top_location[1]
-    else:
-        location_name = None
-        location_volume = 0
+    # User locations
+    cur.execute("""
+        SELECT username, location
+        FROM users
+        WHERE location IS NOT NULL
+          AND location != ''
+    """)
 
-    # Get user locations for map
-    cur.execute("SELECT username, location FROM users WHERE location IS NOT NULL AND location != ''")
     user_locations_raw = cur.fetchall()
 
-    # Geocode locations
     user_locations = []
+
     for user in user_locations_raw:
-        lat, lng = geocode_location(user['location'])
+        lat, lng = geocode_location(user["location"])
+
         user_locations.append({
-            'username': user['username'],
-            'location': user['location'],
-            'lat': lat,
-            'lng': lng
+            "username": user["username"],
+            "location": user["location"],
+            "lat": lat,
+            "lng": lng
         })
 
     conn.close()
-    return render_template("locations.html", locations=locations_data, location_count=location_count, user_locations=user_locations)
 
+    return render_template(
+        "locations.html",
+        locations=locations_data,
+        location_count=location_count,
+        user_locations=user_locations
+    )
+
+# ============= MESSAGING ROUTES =============
+
+@app.route("/messages")
+def messages_page():
+    """Display the main messaging page"""
+    if "user" not in session:
+        return redirect("/login")
+    
+    return render_template("messages.html")
+
+
+@app.route("/messages/conversations")
+def get_conversations():
+    """Get list of conversations for current user"""
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    username = session["user"]
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Get all unique people the user has messaged with (either sent or received)
+    cur.execute("""
+    SELECT DISTINCT
+        CASE
+            WHEN sender=? THEN recipient
+            ELSE sender
+        END AS person
+    FROM messages
+    WHERE sender=? OR recipient=?
+    ORDER BY 1
+    """, (username, username, username))
+    
+    people = cur.fetchall()
+    conversations = []
+    
+    for person_row in people:
+        person = person_row[0]
+        
+        # Get the last message between user and this person
+        cur.execute("""
+        SELECT message, timestamp
+        FROM messages
+        WHERE (sender=? AND recipient=?) OR (sender=? AND recipient=?)
+        ORDER BY timestamp DESC
+        LIMIT 1
+        """, (username, person, person, username))
+        
+        last_msg = cur.fetchone()
+        
+        conversations.append({
+            "person": person,
+            "last_message": last_msg[0] if last_msg else None,
+            "last_timestamp": last_msg[1] if last_msg else None
+        })
+    
+    conn.close()
+    return jsonify(conversations)
+
+
+@app.route("/messages/<person>")
+def get_messages(person):
+    """Get conversation history with a specific person"""
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    username = session["user"]
+    person = str(person).strip()
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Get all messages between user and this person
+    cur.execute("""
+    SELECT sender, message, timestamp
+    FROM messages
+    WHERE (sender=? AND recipient=?) OR (sender=? AND recipient=?)
+    ORDER BY timestamp ASC
+    """, (username, person, person, username))
+    
+    messages = cur.fetchall()
+    conn.close()
+    
+    # Convert to list of lists for JSON serialization
+    return jsonify([list(msg) for msg in messages])
+
+
+@app.route("/messages/send", methods=["POST"])
+def send_chat_message():
+    """Send a message to a recipient"""
+    if "user" not in session:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 401
+    
+    data = request.get_json()
+    sender = session["user"]
+    recipient = str(data.get("recipient", "")).strip()
+    message_text = str(data.get("message", "")).strip()
+    
+    if not recipient or not message_text:
+        return jsonify({"status": "error", "message": "Missing recipient or message"}), 400
+    
+    if recipient == sender:
+        return jsonify({"status": "error", "message": "Cannot message yourself"}), 400
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    try:
+        cur.execute("""
+        INSERT INTO messages(sender, recipient, message, timestamp)
+        VALUES(?, ?, ?, ?)
+        """, (sender, recipient, message_text, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+
+        if recipient.lower() == "agribot":
+
+            question = message_text.lower()
+
+            if not question:
+                reply = "Hello! I am AgriBot. Ask me about uploads, crops or page features."
+            elif "upload" in question or "harvest" in question:
+                reply = "To upload harvest data, use the Upload page and submit a valid CSV. Each crop entry will be stored with your user name."
+            elif "admin" in question or "manager" in question:
+                reply = "Admin users can access the Admin page to manage inventory and users. Only admins have full modify rights."
+            elif "hello" in question or "hi" in question:
+                reply = "Hello! I am AgriBot. How can I assist you today?"
+            elif "profile" in question:
+                reply = "You can view your profile from the top-right menu. It shows your user role and account details."
+            elif "about" in question:
+                reply = "Visit the About page to learn more about Agri-Direct and how it helps buyers, farmers, and administrators."
+            else:
+                reply = "AgriBot here! I can help you with uploads, dashboards, profiles, and account roles."
+
+            cur.execute("INSERT INTO messages(sender, recipient, message, timestamp) VALUES (?, ?, ?, ?)",
+                                ("AgriBot", session["user"], reply, datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")))
+        
+        conn.commit()
+        logger.info(f"Message sent from {sender} to {recipient}")
+        return jsonify({"status": "success"})
+    except Exception as e:
+        logger.error(f"Error sending message: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        conn.close()
+
+
+@app.route("/api/current-user")
+def api_current_user():
+    """Get current user info"""
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    return jsonify({"username": session["user"]})
 
 
 @app.route("/logout")
