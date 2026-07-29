@@ -400,6 +400,27 @@ def init_db():
     )
     """)
 
+    #NEW MARKETPLACE
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS marketplace(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        username TEXT,
+        crop_id INTEGER,
+        crop_name TEXT,
+        amount INTEGER,
+        price REAL,
+        unit TEXT DEFAULT 'kg',
+        status TEXT DEFAULT 'available',
+        listing_date TEXT,
+        expiry_date TEXT,
+        description TEXT,
+        location TEXT,
+        FOREIGN KEY (user_id) REFERENCES users(id),
+        FOREIGN KEY (crop_id) REFERENCES crops(id)
+    )
+    """)
+    
     cur.execute("""
     CREATE TABLE IF NOT EXISTS analytics(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1376,7 +1397,484 @@ def api_harvest():
         return jsonify({"error": str(e)}), 500
     
 
+# ============= MARKETPLACE ROUTES =============
 
+@app.route("/marketplace")
+def marketplace():
+    """View all marketplace listings"""
+    if "user" not in session:
+        return redirect("/login")
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Get all available listings with user info
+    cur.execute("""
+        SELECT m.*, u.username as seller_name, u.location as seller_location
+        FROM marketplace m
+        JOIN users u ON m.user_id = u.id
+        WHERE m.status = 'available'
+        ORDER BY m.listing_date DESC
+    """)
+    listings = cur.fetchall()
+    
+    # Get user's inventory for selling
+    cur.execute("""
+        SELECT crop_name, SUM(quantity) as total_quantity
+        FROM inventory
+        WHERE farmer = ?
+        GROUP BY crop_name
+        HAVING total_quantity > 0
+    """, (session["user"],))
+    user_inventory = cur.fetchall()
+    
+    # Get all crops for the add listing form
+    cur.execute("SELECT id, crops_name FROM crops ORDER BY crops_name")
+    crops = cur.fetchall()
+    
+    conn.close()
+    
+    return render_template("marketplace.html", 
+                         listings=listings, 
+                         user_inventory=user_inventory,
+                         crops=crops)
+
+@app.route("/marketplace/add", methods=["GET", "POST"])
+def add_marketplace_listing():
+    """Add a new listing to the marketplace"""
+    if "user" not in session:
+        return redirect("/login")
+    
+    if request.method == "POST":
+        crop_id = request.form.get("crop_id")
+        amount = request.form.get("amount")
+        price = request.form.get("price")
+        unit = request.form.get("unit", "kg")
+        description = request.form.get("description", "").strip()
+        expiry_days = request.form.get("expiry_days", 30)
+        
+        # Validate inputs
+        if not crop_id or not amount or not price:
+            flash("All fields are required")
+            return redirect(request.url)
+        
+        try:
+            amount = int(amount)
+            price = float(price)
+            expiry_days = int(expiry_days)
+        except ValueError:
+            flash("Invalid number format")
+            return redirect(request.url)
+        
+        if amount <= 0 or price <= 0:
+            flash("Amount and price must be positive")
+            return redirect(request.url)
+        
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # Get crop name
+        cur.execute("SELECT crops_name FROM crops WHERE id = ?", (crop_id,))
+        crop = cur.fetchone()
+        if not crop:
+            flash("Invalid crop selected")
+            conn.close()
+            return redirect(request.url)
+        
+        crop_name = crop["crops_name"]
+        
+        # Check if user has enough inventory
+        cur.execute("""
+            SELECT SUM(quantity) as total
+            FROM inventory
+            WHERE farmer = ? AND crop_name = ?
+        """, (session["user"], crop_name))
+        inventory = cur.fetchone()
+        
+        if not inventory or inventory["total"] < amount:
+            flash(f"You don't have enough {crop_name} in your inventory. Available: {inventory['total'] if inventory else 0}")
+            conn.close()
+            return redirect(request.url)
+        
+        # Get user ID
+        cur.execute("SELECT id, location FROM users WHERE username = ?", (session["user"],))
+        user = cur.fetchone()
+        
+        if not user:
+            flash("User not found")
+            conn.close()
+            return redirect(request.url)
+        
+        # Calculate expiry date
+        expiry_date = (datetime.now() + timedelta(days=expiry_days)).strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Insert listing
+        cur.execute("""
+            INSERT INTO marketplace(
+                user_id, username, crop_id, crop_name, amount, price,
+                unit, status, listing_date, expiry_date, description, location
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            user["id"],
+            session["user"],
+            crop_id,
+            crop_name,
+            amount,
+            price,
+            unit,
+            "available",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            expiry_date,
+            description,
+            user["location"]
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        flash(f"Listing for {crop_name} added successfully!")
+        return redirect("/marketplace")
+    
+    # GET request - show form
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Get ONLY the crops that the user has in their inventory (unique crop names)
+    cur.execute("""
+        SELECT DISTINCT crop_name
+        FROM inventory
+        WHERE farmer = ?
+        GROUP BY crop_name
+        HAVING SUM(quantity) > 0
+        ORDER BY crop_name
+    """, (session["user"],))
+    user_crops = cur.fetchall()
+    
+    # Get the crop IDs for these crop names
+    user_crops_with_ids = []
+    for crop in user_crops:
+        cur.execute("SELECT id FROM crops WHERE crops_name = ?", (crop["crop_name"],))
+        crop_id = cur.fetchone()
+        if crop_id:
+            # Get total quantity available
+            cur.execute("""
+                SELECT SUM(quantity) as total_quantity
+                FROM inventory
+                WHERE farmer = ? AND crop_name = ?
+            """, (session["user"], crop["crop_name"]))
+            total = cur.fetchone()
+            user_crops_with_ids.append({
+                "id": crop_id["id"],
+                "crops_name": crop["crop_name"],
+                "total_quantity": total["total_quantity"] if total else 0
+            })
+    
+    # Get user's inventory for display
+    cur.execute("""
+        SELECT crop_name, SUM(quantity) as total_quantity
+        FROM inventory
+        WHERE farmer = ?
+        GROUP BY crop_name
+        HAVING total_quantity > 0
+        ORDER BY crop_name
+    """, (session["user"],))
+    user_inventory = cur.fetchall()
+    
+    conn.close()
+    
+    # If user has no crops in inventory, show a message
+    if not user_crops_with_ids:
+        flash("You don't have any crops in your inventory. Please upload harvest data first.", "warning")
+    
+    return render_template("add_listing.html", 
+                         crops=user_crops_with_ids, 
+                         user_inventory=user_inventory)
+
+@app.route("/marketplace/buy/<int:listing_id>", methods=["POST"])
+def buy_marketplace_item(listing_id):
+    """Purchase an item from the marketplace"""
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    data = request.get_json() or {}
+    quantity = data.get("quantity", 1)
+    
+    try:
+        quantity = int(quantity)
+    except ValueError:
+        return jsonify({"error": "Invalid quantity"}), 400
+    
+    if quantity <= 0:
+        return jsonify({"error": "Quantity must be positive"}), 400
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Get current user's ID
+    cur.execute("SELECT id FROM users WHERE username = ?", (session["user"],))
+    current_user = cur.fetchone()
+    if not current_user:
+        conn.close()
+        return jsonify({"error": "User not found"}), 404
+    
+    current_user_id = current_user["id"]
+    
+    # Get the listing
+    cur.execute("""
+        SELECT m.*, u.username as seller_name
+        FROM marketplace m
+        JOIN users u ON m.user_id = u.id
+        WHERE m.id = ? AND m.status = 'available'
+    """, (listing_id,))
+    listing = cur.fetchone()
+    
+    if not listing:
+        conn.close()
+        return jsonify({"error": "Listing not found or no longer available"}), 404
+    
+    if listing["user_id"] == current_user_id:
+        conn.close()
+        return jsonify({"error": "You cannot buy your own listing"}), 400
+    
+    if quantity > listing["amount"]:
+        conn.close()
+        return jsonify({"error": f"Only {listing['amount']} units available"}), 400
+    
+    # Calculate total price
+    total_price = quantity * listing["price"]
+    
+    # Update the listing
+    if quantity == listing["amount"]:
+        cur.execute("UPDATE marketplace SET status = 'sold' WHERE id = ?", (listing_id,))
+    else:
+        cur.execute("""
+            UPDATE marketplace 
+            SET amount = amount - ? 
+            WHERE id = ?
+        """, (quantity, listing_id))
+    
+    # Add to buyer's inventory
+    cur.execute("""
+        INSERT INTO inventory(crop_name, quantity, farmer, date_received, location)
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        listing["crop_name"],
+        quantity,
+        session["user"],
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        listing["location"]
+    ))
+    
+    # Remove from seller's inventory
+    cur.execute("""
+        SELECT id, quantity FROM inventory 
+        WHERE farmer = ? AND crop_name = ? 
+        ORDER BY date_received ASC
+    """, (listing["username"], listing["crop_name"]))
+    seller_inventory = cur.fetchall()
+    
+    remaining = quantity
+    for item in seller_inventory:
+        if remaining <= 0:
+            break
+        if item["quantity"] <= remaining:
+            cur.execute("DELETE FROM inventory WHERE id = ?", (item["id"],))
+            remaining -= item["quantity"]
+        else:
+            cur.execute("UPDATE inventory SET quantity = ? WHERE id = ?", 
+                       (item["quantity"] - remaining, item["id"]))
+            remaining = 0
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        "status": "success",
+        "message": f"Purchased {quantity} {listing['crop_name']} for ₱{total_price:.2f}"
+    })
+
+@app.route("/marketplace/my-listings")
+def my_marketplace_listings():
+    """View user's own marketplace listings"""
+    if "user" not in session:
+        return redirect("/login")
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    cur.execute("""
+        SELECT m.*
+        FROM marketplace m
+        WHERE m.username = ?
+        ORDER BY m.listing_date DESC
+    """, (session["user"],))
+    listings = cur.fetchall()
+    
+    conn.close()
+    
+    return render_template("my_listings.html", listings=listings)
+
+@app.route("/marketplace/delete/<int:listing_id>", methods=["POST"])
+def delete_marketplace_listing(listing_id):
+    """Delete a marketplace listing"""
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    cur.execute("SELECT * FROM marketplace WHERE id = ? AND username = ?", 
+                (listing_id, session["user"]))
+    listing = cur.fetchone()
+    
+    if not listing:
+        conn.close()
+        return jsonify({"error": "Listing not found or you don't have permission"}), 404
+    
+    cur.execute("DELETE FROM marketplace WHERE id = ?", (listing_id,))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({"status": "success", "message": "Listing deleted"})
+
+@app.route("/marketplace/trade/<int:listing_id>", methods=["GET", "POST"])
+def trade_marketplace_item(listing_id):
+    """Trade an item from the marketplace"""
+    if "user" not in session:
+        return redirect("/login")
+    
+    conn = get_db()
+    cur = conn.cursor()
+    
+    # Get current user's ID
+    cur.execute("SELECT id FROM users WHERE username = ?", (session["user"],))
+    current_user = cur.fetchone()
+    if not current_user:
+        flash("User not found")
+        conn.close()
+        return redirect("/marketplace")
+    
+    current_user_id = current_user["id"]
+    
+    # Get the listing
+    cur.execute("""
+        SELECT m.*, u.username as seller_name
+        FROM marketplace m
+        JOIN users u ON m.user_id = u.id
+        WHERE m.id = ? AND m.status = 'available'
+    """, (listing_id,))
+    listing = cur.fetchone()
+    
+    if not listing:
+        flash("Listing not found or no longer available")
+        conn.close()
+        return redirect("/marketplace")
+    
+    if listing["user_id"] == current_user_id:
+        flash("You cannot trade with yourself")
+        conn.close()
+        return redirect("/marketplace")
+    
+    if request.method == "POST":
+        trade_crop = request.form.get("trade_crop")
+        trade_amount = request.form.get("trade_amount")
+        
+        if not trade_crop or not trade_amount:
+            flash("Please select a crop and enter amount")
+            conn.close()
+            return redirect(request.url)
+        
+        try:
+            trade_amount = int(trade_amount)
+        except ValueError:
+            flash("Invalid trade amount")
+            conn.close()
+            return redirect(request.url)
+        
+        if trade_amount <= 0:
+            flash("Trade amount must be positive")
+            conn.close()
+            return redirect(request.url)
+        
+        # Check if user has the crop to trade
+        cur.execute("""
+            SELECT SUM(quantity) as total
+            FROM inventory
+            WHERE farmer = ? AND crop_name = ?
+        """, (session["user"], trade_crop))
+        inventory = cur.fetchone()
+        
+        if not inventory or inventory["total"] < trade_amount:
+            flash(f"You don't have enough {trade_crop} to trade. Available: {inventory['total'] if inventory else 0}")
+            conn.close()
+            return redirect(request.url)
+        
+        # Process trade - Remove from buyer's inventory
+        cur.execute("""
+            SELECT id, quantity FROM inventory
+            WHERE farmer = ? AND crop_name = ?
+            ORDER BY date_received ASC
+        """, (session["user"], trade_crop))
+        buyer_items = cur.fetchall()
+        
+        remaining = trade_amount
+        for item in buyer_items:
+            if remaining <= 0:
+                break
+            if item["quantity"] <= remaining:
+                cur.execute("DELETE FROM inventory WHERE id = ?", (item["id"],))
+                remaining -= item["quantity"]
+            else:
+                cur.execute("UPDATE inventory SET quantity = ? WHERE id = ?", 
+                           (item["quantity"] - remaining, item["id"]))
+                remaining = 0
+        
+        # Add traded crop to seller's inventory
+        cur.execute("""
+            INSERT INTO inventory(crop_name, quantity, farmer, date_received, location)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            trade_crop,
+            trade_amount,
+            listing["username"],
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            listing["location"]
+        ))
+        
+        # Add seller's crop to buyer's inventory
+        cur.execute("""
+            INSERT INTO inventory(crop_name, quantity, farmer, date_received, location)
+            VALUES (?, ?, ?, ?, ?)
+        """, (
+            listing["crop_name"],
+            listing["amount"],
+            session["user"],
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            session.get("location", "")
+        ))
+        
+        # Update listing status
+        cur.execute("UPDATE marketplace SET status = 'traded' WHERE id = ?", (listing_id,))
+        
+        conn.commit()
+        conn.close()
+        
+        flash(f"Trade successful! You received {listing['amount']} {listing['crop_name']} and gave {trade_amount} {trade_crop}")
+        return redirect("/marketplace")
+    
+    # GET request - show trade form
+    cur.execute("""
+        SELECT crop_name, SUM(quantity) as total_quantity
+        FROM inventory
+        WHERE farmer = ?
+        GROUP BY crop_name
+        HAVING total_quantity > 0
+    """, (session["user"],))
+    user_inventory = cur.fetchall()
+    
+    conn.close()
+    
+    return render_template("trade_listing.html", listing=listing, user_inventory=user_inventory)
 
 # ============= REAL-TIME DATA ENDPOINTS =============
 
@@ -1429,6 +1927,28 @@ def api_forecast():
     analysis = build_market_analysis(records)
     return jsonify({"forecast": analysis.get("forecast", [])})
 
+
+#NEW MARKETPLACE API
+@app.route("/api/listing/<int:listing_id>")
+def get_listing_api(listing_id):
+    """Get listing details for the trade modal"""
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM marketplace WHERE id = ?", (listing_id,))
+    listing = cur.fetchone()
+    conn.close()
+    
+    if not listing:
+        return jsonify({"error": "Listing not found"}), 404
+    
+    return jsonify({
+        "crop_name": listing["crop_name"],
+        "amount": listing["amount"],
+        "unit": listing["unit"]
+    })
 
 @app.route("/api/stats")
 def api_stats():
