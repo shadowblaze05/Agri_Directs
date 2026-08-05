@@ -1,0 +1,72 @@
+{% extends "market_intelligence_layout.html" %}
+
+{% block content %}
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card chart-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h5 class="mb-1">Weighted scoring model</h5>
+                    <p class="text-muted mb-0">An example of how demand, price, and seasonal fit can inform recommendations.</p>
+                </div>
+                <span class="soft-chip">Scored outlook</span>
+            </div>
+            <div style="height: 280px; position: relative;">
+                <canvas id="recommendationChart" style="width: 100%; height: 100%;"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card chart-card h-100">
+            <h5 class="mb-3">Top recommended crops</h5>
+            <div class="list-group list-group-flush">
+                {% for item in recommendation_items %}
+                <div class="list-group-item px-0">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="fw-semibold">{{ item.crop }}</div>
+                            <div class="metric-label">{{ item.reason }}</div>
+                        </div>
+                        <span class="soft-chip">{{ item.score }}/100</span>
+                    </div>
+                    <div class="d-flex justify-content-between mt-2 small text-muted">
+                        <span>{{ item.demand }}</span>
+                        <span>{{ item.seasonal }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const recommendationCtx = document.getElementById('recommendationChart');
+    if (recommendationCtx) {
+        new Chart(recommendationCtx, {
+            type: 'bar',
+            data: {
+                labels: {{ recommendation_labels|tojson }},
+                datasets: [{
+                    label: 'Weighted score',
+                    data: {{ recommendation_scores|tojson }},
+                    backgroundColor: ['#2d6a4f', '#40916c', '#52b788', '#74c69d', '#95d5b2'],
+                    borderRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, max: 100, ticks: { color: '#64748b' }, grid: { color: 'rgba(100, 116, 139, 0.15)' } },
+                    x: { ticks: { color: '#64748b' }, grid: { display: false } }
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Purchases - Agri-Direct</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body><main class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4"><div><h1 class="h2"><i class="fas fa-shopping-bag"></i> My Purchases</h1><p class="text-muted mb-0">Rate farmers after your order is confirmed.</p></div><a class="btn btn-outline-success" href="{{ url_for('marketplace') }}">Marketplace</a></div>
+    {% with messages = get_flashed_messages() %}{% if messages %}{% for message in messages %}<div class="alert alert-info">{{ message }}</div>{% endfor %}{% endif %}{% endwith %}
+    {% for order in purchases %}<article class="card shadow-sm mb-3"><div class="card-body"><div class="row align-items-center"><div class="col-md-6"><h2 class="h5 mb-1">{{ order['crop_name'] }}</h2><p class="mb-1">Seller: <strong>{{ order['seller_name'] }}</strong></p><small class="text-muted">Order date: {{ (order['delivery_date'] or order['order_date'])[:16] if (order['delivery_date'] or order['order_date']) else 'N/A' }}</small></div><div class="col-md-6 text-md-end mt-3 mt-md-0">{% if order['buyer_rating'] %}<span class="text-warning">{% for _ in range(order['buyer_rating']) %}<i class="fas fa-star"></i>{% endfor %}</span><span class="ms-1 text-muted">Your rating</span>{% else %}<form method="POST" action="{{ url_for('rate_marketplace_seller', listing_id=order['id']) }}"><span class="me-2">Rate this farmer:</span>{% for value in range(1, 6) %}<button class="btn btn-outline-warning btn-sm" type="submit" name="rating" value="{{ value }}" title="{{ value }} star{{ '' if value == 1 else 's' }}">{{ value }} <i class="fas fa-star"></i></button>{% endfor %}</form>{% endif %}</div></div></div></article>{% else %}<div class="alert alert-light border">You have no orders available for rating yet.</div>{% endfor %}
+</main></body></html>

@@ -230,6 +230,9 @@
             <a class="nav-link" href="/messages">
                 <i class="fas fa-comments"></i> Messages
             </a>
+            <a class="nav-link" href="/knowledge">
+                <i class="fas fa-book-open"></i> Digital Knowledge Hub
+            </a>
             <a class="nav-link" href="/profile">
                 <i class="fas fa-user-circle"></i> Profile
             </a>
@@ -245,27 +248,42 @@
             <span class="navbar-brand mb-0 h1 ms-5">
                 <i class="fas fa-leaf"></i> Agri-Direct 
             </span>
-            <div class="dropdown">
-                <button class="btn btn-outline-light dropdown-toggle" type="button" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                    <i class="fas fa-user-circle"></i> {{ session.get('user', 'User') }}
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
-                    <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge"></i> Profile</a></li>
-                    <li><a class="dropdown-item" href="/about"><i class="fas fa-info-circle"></i> About</a></li>
-                    {% if session.get('role') == 'admin' %}
-                    <li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt"></i> Admin Console</a></li>
-                    {% endif %}
-                    <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
-                </ul>
 
+            <div class="d-flex ms-auto align-items-center">
+                <div class="dropdown me-2">
+                    <button class="btn btn-outline-light position-relative"
+                            id="notificationDropdown"
+                            data-bs-toggle="dropdown">
+                        <i class="fas fa-bell"></i>
+                        <span id="notification-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">0</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" style="width:350px;" id="notification-list">
+                        <li class="dropdown-header">Notifications</li>
+                        <li><span class="dropdown-item text-muted">No notifications</span></li>
+                    </ul>
+                </div>
+
+                <div class="dropdown">
+                    <button class="btn btn-outline-light dropdown-toggle" type="button" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-user-circle"></i> {{ session.get('user', 'User') }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
+                        <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge"></i> Profile</a></li>
+                        <li><a class="dropdown-item" href="/about"><i class="fas fa-info-circle"></i> About</a></li>
+                        {% if session.get('role') == 'admin' %}
+                        <li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt"></i> Admin Console</a></li>
+                        {% endif %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                    </ul>
+                </div>
             </div>
         </div>
     </nav>
 
     <!-- Main Content -->
     <div class="main-content">
-        <div class="container-fluid py-4">
+        <div class="container-fluid py-4">  
             <!-- Dashboard Header -->
             <div class="dashboard-header">
                 <div class="row align-items-center">
@@ -926,6 +944,58 @@
                 loadMessages();
             }
         }, 3000);
+
+
+        async function loadNotifications(){
+
+            const response = await fetch("/notifications");
+        
+            const notifications = await response.json();
+        
+            const list = document.getElementById("notification-list");
+        
+            const badge = document.getElementById("notification-count");
+        
+            badge.innerText = notifications.filter(n=>!n.is_read).length;
+        
+            list.innerHTML = `
+                <li class="dropdown-header">Notifications</li>
+            `;
+        
+            notifications.forEach(n=>{
+        
+                list.innerHTML += `
+                <li>
+        
+                    <a class="dropdown-item">
+        
+                        <strong>${n.title}</strong><br>
+        
+                        <small>${n.message}</small>
+        
+                    </a>
+        
+                </li>
+                `;
+        
+            });
+        
+        }
+        
+        async function markNotificationsRead(){
+            try{
+                await fetch('/notifications/mark-read', { method: 'POST' });
+            }catch(e){ console.error('Failed to mark notifications read', e); }
+            await loadNotifications();
+        }
+
+        document.addEventListener('DOMContentLoaded', ()=>{
+            // initial load and periodic refresh
+            loadNotifications();
+            setInterval(loadNotifications, 5000);
+            const btn = document.getElementById('notificationDropdown');
+            if(btn){ btn.addEventListener('click', markNotificationsRead); }
+        });
     </script>
 </body>
 </html>

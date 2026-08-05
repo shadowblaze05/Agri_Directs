@@ -17,6 +17,7 @@
             </div>
             <div>
                 <a href="/dashboard" class="btn btn-success me-2"><i class="fas fa-chart-line"></i> Dashboard</a>
+                <a href="/admin/knowledge" class="btn btn-info me-2"><i class="fas fa-book-open"></i> Knowledge Hub</a>
                 <a href="/logout" class="btn btn-danger"><i class="fas fa-sign-out-alt"></i> Logout</a>
             </div>
         </div>
@@ -77,6 +78,10 @@
                             <tr>
                                 <th>Username</th>
                                 <th>Role</th>
+                                <th>Total Orders</th>
+                                <th>Completed</th>
+                                <th>Cancelled</th>
+                                <th>Reliability</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -84,6 +89,10 @@
                             <tr>
                                 <td>{{ user['username'] }}</td>
                                 <td class="text-capitalize">{{ user['role'] }}</td>
+                                <td>{{ user['total_transactions'] or 0 }}</td>
+                                <td>{{ user['completed_transactions'] or 0 }}</td>
+                                <td>{{ user['cancelled_transactions'] or 0 }}</td>
+                                <td>{% if user['reliability_status'] == 'High Reliability' %}<span class="badge bg-success">High Reliability</span>{% elif user['reliability_status'] == 'Medium Reliability' %}<span class="badge bg-warning text-dark">Medium Reliability</span>{% elif user['reliability_status'] == 'Low Reliability' %}<span class="badge bg-danger">Low Reliability</span>{% else %}<span class="badge bg-secondary">Not Yet Rated</span>{% endif %}</td>
                             </tr>
                             {% endfor %}
                         </tbody>

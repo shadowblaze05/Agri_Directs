@@ -1,0 +1,80 @@
+{% extends "market_intelligence_layout.html" %}
+
+{% block content %}
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card chart-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h5 class="mb-1">Demand forecasting view</h5>
+                    <p class="text-muted mb-0">A simple projection using historical movement as a guide.</p>
+                </div>
+                <span class="soft-chip">Forecast prototype</span>
+            </div>
+            <div style="height: 280px; position: relative;">
+                <canvas id="forecastChart" style="width: 100%; height: 100%;"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card chart-card h-100">
+            <h5 class="mb-3">Forecast highlights</h5>
+            <div class="list-group list-group-flush">
+                {% for item in forecast_items %}
+                <div class="list-group-item px-0">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="fw-semibold">{{ item.crop }}</div>
+                            <div class="metric-label">{{ item.note }}</div>
+                        </div>
+                        <span class="soft-chip">{{ item.confidence }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mt-2 small text-muted">
+                        <span>Historical: {{ item.historical }}</span>
+                        <span>Projected: {{ item.projected }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const forecastCtx = document.getElementById('forecastChart');
+    if (forecastCtx) {
+        new Chart(forecastCtx, {
+            type: 'line',
+            data: {
+                labels: {{ forecast_labels|tojson }},
+                datasets: [{
+                    label: 'Historical demand',
+                    data: {{ historical_series|tojson }},
+                    borderColor: '#2d6a4f',
+                    tension: 0.3,
+                    pointRadius: 4
+                }, {
+                    label: 'Projected demand',
+                    data: {{ projected_series|tojson }},
+                    borderColor: '#74c69d',
+                    borderDash: [6, 6],
+                    tension: 0.3,
+                    pointRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    y: { beginAtZero: true, ticks: { color: '#64748b' }, grid: { color: 'rgba(100, 116, 139, 0.15)' } },
+                    x: { ticks: { color: '#64748b' }, grid: { display: false } }
+                },
+                plugins: { legend: { labels: { color: '#64748b' } } }
+            }
+        });
+    }
+</script>
+{% endblock %}

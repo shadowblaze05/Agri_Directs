@@ -153,6 +153,11 @@
                                 {% if listing['location'] %}
                                 <br><i class="fas fa-map-marker-alt"></i> {{ listing['location'] }}
                                 {% endif %}
+                                <br><i class="fas fa-star text-warning"></i> Reliability:
+                                {% if listing['reliability_score'] is not none %}
+                                    <strong>{{ '%.1f'|format(listing['reliability_score']) }}/5</strong> •
+                                {% endif %}
+                                {% if listing['reliability_status'] == 'High Reliability' %}<span class="badge bg-success">High Reliability</span>{% elif listing['reliability_status'] == 'Medium Reliability' %}<span class="badge bg-warning text-dark">Medium Reliability</span>{% elif listing['reliability_status'] == 'Low Reliability' %}<span class="badge bg-danger">Low Reliability</span>{% else %}<span class="badge bg-secondary">Not Yet Rated</span>{% endif %}
                             </p>
                         </div>
                         

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Hub Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container py-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2>Knowledge Hub Admin</h2>
+                <p class="text-muted">Manage articles, drafts, and publishing status.</p>
+            </div>
+            <div>
+                <a href="/admin/knowledge/create" class="btn btn-success">+ New Article</a>
+                <a href="/admin" class="btn btn-outline-secondary ms-2">Back to Admin</a>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h6 class="text-muted">Total Posts</h6>
+                        <h3>{{ total_posts }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h6 class="text-muted">Published</h6>
+                        <h3>{{ published_posts }}</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h6 class="text-muted">Draft</h6>
+                        <h3>{{ draft_posts }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Title</th>
+                            <th>Category</th>
+                            <th>Status</th>
+                            <th>Author</th>
+                            <th>Views</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for post in posts %}
+                        <tr>
+                            <td>{{ post['title'] }}</td>
+                            <td>{{ post['category_name'] or '-' }}</td>
+                            <td><span class="badge bg-{{ 'success' if post['status'] == 'Published' else 'warning' }}">{{ post['status'] }}</span></td>
+                            <td>{{ post['author'] or '-' }}</td>
+                            <td>{{ post['views'] }}</td>
+                            <td>{{ post['created_at'][:19] }}</td>
+                            <td>
+                                <a href="/knowledge/{{ post['post_id'] }}" class="btn btn-sm btn-outline-primary">View</a>
+                                <a href="/admin/knowledge/edit/{{ post['post_id'] }}" class="btn btn-sm btn-outline-secondary">Edit</a>
+                                <form method="post" action="/admin/knowledge/delete/{{ post['post_id'] }}" class="d-inline">
+                                    <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

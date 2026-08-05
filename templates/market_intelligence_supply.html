@@ -1,0 +1,72 @@
+{% extends "market_intelligence_layout.html" %}
+
+{% block content %}
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card chart-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h5 class="mb-1">Supply balance snapshot</h5>
+                    <p class="text-muted mb-0">A visual cue for identifying oversupply and undersupply conditions.</p>
+                </div>
+                <span class="soft-chip">Threshold view</span>
+            </div>
+            <div style="height: 280px; position: relative;">
+                <canvas id="supplyChart" style="width: 100%; height: 100%;"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card chart-card h-100">
+            <h5 class="mb-3">Supply alerts</h5>
+            <div class="list-group list-group-flush">
+                {% for item in supply_items %}
+                <div class="list-group-item px-0">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <div class="fw-semibold">{{ item.crop }}</div>
+                            <div class="metric-label">{{ item.note }}</div>
+                        </div>
+                        <span class="soft-chip">{{ item.status }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mt-2 small text-muted">
+                        <span>Band: {{ item.band }}</span>
+                        <span>Shift: {{ item.shift }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const supplyCtx = document.getElementById('supplyChart');
+    if (supplyCtx) {
+        new Chart(supplyCtx, {
+            type: 'bar',
+            data: {
+                labels: {{ supply_labels|tojson }},
+                datasets: [{
+                    label: 'Stock balance',
+                    data: {{ supply_series|tojson }},
+                    backgroundColor: ['#2d6a4f', '#40916c', '#74c69d', '#95d5b2'],
+                    borderRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { color: '#64748b' }, grid: { color: 'rgba(100, 116, 139, 0.15)' } },
+                    x: { ticks: { color: '#64748b' }, grid: { display: false } }
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Article</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container py-4">
+        <h2>Edit Article</h2>
+        <form method="post" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label class="form-label">Title</label>
+                <input type="text" class="form-control" name="title" value="{{ post['title'] }}" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Category</label>
+                <select class="form-select" name="category_id">
+                    {% for category in categories %}
+                    <option value="{{ category['category_id'] }}" {% if post['category_id'] == category['category_id'] %}selected{% endif %}>{{ category['category_name'] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Description</label>
+                <textarea class="form-control" name="content" rows="8" required>{{ post['content'] }}</textarea>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Image Upload</label>
+                <input type="file" class="form-control" name="image" accept="image/*">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Video Upload</label>
+                <input type="file" class="form-control" name="video" accept="video/*">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Status</label>
+                <select class="form-select" name="status">
+                    <option value="Published" {% if post['status'] == 'Published' %}selected{% endif %}>Publish</option>
+                    <option value="Draft" {% if post['status'] == 'Draft' %}selected{% endif %}>Save Draft</option>
+                </select>
+            </div>
+            <button class="btn btn-success" type="submit">Save Changes</button>
+            <a href="/admin/knowledge" class="btn btn-outline-secondary">Cancel</a>
+        </form>
+    </div>
+</body>
+</html>

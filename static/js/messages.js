@@ -2,6 +2,7 @@
 let currentConversation = null;
 let allConversations = [];
 let messageRefreshInterval = null;
+let searchTimeout = null;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
@@ -31,7 +32,10 @@ function setupEventListeners() {
     }
 
     if (searchInput) {
-        searchInput.addEventListener('input', filterConversations);
+        searchInput.addEventListener('input', () => {
+            if (searchTimeout) clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => filterConversations(), 250);
+        });
     }
 }
 
@@ -205,16 +209,33 @@ function setupMessageRefresh(person) {
 }
 
 // Filter conversations by search
-function filterConversations() {
+async function filterConversations() {
     const searchInput = document.getElementById('conversation-search');
-    const searchTerm = searchInput.value.toLowerCase();
+    const searchTerm = searchInput.value.trim().toLowerCase();
 
-    const filtered = allConversations.filter(conv =>
-        conv.person.toLowerCase().includes(searchTerm) ||
-        (conv.last_message && conv.last_message.toLowerCase().includes(searchTerm))
-    );
+    if (!searchTerm) {
+        renderConversationList(allConversations);
+        return;
+    }
 
-    renderConversationList(filtered);
+    // Query backend for matching users
+    try {
+        const resp = await fetch(`/users/search?q=${encodeURIComponent(searchTerm)}`);
+        if (!resp.ok) throw new Error('Search failed');
+        const users = await resp.json(); // array of usernames
+
+        // Build display list: prefer existing conversations (with last_message), otherwise show 'No messages'
+        const results = users.map(u => {
+            const found = allConversations.find(c => (c.person || '') === u);
+            if (found) return found;
+            return { person: u, last_message: null, last_timestamp: null };
+        });
+
+        renderConversationList(results);
+    } catch (e) {
+        console.error('User search error', e);
+        renderConversationList([]);
+    }
 }
 
 // Format time for conversation list

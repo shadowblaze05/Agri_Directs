@@ -316,6 +316,21 @@ def get_db():
     return conn
 
 
+def _save_upload_file(uploaded_file, subfolder):
+    if not uploaded_file or uploaded_file.filename == "":
+        return None
+
+    upload_dir = os.path.join(BASE_DIR, "static", "uploads", "knowledge", subfolder)
+    os.makedirs(upload_dir, exist_ok=True)
+    filename = secure_filename(uploaded_file.filename)
+    if not filename:
+        return None
+
+    file_path = os.path.join(upload_dir, filename)
+    uploaded_file.save(file_path)
+    return f"/static/uploads/knowledge/{subfolder}/{filename}"
+
+
 def _seed_default_crops(cur):
     cur.execute("""
     CREATE TABLE IF NOT EXISTS crops(
@@ -385,7 +400,12 @@ def init_db():
         username TEXT UNIQUE,
         password TEXT,
         role TEXT DEFAULT 'user',
-        location TEXT
+        location TEXT,
+        reliability_score REAL DEFAULT NULL,
+        reliability_status TEXT DEFAULT 'Not Yet Rated',
+        completed_transactions INTEGER DEFAULT 0,
+        cancelled_transactions INTEGER DEFAULT 0,
+        total_transactions INTEGER DEFAULT 0
     )
     """)
 
@@ -406,20 +426,55 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER,
         username TEXT,
+        buyer_username TEXT,
         crop_id INTEGER,
         crop_name TEXT,
         amount INTEGER,
         price REAL,
         unit TEXT DEFAULT 'kg',
         status TEXT DEFAULT 'available',
+        order_status TEXT DEFAULT 'available',
         listing_date TEXT,
+        order_date TEXT,
+        delivery_date TEXT,
         expiry_date TEXT,
         description TEXT,
         location TEXT,
+        delivery_confirmed INTEGER DEFAULT 0,
         FOREIGN KEY (user_id) REFERENCES users(id),
         FOREIGN KEY (crop_id) REFERENCES crops(id)
     )
     """)
+    
+    cur.execute("PRAGMA table_info(marketplace)")
+    marketplace_columns = [row[1] for row in cur.fetchall()]
+    if 'buyer_username' not in marketplace_columns:
+        cur.execute("ALTER TABLE marketplace ADD COLUMN buyer_username TEXT")
+    if 'order_status' not in marketplace_columns:
+        cur.execute("ALTER TABLE marketplace ADD COLUMN order_status TEXT DEFAULT 'available'")
+    if 'order_date' not in marketplace_columns:
+        cur.execute("ALTER TABLE marketplace ADD COLUMN order_date TEXT")
+    if 'delivery_date' not in marketplace_columns:
+        cur.execute("ALTER TABLE marketplace ADD COLUMN delivery_date TEXT")
+    if 'delivery_confirmed' not in marketplace_columns:
+        cur.execute("ALTER TABLE marketplace ADD COLUMN delivery_confirmed INTEGER DEFAULT 0")
+    if 'buyer_rating' not in marketplace_columns:
+        cur.execute("ALTER TABLE marketplace ADD COLUMN buyer_rating INTEGER DEFAULT NULL")
+    if 'buyer_rating_date' not in marketplace_columns:
+        cur.execute("ALTER TABLE marketplace ADD COLUMN buyer_rating_date TEXT")
+
+    cur.execute("PRAGMA table_info(users)")
+    users_columns = [row[1] for row in cur.fetchall()]
+    if 'reliability_score' not in users_columns:
+        cur.execute("ALTER TABLE users ADD COLUMN reliability_score REAL DEFAULT NULL")
+    if 'reliability_status' not in users_columns:
+        cur.execute("ALTER TABLE users ADD COLUMN reliability_status TEXT DEFAULT 'Not Yet Rated'")
+    if 'completed_transactions' not in users_columns:
+        cur.execute("ALTER TABLE users ADD COLUMN completed_transactions INTEGER DEFAULT 0")
+    if 'cancelled_transactions' not in users_columns:
+        cur.execute("ALTER TABLE users ADD COLUMN cancelled_transactions INTEGER DEFAULT 0")
+    if 'total_transactions' not in users_columns:
+        cur.execute("ALTER TABLE users ADD COLUMN total_transactions INTEGER DEFAULT 0")
     
     cur.execute("""
     CREATE TABLE IF NOT EXISTS analytics(
@@ -458,6 +513,84 @@ def init_db():
     )
     """)
     
+    # Create notifications table (used by the notifications endpoint)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS notifications(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT,
+        title TEXT,
+        message TEXT,
+        type TEXT,
+        created_at TEXT,
+        is_read INTEGER DEFAULT 0
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS knowledge_categories(
+        category_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category_name TEXT NOT NULL UNIQUE
+    )
+    """)
+    cur.execute("SELECT COUNT(*) AS count FROM knowledge_categories")
+    if cur.fetchone()["count"] == 0:
+        default_categories = [
+            "Agricultural News",
+            "Market Updates",
+            "Crop Guides",
+            "Farming Tips",
+            "Weather Advisory",
+            "Government Programs",
+            "Pest & Disease Alerts",
+            "Technology",
+            "Training Videos",
+        ]
+        for category_name in default_categories:
+            cur.execute("INSERT OR IGNORE INTO knowledge_categories(category_name) VALUES (?)", (category_name,))
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS knowledge_posts(
+        post_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        category_id INTEGER,
+        author TEXT,
+        image TEXT,
+        video TEXT,
+        status TEXT DEFAULT 'Published',
+        views INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME,
+        FOREIGN KEY(category_id) REFERENCES knowledge_categories(category_id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS knowledge_likes(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_id INTEGER,
+        username TEXT,
+        UNIQUE(post_id, username)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS knowledge_comments(
+        comment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_id INTEGER,
+        username TEXT,
+        comment TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS knowledge_replies(
+        reply_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        comment_id INTEGER,
+        username TEXT,
+        reply TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    
     # Migration: Add recipient column if it doesn't exist (for existing databases)
     try:
         cur.execute("SELECT recipient FROM messages LIMIT 1")
@@ -474,6 +607,10 @@ def init_db():
     if 'location' not in inv_columns:
         logger.info("Migrating inventory table to add location column")
         cur.execute("ALTER TABLE inventory ADD COLUMN location TEXT")
+    if 'source' not in inv_columns:
+        logger.info("Migrating inventory table to add source column")
+        cur.execute("ALTER TABLE inventory ADD COLUMN source TEXT DEFAULT 'harvest'")
+        cur.execute("UPDATE inventory SET source = 'harvest' WHERE source IS NULL")
 
     # Insert default user if not exists
     cur.execute("SELECT * FROM users WHERE username=?", ("admin",))
@@ -484,6 +621,7 @@ def init_db():
     update_analytics()
 
     conn.commit()
+
     conn.close()
 
 def update_analytics():
@@ -967,6 +1105,296 @@ def inventory_delete_crop():
     return jsonify({"status": "success", "message": "Crop inventory deleted"})
 
 
+@app.route("/admin/knowledge")
+def admin_knowledge():
+    if "user" not in session:
+        return redirect("/login")
+    if session.get("role") != "admin":
+        flash("Admin access required")
+        return redirect("/dashboard")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT kp.post_id, kp.title, kp.status, kp.created_at, kp.views, kc.category_name, kp.author
+        FROM knowledge_posts kp
+        LEFT JOIN knowledge_categories kc ON kp.category_id = kc.category_id
+        ORDER BY kp.created_at DESC
+    """)
+    posts = cur.fetchall()
+    cur.execute("SELECT category_id, category_name FROM knowledge_categories ORDER BY category_name")
+    categories = cur.fetchall()
+    cur.execute("SELECT COUNT(*) AS total_posts FROM knowledge_posts")
+    total_posts = cur.fetchone()["total_posts"]
+    cur.execute("SELECT COUNT(*) AS published_posts FROM knowledge_posts WHERE status = 'Published'")
+    published_posts = cur.fetchone()["published_posts"]
+    cur.execute("SELECT COUNT(*) AS draft_posts FROM knowledge_posts WHERE status = 'Draft'")
+    draft_posts = cur.fetchone()["draft_posts"]
+    conn.close()
+    return render_template(
+        "admin_knowledge.html",
+        posts=posts,
+        categories=categories,
+        total_posts=total_posts,
+        published_posts=published_posts,
+        draft_posts=draft_posts,
+    )
+
+
+@app.route("/admin/knowledge/create", methods=["GET", "POST"])
+def create_knowledge_post():
+    if "user" not in session:
+        return redirect("/login")
+    if session.get("role") != "admin":
+        flash("Admin access required")
+        return redirect("/dashboard")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT category_id, category_name FROM knowledge_categories ORDER BY category_name")
+    categories = cur.fetchall()
+    conn.close()
+
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()
+        content = request.form.get("content", "").strip()
+        category_id = request.form.get("category_id") or None
+        status = request.form.get("status", "Published")
+        if not title or not content:
+            flash("Title and content are required")
+            return render_template("create_post.html", categories=categories)
+
+        image_path = _save_upload_file(request.files.get("image"), "images")
+        video_path = _save_upload_file(request.files.get("video"), "videos")
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO knowledge_posts (title, content, category_id, author, image, video, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (title, content, category_id, session.get("user"), image_path, video_path, status),
+        )
+        conn.commit()
+        conn.close()
+        flash("Article created successfully")
+        return redirect("/admin/knowledge")
+
+    return render_template("create_post.html", categories=categories)
+
+
+@app.route("/admin/knowledge/edit/<int:post_id>", methods=["GET", "POST"])
+def edit_knowledge_post(post_id):
+    if "user" not in session:
+        return redirect("/login")
+    if session.get("role") != "admin":
+        flash("Admin access required")
+        return redirect("/dashboard")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM knowledge_posts WHERE post_id=?", (post_id,))
+    post = cur.fetchone()
+    cur.execute("SELECT category_id, category_name FROM knowledge_categories ORDER BY category_name")
+    categories = cur.fetchall()
+    conn.close()
+
+    if not post:
+        flash("Post not found")
+        return redirect("/admin/knowledge")
+
+    if request.method == "POST":
+        title = request.form.get("title", "").strip()
+        content = request.form.get("content", "").strip()
+        category_id = request.form.get("category_id") or None
+        status = request.form.get("status", "Published")
+        if not title or not content:
+            flash("Title and content are required")
+            return render_template("edit_post.html", post=post, categories=categories)
+
+        image_path = _save_upload_file(request.files.get("image"), "images") or post["image"]
+        video_path = _save_upload_file(request.files.get("video"), "videos") or post["video"]
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE knowledge_posts
+            SET title=?, content=?, category_id=?, image=?, video=?, status=?, updated_at=CURRENT_TIMESTAMP
+            WHERE post_id=?
+            """,
+            (title, content, category_id, image_path, video_path, status, post_id),
+        )
+        conn.commit()
+        conn.close()
+        flash("Article updated successfully")
+        return redirect("/admin/knowledge")
+
+    return render_template("edit_post.html", post=post, categories=categories)
+
+
+@app.route("/admin/knowledge/delete/<int:post_id>", methods=["POST"])
+def delete_knowledge_post(post_id):
+    if "user" not in session:
+        return redirect("/login")
+    if session.get("role") != "admin":
+        flash("Admin access required")
+        return redirect("/dashboard")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM knowledge_replies WHERE comment_id IN (SELECT comment_id FROM knowledge_comments WHERE post_id=?)", (post_id,))
+    cur.execute("DELETE FROM knowledge_comments WHERE post_id=?", (post_id,))
+    cur.execute("DELETE FROM knowledge_likes WHERE post_id=?", (post_id,))
+    cur.execute("DELETE FROM knowledge_posts WHERE post_id=?", (post_id,))
+    conn.commit()
+    conn.close()
+    flash("Article deleted successfully")
+    return redirect("/admin/knowledge")
+
+
+@app.route("/knowledge")
+def knowledge_feed():
+    if "user" not in session:
+        return redirect("/login")
+
+    query = request.args.get("q", "").strip()
+    category_id = request.args.get("category_id", "")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT category_id, category_name FROM knowledge_categories ORDER BY category_name")
+    categories = cur.fetchall()
+
+    sql = """
+        SELECT kp.post_id, kp.title, kp.content, kp.image, kp.video, kp.status, kp.views, kp.created_at,
+               kp.author, kc.category_name, kc.category_id,
+               (SELECT COUNT(*) FROM knowledge_likes kl WHERE kl.post_id = kp.post_id) AS like_count,
+               (SELECT COUNT(*) FROM knowledge_comments kcmt WHERE kcmt.post_id = kp.post_id) AS comment_count
+        FROM knowledge_posts kp
+        LEFT JOIN knowledge_categories kc ON kp.category_id = kc.category_id
+        WHERE kp.status = 'Published'
+    """
+    params = []
+    if query:
+        sql += " AND (kp.title LIKE ? OR kp.content LIKE ?)"
+        params.extend([f"%{query}%", f"%{query}%"])
+    if category_id:
+        sql += " AND kp.category_id = ?"
+        params.append(category_id)
+    sql += " ORDER BY kp.created_at DESC"
+
+    posts = cur.execute(sql, params).fetchall()
+    conn.close()
+    return render_template("knowledge.html", posts=posts, categories=categories, query=query, category_id=category_id)
+
+
+@app.route("/knowledge/<int:post_id>")
+def knowledge_post(post_id):
+    if "user" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT kp.post_id, kp.title, kp.content, kp.image, kp.video, kp.status, kp.views, kp.created_at,
+               kp.author, kp.category_id, kc.category_name,
+               (SELECT COUNT(*) FROM knowledge_likes kl WHERE kl.post_id = kp.post_id) AS like_count
+        FROM knowledge_posts kp
+        LEFT JOIN knowledge_categories kc ON kp.category_id = kc.category_id
+        WHERE kp.post_id = ?
+    """, (post_id,))
+    post = cur.fetchone()
+    if not post:
+        conn.close()
+        flash("Article not found")
+        return redirect("/knowledge")
+
+    cur.execute("UPDATE knowledge_posts SET views = views + 1 WHERE post_id=?", (post_id,))
+    conn.commit()
+
+    cur.execute("SELECT comment_id, username, comment, created_at FROM knowledge_comments WHERE post_id=? ORDER BY created_at ASC", (post_id,))
+    comments = cur.fetchall()
+    replies = {}
+    for comment in comments:
+        cur.execute("SELECT reply_id, username, reply, created_at FROM knowledge_replies WHERE comment_id=? ORDER BY created_at ASC", (comment["comment_id"],))
+        replies[comment["comment_id"]] = cur.fetchall()
+
+    cur.execute("SELECT COUNT(*) AS liked FROM knowledge_likes WHERE post_id=? AND username=?", (post_id, session.get("user")))
+    liked = cur.fetchone()["liked"] > 0
+    conn.close()
+    return render_template("knowledge_post.html", post=post, comments=comments, replies=replies, liked=liked)
+
+
+@app.route("/knowledge/like/<int:post_id>", methods=["POST"])
+def like_knowledge_post(post_id):
+    if "user" not in session:
+        return jsonify({"status": "error", "message": "Please log in first"}), 401
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) AS liked FROM knowledge_likes WHERE post_id=? AND username=?", (post_id, session.get("user")))
+    already_liked = cur.fetchone()["liked"] > 0
+
+    if already_liked:
+        cur.execute("DELETE FROM knowledge_likes WHERE post_id=? AND username=?", (post_id, session.get("user")))
+        status = "unliked"
+    else:
+        cur.execute("INSERT INTO knowledge_likes (post_id, username) VALUES (?, ?)", (post_id, session.get("user")))
+        status = "liked"
+
+    conn.commit()
+    cur.execute("SELECT COUNT(*) AS like_count FROM knowledge_likes WHERE post_id=?", (post_id,))
+    like_count = cur.fetchone()["like_count"]
+    conn.close()
+    return jsonify({"status": status, "like_count": like_count})
+
+
+@app.route("/knowledge/comment/<int:post_id>", methods=["POST"])
+def comment_knowledge_post(post_id):
+    if "user" not in session:
+        return redirect("/login")
+
+    comment = request.form.get("comment", "").strip()
+    if not comment:
+        flash("Comment cannot be empty")
+        return redirect(url_for("knowledge_post", post_id=post_id))
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO knowledge_comments (post_id, username, comment) VALUES (?, ?, ?)", (post_id, session.get("user"), comment))
+    conn.commit()
+    conn.close()
+    flash("Comment added")
+    return redirect(url_for("knowledge_post", post_id=post_id))
+
+
+@app.route("/knowledge/reply/<int:comment_id>", methods=["POST"])
+def reply_to_comment(comment_id):
+    if "user" not in session:
+        return redirect("/login")
+    if session.get("role") != "admin":
+        flash("Only admins can reply to comments")
+        return redirect("/dashboard")
+
+    reply = request.form.get("reply", "").strip()
+    if not reply:
+        flash("Reply cannot be empty")
+        return redirect("/knowledge")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT post_id FROM knowledge_comments WHERE comment_id=?", (comment_id,))
+    comment_row = cur.fetchone()
+    if comment_row:
+        cur.execute("INSERT INTO knowledge_replies (comment_id, username, reply) VALUES (?, ?, ?)", (comment_id, session.get("user"), reply))
+        conn.commit()
+    conn.close()
+    flash("Reply posted")
+    return redirect(url_for("knowledge_post", post_id=comment_row["post_id"] if comment_row else 1))
+
+
 @app.route("/about")
 def about():
     return render_template("about.html")
@@ -984,7 +1412,7 @@ def admin():
     cur = conn.cursor()
     cur.execute("SELECT * FROM inventory ORDER BY date_received DESC")
     inventory = cur.fetchall()
-    cur.execute("SELECT username, role FROM users ORDER BY role, username")
+    cur.execute("SELECT username, role, reliability_status, completed_transactions, cancelled_transactions, total_transactions FROM users ORDER BY role, username")
     users = cur.fetchall()
     conn.close()
     return render_template("admin.html", inventory=inventory, users=users)
@@ -1064,11 +1492,141 @@ def delete_inventory(item_id):
 
 # ---------------- DASHBOARD ----------------
 
+@app.route("/crop-types")
+def crop_types():
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT crop_name, SUM(quantity) as total FROM inventory WHERE source IS NULL OR source = 'harvest' GROUP BY crop_name ORDER BY total DESC")
+    crops = cur.fetchall()
+    crop_types_count = len(crops)
+    conn.close()
+
+    return render_template("crop_types.html", crops=crops, crop_types_count=crop_types_count)
+
+
 @app.route("/market-intelligence")
 def market_intelligence():
     if "user" not in session:
         return redirect(url_for("login"))
-    return render_template("market_intelligence.html")
+
+    summary_cards = [
+        {"label": "Market value", "badge": "Stable", "value": "₱1.86M", "detail": "Reflects current trade volume for the period."},
+        {"label": "Average price index", "badge": "+6%", "value": "118", "detail": "Demand remains healthy across core crops."},
+        {"label": "Active crops", "badge": "High", "value": "8", "detail": "Coverage includes staples and high-value produce."},
+        {"label": "Alert level", "badge": "Watch", "value": "Moderate", "detail": "Monitor leafy crops for oversupply pressure."},
+    ]
+
+    pulse_items = [
+        {"label": "Rice", "value": "High demand", "progress": 82},
+        {"label": "Corn", "value": "Balanced", "progress": 64},
+        {"label": "Banana", "value": "Watch", "progress": 58},
+        {"label": "Tomato", "value": "Risk", "progress": 46},
+    ]
+
+    focus_items = [
+        {"title": "Seasonal planting window", "badge": "Priority", "detail": "Planting recommendations are strongest for rice and corn this quarter.", "metric": "+12%", "timeline": "Next 2 weeks"},
+        {"title": "Buyer interest cluster", "badge": "Momentum", "detail": "Fresh produce demand is strongest in high-growth market zones.", "metric": "+8%", "timeline": "This week"},
+    ]
+
+    insight_items = [
+        {"title": "Demand resilience", "level": "Positive", "desc": "Demand remains firm for staples despite mild volatility."},
+        {"title": "Supply caution", "level": "Watch", "desc": "Leafy produce is nearing the upper comfort band."},
+    ]
+
+    return render_template(
+        "market_intelligence.html",
+        active_page="summary",
+        summary_cards=summary_cards,
+        price_labels=["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+        price_series=[88, 90, 94, 98, 103, 111],
+        pulse_items=pulse_items,
+        focus_items=focus_items,
+        insight_items=insight_items,
+    )
+
+
+@app.route("/market-intelligence/price-monitoring")
+def market_intelligence_price_monitoring():
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    return render_template(
+        "market_intelligence_price.html",
+        active_page="price",
+        price_items=[
+            {"crop": "Rice", "current_price": "₱42/kg", "variance": "+4.3%", "trend": "Rising", "signal": "Strong demand"},
+            {"crop": "Corn", "current_price": "₱28/kg", "variance": "+1.1%", "trend": "Steady", "signal": "Balanced flow"},
+            {"crop": "Banana", "current_price": "₱35/kg", "variance": "-0.8%", "trend": "Cooling", "signal": "Moderate pressure"},
+            {"crop": "Tomato", "current_price": "₱60/kg", "variance": "+2.7%", "trend": "Rising", "signal": "Short supply"},
+        ],
+        detail_items=[
+            {"label": "Peak price", "value": "₱60/kg", "note": "Observed in tomato during current cycle."},
+            {"label": "Lowest price", "value": "₱28/kg", "note": "Corn remains the most stable reference price."},
+            {"label": "Volatility", "value": "Low", "note": "Most commodities stayed within normal range."},
+            {"label": "Coverage", "value": "4 crops", "note": "Prototype includes major staples and produce."},
+        ],
+        trend_labels=["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+        trend_series=[40, 42, 44, 47, 49, 52],
+    )
+
+
+@app.route("/market-intelligence/crop-recommendations")
+def market_intelligence_crop_recommendations():
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    return render_template(
+        "market_intelligence_recommendations.html",
+        active_page="recommendations",
+        recommendation_items=[
+            {"crop": "Rice", "score": 92, "reason": "High demand and strong market fit", "demand": "High", "seasonal": "Excellent"},
+            {"crop": "Corn", "score": 84, "reason": "Balanced pricing with dependable output", "demand": "Balanced", "seasonal": "Good"},
+            {"crop": "Banana", "score": 76, "reason": "Stable pulse with broad demand", "demand": "Moderate", "seasonal": "Fair"},
+            {"crop": "Tomato", "score": 69, "reason": "Price premium but short supply risk", "demand": "High", "seasonal": "Watch"},
+        ],
+        recommendation_labels=["Rice", "Corn", "Banana", "Tomato", "Cabbage"],
+        recommendation_scores=[92, 84, 76, 69, 61],
+    )
+
+
+@app.route("/market-intelligence/demand-forecasting")
+def market_intelligence_demand_forecasting():
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    return render_template(
+        "market_intelligence_forecast.html",
+        active_page="forecast",
+        forecast_items=[
+            {"crop": "Tomato", "note": "Demand is expected to climb steadily", "confidence": "High", "historical": "1.2k", "projected": "1.6k"},
+            {"crop": "Rice", "note": "Stable demand reinforces planning confidence", "confidence": "High", "historical": "2.4k", "projected": "2.7k"},
+            {"crop": "Corn", "note": "Demand outlook remains consistent", "confidence": "Medium", "historical": "1.0k", "projected": "1.1k"},
+        ],
+        forecast_labels=["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"],
+        historical_series=[120, 132, 128, 145, 149, 160, 168],
+        projected_series=[170, 177, 184, 193, 201, 210, 219],
+    )
+
+
+@app.route("/market-intelligence/supply-balance")
+def market_intelligence_supply_balance():
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    return render_template(
+        "market_intelligence_supply.html",
+        active_page="supply",
+        supply_items=[
+            {"crop": "Cabbage", "status": "Oversupply", "note": "Current stock exceeds the comfort range", "band": "Upper", "shift": "+18%"},
+            {"crop": "Tomato", "status": "Undersupply", "note": "Supply is tightening around peak demand", "band": "Lower", "shift": "-12%"},
+            {"crop": "Rice", "status": "Balanced", "note": "Current positioning remains steady", "band": "Safe", "shift": "+2%"},
+        ],
+        supply_labels=["Cabbage", "Tomato", "Rice", "Corn"],
+        supply_series=[82, 54, 41, 38],
+    )
 
 
 @app.route("/dashboard")
@@ -1080,15 +1638,15 @@ def dashboard():
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute("SELECT * FROM inventory ORDER BY date_received DESC")
+    cur.execute("SELECT * FROM inventory WHERE source IS NULL OR source = 'harvest' ORDER BY date_received DESC LIMIT 20")
     data = cur.fetchall()
 
     update_analytics()
 
-    cur.execute("""SELECT crop_name, SUM(quantity) as total FROM inventory GROUP BY crop_name ORDER BY total DESC""")
+    cur.execute("""SELECT crop_name, SUM(quantity) as total FROM inventory WHERE source IS NULL OR source = 'harvest' GROUP BY crop_name ORDER BY total DESC""")
     crops = cur.fetchall()
 
-    cur.execute("SELECT location, SUM(quantity) as total FROM inventory WHERE location IS NOT NULL AND location != '' GROUP BY location ORDER BY total DESC")
+    cur.execute("SELECT location, SUM(quantity) as total FROM inventory WHERE (source IS NULL OR source = 'harvest') AND location IS NOT NULL AND location != '' GROUP BY location ORDER BY total DESC")
     locations = cur.fetchall()
     location_count = len(locations)
 
@@ -1104,7 +1662,9 @@ def dashboard():
         SELECT period_value, total_harvest, top_crop, top_crop_volume, top_location, top_location_volume
         FROM analytics
         WHERE period_type = ?
+          AND (top_location NOT IN ('North', 'South') OR top_location IS NULL)
         ORDER BY period_value DESC
+        LIMIT 5
     """, ("Monthly",)).fetchall()
 
     conn.close()
@@ -1142,9 +1702,11 @@ def upload():
     location = user[1] if user else None
 
     if request.method == "POST":
-
-        if role != 'admin' and not location:
-            flash("You should set your location in profile for better location-based analytics")
+        # Require that the user has a profile location before accepting harvest uploads
+        if not location:
+            flash("You must set your location in your profile before uploading harvest data.")
+            conn.close()
+            return redirect(request.url)
 
         file = request.files.get("file")
         crop_id = request.form.get("crop_id")
@@ -1360,6 +1922,10 @@ def api_harvest():
         # Validate input
         if not data.get("crop_name") or not data.get("quantity"):
             return jsonify({"error": "Missing crop_name or quantity"}), 400
+
+        # Require location in API submissions
+        if not data.get("location"):
+            return jsonify({"error": "Missing location - location is required"}), 400
         
         try:
             quantity = int(data["quantity"])
@@ -1410,7 +1976,9 @@ def marketplace():
     
     # Get all available listings with user info
     cur.execute("""
-        SELECT m.*, u.username as seller_name, u.location as seller_location
+        SELECT m.*, u.username as seller_name, u.location as seller_location,
+               u.reliability_score, u.reliability_status,
+               u.completed_transactions, u.cancelled_transactions, u.total_transactions
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
         WHERE m.status = 'available'
@@ -1431,13 +1999,26 @@ def marketplace():
     # Get all crops for the add listing form
     cur.execute("SELECT id, crops_name FROM crops ORDER BY crops_name")
     crops = cur.fetchall()
+
+    # Delivered orders belonging to this buyer that still need a rating.
+    cur.execute("""
+        SELECT m.id, m.crop_name, m.delivery_date, u.username AS seller_name
+        FROM marketplace m
+        JOIN users u ON m.user_id = u.id
+        WHERE m.buyer_username = ?
+          AND m.status IN ('sold', 'delivered')
+          AND m.buyer_rating IS NULL
+        ORDER BY COALESCE(m.delivery_date, m.order_date) DESC
+    """, (session["user"],))
+    pending_ratings = cur.fetchall()
     
     conn.close()
     
     return render_template("marketplace.html", 
                          listings=listings, 
                          user_inventory=user_inventory,
-                         crops=crops)
+                         crops=crops,
+                         pending_ratings=pending_ratings)
 
 @app.route("/marketplace/add", methods=["GET", "POST"])
 def add_marketplace_listing():
@@ -1640,29 +2221,70 @@ def buy_marketplace_item(listing_id):
         conn.close()
         return jsonify({"error": f"Only {listing['amount']} units available"}), 400
     
+    # Determine seller username reliably
+    seller_username = None
+    try:
+        seller_username = listing["seller_name"]
+    except Exception:
+        try:
+            seller_username = listing["username"]
+        except Exception:
+            cur.execute("SELECT username FROM users WHERE id = ?", (listing["user_id"],))
+            rr = cur.fetchone()
+            seller_username = rr["username"] if rr else None
+
     # Calculate total price
     total_price = quantity * listing["price"]
+    order_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # Update the listing
+    # Update the listing and create an order record for partial purchases
     if quantity == listing["amount"]:
-        cur.execute("UPDATE marketplace SET status = 'sold' WHERE id = ?", (listing_id,))
+        cur.execute("UPDATE marketplace SET status = 'sold', buyer_username = ?, order_status = 'sold', order_date = ?, delivery_confirmed = 0 WHERE id = ?", (
+            session["user"],
+            order_timestamp,
+            listing_id
+        ))
     else:
+        cur.execute("""
+            INSERT INTO marketplace (
+                user_id, username, buyer_username, crop_id, crop_name, amount, price, unit,
+                status, order_status, listing_date, order_date, expiry_date, description, location, delivery_confirmed
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            listing["user_id"],
+            listing["username"],
+            session["user"],
+            listing["crop_id"],
+            listing["crop_name"],
+            quantity,
+            listing["price"],
+            listing["unit"],
+            "sold",
+            "sold",
+            listing["listing_date"],
+            order_timestamp,
+            listing["expiry_date"],
+            listing["description"],
+            listing["location"],
+            0
+        ))
         cur.execute("""
             UPDATE marketplace 
             SET amount = amount - ? 
             WHERE id = ?
         """, (quantity, listing_id))
     
-    # Add to buyer's inventory
+    # Add to buyer's inventory (purchase source does not appear on harvest dashboard)
     cur.execute("""
-        INSERT INTO inventory(crop_name, quantity, farmer, date_received, location)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO inventory(crop_name, quantity, farmer, date_received, location, source)
+        VALUES (?, ?, ?, ?, ?, ?)
     """, (
         listing["crop_name"],
         quantity,
         session["user"],
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        listing["location"]
+        order_timestamp,
+        listing["location"],
+        "purchase"
     ))
     
     # Remove from seller's inventory
@@ -1670,7 +2292,7 @@ def buy_marketplace_item(listing_id):
         SELECT id, quantity FROM inventory 
         WHERE farmer = ? AND crop_name = ? 
         ORDER BY date_received ASC
-    """, (listing["username"], listing["crop_name"]))
+    """, (seller_username, listing["crop_name"]))
     seller_inventory = cur.fetchall()
     
     remaining = quantity
@@ -1686,12 +2308,145 @@ def buy_marketplace_item(listing_id):
             remaining = 0
     
     conn.commit()
+
+    # Create notification for the seller about the purchase
+    try:
+        if seller_username:
+            cur.execute(
+                "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
+                (
+                    seller_username,
+                    "Item Sold",
+                    f"{session['user']} purchased {quantity} {listing['crop_name']} from your listing.",
+                    "marketplace",
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    0
+                )
+            )
+            conn.commit()
+            logger.info(f"Marketplace purchase notification created for {seller_username}")
+    except Exception:
+        logger.exception("Failed to create marketplace purchase notification")
+
     conn.close()
     
     return jsonify({
         "status": "success",
         "message": f"Purchased {quantity} {listing['crop_name']} for ₱{total_price:.2f}"
     })
+
+@app.route("/marketplace/complete-order/<int:listing_id>", methods=["POST"])
+def complete_marketplace_order(listing_id):
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE username = ?", (session["user"],))
+    current_user = cur.fetchone()
+    if not current_user:
+        conn.close()
+        return jsonify({"error": "User not found"}), 404
+
+    cur.execute("SELECT * FROM marketplace WHERE id = ? AND user_id = ? AND status = 'sold'", (listing_id, current_user["id"]))
+    listing = cur.fetchone()
+
+    if not listing:
+        conn.close()
+        return jsonify({"error": "Order not found or not eligible for completion"}), 404
+
+    cur.execute(
+        "UPDATE marketplace SET status = 'delivered', order_status = 'delivered', delivery_date = ?, delivery_confirmed = 1 WHERE id = ?",
+        (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), listing_id)
+    )
+
+    cur.execute("""
+        UPDATE users
+        SET completed_transactions = COALESCE(completed_transactions, 0) + 1,
+            total_transactions = COALESCE(total_transactions, 0) + 1
+        WHERE username = ?
+    """, (session["user"],))
+
+    if listing["buyer_username"]:
+        try:
+            cur.execute(
+                "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
+                (
+                    listing["buyer_username"],
+                    "Order Delivered",
+                    f"Your order for {listing['crop_name']} has been marked delivered by {session['user']}.",
+                    "marketplace",
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    0
+                )
+            )
+        except Exception:
+            logger.exception("Failed to create delivery notification")
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({"status": "success", "message": "Order marked as delivered."})
+
+@app.route("/marketplace/my-purchases")
+def my_marketplace_purchases():
+    if "user" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT m.*, u.username AS seller_name, u.location AS seller_location
+        FROM marketplace m
+        JOIN users u ON m.user_id = u.id
+        WHERE m.buyer_username = ? AND m.status IN ('sold', 'delivered')
+        ORDER BY COALESCE(m.delivery_date, m.order_date) DESC
+    """, (session["user"],))
+    purchases = cur.fetchall()
+    conn.close()
+    return render_template("my_purchases.html", purchases=purchases)
+
+
+@app.route("/marketplace/rate/<int:listing_id>", methods=["POST"])
+def rate_marketplace_seller(listing_id):
+    if "user" not in session:
+        return redirect("/login")
+
+    try:
+        rating = int(request.form.get("rating", 0))
+    except (TypeError, ValueError):
+        rating = 0
+    if rating not in (1, 2, 3, 4, 5):
+        flash("Please choose a rating from 1 to 5 stars.")
+        return redirect("/marketplace/my-purchases")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, username FROM marketplace
+        WHERE id = ? AND buyer_username = ? AND status IN ('sold', 'delivered') AND buyer_rating IS NULL
+    """, (listing_id, session["user"]))
+    order = cur.fetchone()
+    if not order:
+        conn.close()
+        flash("This order cannot be rated, or it has already been rated.")
+        return redirect("/marketplace/my-purchases")
+
+    cur.execute("UPDATE marketplace SET buyer_rating = ?, buyer_rating_date = ? WHERE id = ?", (
+        rating, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), listing_id))
+    cur.execute("SELECT AVG(buyer_rating) AS average_rating, COUNT(buyer_rating) AS rating_count FROM marketplace WHERE username = ? AND buyer_rating IS NOT NULL", (order["username"],))
+    rating_summary = cur.fetchone()
+    rating_count = rating_summary["rating_count"] or 0
+    average_rating = rating_summary["average_rating"]
+    if rating_count > 0 and average_rating is not None:
+        status = "High Reliability" if average_rating >= 4 else "Medium Reliability" if average_rating >= 3 else "Low Reliability"
+        cur.execute("UPDATE users SET reliability_score = ?, reliability_status = ? WHERE username = ?", (round(average_rating, 2), status, order["username"]))
+    else:
+        cur.execute("UPDATE users SET reliability_score = NULL, reliability_status = 'Not Yet Rated' WHERE username = ?", (order["username"],))
+    conn.commit()
+    conn.close()
+    flash("Thank you. Your rating has been submitted.")
+    return redirect("/marketplace/my-purchases")
 
 @app.route("/marketplace/my-listings")
 def my_marketplace_listings():
@@ -1702,17 +2457,44 @@ def my_marketplace_listings():
     conn = get_db()
     cur = conn.cursor()
     
+    cur.execute("SELECT id FROM users WHERE username = ?", (session["user"],))
+    current_user = cur.fetchone()
+    if not current_user:
+        conn.close()
+        flash("User not found")
+        return redirect("/marketplace")
+    current_user_id = current_user["id"]
+
     cur.execute("""
         SELECT m.*
         FROM marketplace m
-        WHERE m.username = ?
+        WHERE m.user_id = ? AND m.status = 'available'
         ORDER BY m.listing_date DESC
-    """, (session["user"],))
-    listings = cur.fetchall()
+    """, (current_user_id,))
+    active_listings = cur.fetchall()
+
+    cur.execute("""
+        SELECT m.*
+        FROM marketplace m
+        WHERE m.user_id = ? AND m.status = 'sold'
+        ORDER BY order_date DESC
+    """, (current_user_id,))
+    sold_orders = cur.fetchall()
+
+    cur.execute("""
+        SELECT m.*
+        FROM marketplace m
+        WHERE m.user_id = ? AND m.status = 'delivered'
+        ORDER BY delivery_date DESC
+    """, (current_user_id,))
+    delivered_orders = cur.fetchall()
     
     conn.close()
     
-    return render_template("my_listings.html", listings=listings)
+    return render_template("my_listings.html", 
+                         active_listings=active_listings, 
+                         sold_orders=sold_orders,
+                         delivered_orders=delivered_orders)
 
 @app.route("/marketplace/delete/<int:listing_id>", methods=["POST"])
 def delete_marketplace_listing(listing_id):
@@ -1723,8 +2505,15 @@ def delete_marketplace_listing(listing_id):
     conn = get_db()
     cur = conn.cursor()
     
-    cur.execute("SELECT * FROM marketplace WHERE id = ? AND username = ?", 
-                (listing_id, session["user"]))
+    cur.execute("SELECT id FROM users WHERE username = ?", (session["user"],))
+    current_user = cur.fetchone()
+    if not current_user:
+        conn.close()
+        return jsonify({"error": "User not found"}), 404
+    current_user_id = current_user["id"]
+
+    cur.execute("SELECT * FROM marketplace WHERE id = ? AND user_id = ?", 
+                (listing_id, current_user_id))
     listing = cur.fetchone()
     
     if not listing:
@@ -1758,7 +2547,7 @@ def trade_marketplace_item(listing_id):
     
     # Get the listing
     cur.execute("""
-        SELECT m.*, u.username as seller_name
+        SELECT m.*, u.username as seller_name, u.reliability_score, u.reliability_status, u.location AS seller_location
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
         WHERE m.id = ? AND m.status = 'available'
@@ -1830,35 +2619,68 @@ def trade_marketplace_item(listing_id):
                 remaining = 0
         
         # Add traded crop to seller's inventory
+        # Resolve seller username reliably
+        seller_username = None
+        try:
+            seller_username = listing["seller_name"]
+        except Exception:
+            try:
+                seller_username = listing["username"]
+            except Exception:
+                cur.execute("SELECT username FROM users WHERE id = ?", (listing["user_id"],))
+                rr = cur.fetchone()
+                seller_username = rr["username"] if rr else None
+
         cur.execute("""
-            INSERT INTO inventory(crop_name, quantity, farmer, date_received, location)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO inventory(crop_name, quantity, farmer, date_received, location, source)
+            VALUES (?, ?, ?, ?, ?, ?)
         """, (
             trade_crop,
             trade_amount,
-            listing["username"],
+            seller_username,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            listing["location"]
+            listing["location"],
+            "trade"
         ))
         
         # Add seller's crop to buyer's inventory
         cur.execute("""
-            INSERT INTO inventory(crop_name, quantity, farmer, date_received, location)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO inventory(crop_name, quantity, farmer, date_received, location, source)
+            VALUES (?, ?, ?, ?, ?, ?)
         """, (
             listing["crop_name"],
             listing["amount"],
             session["user"],
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            session.get("location", "")
+            session.get("location", ""),
+            "trade"
         ))
         
         # Update listing status
         cur.execute("UPDATE marketplace SET status = 'traded' WHERE id = ?", (listing_id,))
         
         conn.commit()
+        # Notify seller that a trade occurred
+        try:
+            if seller_username:
+                cur.execute(
+                    "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
+                    (
+                        seller_username,
+                        "Item Traded",
+                        f"{session['user']} completed a trade: gave {trade_amount} {trade_crop} and received your {listing['amount']} {listing['crop_name']}.",
+                        "marketplace",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        0
+                    )
+                )
+                conn.commit()
+                logger.info(f"Marketplace trade notification created for {seller_username}")
+        except Exception:
+            logger.exception("Failed to create marketplace trade notification")
+
         conn.close()
-        
+
         flash(f"Trade successful! You received {listing['amount']} {listing['crop_name']} and gave {trade_amount} {trade_crop}")
         return redirect("/marketplace")
     
@@ -1887,7 +2709,7 @@ def dashboard_data():
     conn = get_db()
     cur = conn.cursor()
     
-    cur.execute("SELECT * FROM inventory ORDER BY date_received DESC LIMIT 50")
+    cur.execute("SELECT * FROM inventory WHERE source IS NULL OR source = 'harvest' ORDER BY date_received DESC LIMIT 20")
     data = cur.fetchall()
     
     conn.close()
@@ -1986,11 +2808,11 @@ def api_stats():
     cur = conn.cursor()
 
     # Total quantity
-    cur.execute("SELECT SUM(quantity) as total FROM inventory")
+    cur.execute("SELECT SUM(quantity) as total FROM inventory WHERE source IS NULL OR source = 'harvest'")
     total = cur.fetchone()["total"] or 0
 
     # Crop summary
-    cur.execute("SELECT crop_name, SUM(quantity) as total FROM inventory GROUP BY crop_name ORDER BY total DESC")
+    cur.execute("SELECT crop_name, SUM(quantity) as total FROM inventory WHERE source IS NULL OR source = 'harvest' GROUP BY crop_name ORDER BY total DESC")
     crops = cur.fetchall()
 
     # Top crop
@@ -2372,7 +3194,7 @@ def get_conversations():
     
     for person_row in people:
         person = person_row[0]
-        
+
         # Get the last message between user and this person
         cur.execute("""
         SELECT message, timestamp
@@ -2381,17 +3203,53 @@ def get_conversations():
         ORDER BY timestamp DESC
         LIMIT 1
         """, (username, person, person, username))
-        
+
         last_msg = cur.fetchone()
-        
+
         conversations.append({
             "person": person,
             "last_message": last_msg[0] if last_msg else None,
             "last_timestamp": last_msg[1] if last_msg else None
         })
-    
+
+    # Note: conversations should only include users with messages; search will query users separately.
+
+    # Ensure AgriBot appears as a contact (so users can message the bot)
+    if not any((c["person"] or "").lower() == "agribot" for c in conversations):
+        cur.execute("""
+        SELECT message, timestamp
+        FROM messages
+        WHERE (sender=? AND recipient=?) OR (sender=? AND recipient=?)
+        ORDER BY timestamp DESC
+        LIMIT 1
+        """, ("AgriBot", username, username, "AgriBot"))
+        last = cur.fetchone()
+        conversations.append({
+            "person": "AgriBot",
+            "last_message": last[0] if last else None,
+            "last_timestamp": last[1] if last else None
+        })
+
     conn.close()
     return jsonify(conversations)
+
+
+@app.route('/users/search')
+def users_search():
+    """Search for users by username. Returns up to 20 matches excluding the current user."""
+    if "user" not in session:
+        return jsonify([])
+
+    q = str(request.args.get('q', '')).strip()
+    if not q:
+        return jsonify([])
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT username FROM users WHERE username != ? AND username LIKE ? ORDER BY username LIMIT 20", (session['user'], f"%{q}%"))
+    rows = cur.fetchall()
+    conn.close()
+    return jsonify([r[0] for r in rows])
 
 
 @app.route("/messages/<person>")
@@ -2447,6 +3305,25 @@ def send_chat_message():
         VALUES(?, ?, ?, ?)
         """, (sender, recipient, message_text, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
 
+        # Resolve recipient to stored username (case-insensitive) to avoid mismatches
+        try:
+            cur.execute("SELECT username FROM users WHERE lower(username)=lower(?) LIMIT 1", (recipient,))
+            row = cur.fetchone()
+            notif_username = row[0] if row else recipient
+        except Exception:
+            notif_username = recipient
+
+        # Create a notification for the recipient
+        try:
+            cur.execute(
+                "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
+                (notif_username, "New Message", f"{sender} sent you a message.", "message", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 0)
+            )
+            logger.info(f"Notification created for {notif_username} from {sender}")
+        except Exception:
+            # If notifications table missing or insert fails, continue without breaking messaging
+            logger.exception("Failed to create notification for message")
+
         if recipient.lower() == "agribot":
 
             question = message_text.lower()
@@ -2468,6 +3345,14 @@ def send_chat_message():
 
             cur.execute("INSERT INTO messages(sender, recipient, message, timestamp) VALUES (?, ?, ?, ?)",
                                 ("AgriBot", session["user"], reply, datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")))
+            # Create a notification for the user receiving the AgriBot reply
+            try:
+                cur.execute(
+                    "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
+                    (session["user"], "New Message", "AgriBot replied to your message.", "message", datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f"), 0)
+                )
+            except Exception:
+                logger.exception("Failed to create notification for AgriBot reply")
         
         conn.commit()
         logger.info(f"Message sent from {sender} to {recipient}")
@@ -2486,6 +3371,55 @@ def api_current_user():
         return jsonify({"error": "Unauthorized"}), 401
     
     return jsonify({"username": session["user"]})
+
+@app.route("/notifications")
+def notifications():
+
+    if "user" not in session:
+        return jsonify([])
+
+    conn = get_db()
+
+    cur = conn.cursor()
+
+    cur.execute("""
+
+        SELECT *
+
+        FROM notifications
+
+        WHERE username=?
+
+        ORDER BY created_at DESC
+
+        LIMIT 20
+
+    """, (session["user"],))
+
+    rows = cur.fetchall()
+    data = [dict(r) for r in rows]
+
+    conn.close()
+
+    return jsonify(data)
+
+
+@app.route('/notifications/mark-read', methods=['POST'])
+def notifications_mark_read():
+    if 'user' not in session:
+        return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("UPDATE notifications SET is_read=1 WHERE username=? AND is_read=0", (session['user'],))
+        conn.commit()
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        logger.error(f"Failed to mark notifications read: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+    finally:
+        conn.close()
 
 
 @app.route("/logout")
