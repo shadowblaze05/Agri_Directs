@@ -1,0 +1,87 @@
+{% extends "market_intelligence_layout.html" %}
+
+{% block content %}
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card chart-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h5 class="mb-1">Price movement overview</h5>
+                    <p class="text-muted mb-0">A simple trend view for current market price movement.</p>
+                </div>
+                <span class="soft-chip">Updated weekly</span>
+            </div>
+            <div style="height: 280px; position: relative;">
+                <canvas id="priceChart" style="width: 100%; height: 100%;"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card chart-card h-100">
+            <h5 class="mb-3">Live market watch</h5>
+            <div class="list-group list-group-flush">
+                {% for item in price_items %}
+                <div class="list-group-item px-0">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="fw-semibold">{{ item.crop }}</div>
+                            <div class="metric-label">{{ item.signal }}</div>
+                        </div>
+                        <span class="soft-chip">{{ item.current_price }}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mt-2 small text-muted">
+                        <span>{{ item.trend }}</span>
+                        <span>{{ item.variance }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mt-1">
+    {% for item in detail_items %}
+    <div class="col-lg-3 col-md-6">
+        <div class="card stat-card h-100">
+            <div class="small-muted mb-2">{{ item.label }}</div>
+            <div class="display-6 fw-bold">{{ item.value }}</div>
+            <p class="text-muted mb-0 mt-2">{{ item.note }}</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const priceCtx = document.getElementById('priceChart');
+    if (priceCtx) {
+        new Chart(priceCtx, {
+            type: 'line',
+            data: {
+                labels: {{ trend_labels|tojson }},
+                datasets: [{
+                    label: 'Price trend',
+                    data: {{ trend_series|tojson }},
+                    borderColor: '#2d6a4f',
+                    backgroundColor: 'rgba(45, 106, 79, 0.16)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: false, ticks: { color: '#64748b' }, grid: { color: 'rgba(100, 116, 139, 0.15)' } },
+                    x: { ticks: { color: '#64748b' }, grid: { display: false } }
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}

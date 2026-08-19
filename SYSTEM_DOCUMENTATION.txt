@@ -1,340 +1,293 @@
-AGRI-DIRECT SYSTEM DOCUMENTATION
-================================
+﻿AGRI-DIRECT SYSTEM DOCUMENTATION
+===============================
 
 OVERVIEW
 --------
-Agri-Direct is a Flask-based web application for managing agricultural harvest postings, providing real-time inventory analytics, location-based tracking, and basic messaging between users. Farmers can upload harvest data (CSV or manual entry), buyers can browse and purchase inventory, and admins manage users and data.
+Agri-Direct is a Flask-based agricultural marketplace and information platform for farmers, buyers, and administrators. The current project is organized around a clean package structure under app/ and keeps legacy files archived separately so the active code remains easy to maintain.
 
-This documentation describes the current implementation (as of July 15, 2026): routes, data model, deployment notes, environment variables, frontend behavior, and testing pointers.
+The project includes:
+- user authentication and role-based access
+- farm inventory management
+- marketplace listings and transaction flow
+- analytics and market intelligence pages
+- knowledge hub content
+- admin functions
+- chat and notification features
+- PostgreSQL-backed persistence through Flask-SQLAlchemy
 
-SYSTEM ARCHITECTURE
--------------------
-- Backend: Flask (single-module app in `app.py`)
-- Database: SQLite (`database.db`), accessed via `sqlite3` with `row_factory` set to `sqlite3.Row`
-- Frontend: Server-rendered Jinja2 templates, Bootstrap 5, Chart.js and Leaflet (CDN)
-- Authentication: Session-based (Flask session) for web UI; JWT for API access
-- Real-time Updates: Client-side AJAX polling (dashboard refresh every 2 seconds) using `/dashboard-data` and `/api/stats`
-- Geocoding: Optional Google Maps Geocoding API; otherwise deterministic fallback coordinates
+This documentation reflects the current project state after the reorganization and cleanup process.
 
-PROPOSED SOLUTION ALGORITHMS AND WHERE THEY CAN BE SEEN
--------------------------------------------------------
-The proposed solution includes four main algorithm-based decision-support features. These algorithms are implemented in the main application file `app.py` and are displayed in the Market Intelligence page of the system.
-
-WHERE TO SEE IT IN THE SYSTEM
------------------------------
-- After logging in, open the Dashboard.
-- From the sidebar, click "Market Intelligence".
-- Alternatively, open the page directly at `/market-intelligence`.
-- The page displays the outputs of the following algorithms:
-  - Real-time market price monitoring
-  - Oversupply and undersupply risk detection
-  - Crop recommendation system
-  - Crop demand forecasting
-
-IMPLEMENTATION LOCATION
-------------------------
-- Main logic: `app.py`
-- Forecasting helper: `_linear_forecast(values)`
-- Market analysis engine: `build_market_analysis(records)`
-- API endpoints:
-  - `/api/market-insights`
-  - `/api/forecast`
-- User interface: `templates/market_intelligence.html`
-
-WHERE TO FIND THE CODE IN THE APPLICATION
-----------------------------------------
-- Open `app.py` to view the full implementation of the proposed solution algorithms.
-- Search for `_linear_forecast` to locate the forecasting algorithm.
-- Search for `build_market_analysis` to locate the main market intelligence and recommendation logic.
-- Search for `/api/market-insights` and `/api/forecast` to locate the API routes that expose the results to the user interface.
-- Open `templates/market_intelligence.html` to see how the computed results are displayed in the system.
-
-ALGORITHM 1: REAL-TIME MARKET PRICE MONITORING
-----------------------------------------------
-The system aggregates inventory data and evaluates current supply against historical averages and recent trend movement. A price index is computed to represent market pressure.
-
-Logic:
-- Calculate total supply per crop
-- Calculate average supply from historical entries
-- Compare current supply with the average supply
-- Measure trend change using the difference between recent periods
-- Generate a price index using the formula:
-  price_index = 100 + (supply_pressure * 8) + (trend_change * 25) - 10
-
-ALGORITHM 2: OVERSUPPLY AND UNDERSUPPLY RISK DETECTION
---------------------------------------------------------
-The system uses threshold-based evaluation to identify possible market imbalance.
-
-Logic:
-- If current supply is much higher than the recent average, the crop is flagged as an oversupply risk.
-- If current supply is much lower than the recent average, the crop is flagged as an undersupply risk.
-
-Thresholds used in the implementation:
-- Oversupply risk if supply_pressure >= 1.35
-- Undersupply risk if supply_pressure <= 0.75
-
-ALGORITHM 3: CROP RECOMMENDATION SYSTEM
-----------------------------------------
-The crop recommendation system uses a weighted scoring model based on demand level, price pressure, and seasonal relevance.
-
-Weighted formula:
-recommendation_score = (demand_score * 0.45) + ((price_index - 80) / 100 * 0.35) + (seasonal_score * 0.20)
-
-The system calculates:
-- demand_score from supply pressure
-- price_index from market pressure and trend movement
-- seasonal_score based on predefined seasonal suitability for each crop
-
-ALGORITHM 4: CROP DEMAND FORECASTING
-------------------------------------
-The demand forecasting module uses a simple linear trend model based on historical inventory data.
-
-Forecast formula:
-forecast = intercept + slope * n
-
-Implementation details:
-- Historical values are collected over time
-- The slope and intercept are computed from the trend line
-- The next period forecast is estimated and displayed in the Market Intelligence page
-
-PROGRAMMING CODE USED
----------------------
-The current implementation uses the following core code in `app.py`:
-
-```python
-def _linear_forecast(values):
-    if not values:
-        return 0
-    if len(values) < 2:
-        return max(0, int(values[-1]))
-
-    x_values = list(range(len(values)))
-    mean_x = sum(x_values) / len(x_values)
-    mean_y = sum(values) / len(values)
-    numerator = sum((x - mean_x) * (y - mean_y) for x, y in zip(x_values, values))
-    denominator = sum((x - mean_x) ** 2 for x in x_values)
-    slope = numerator / denominator if denominator else 0
-    intercept = mean_y - slope * mean_x
-    forecast = intercept + slope * len(values)
-    return max(0, int(round(forecast)))
-```
-
-```python
-def build_market_analysis(records):
-    crop_totals = defaultdict(int)
-    monthly_totals = defaultdict(int)
-    crop_history = defaultdict(list)
-
-    for row in records:
-        crop_name = str(row["crop_name"] or "").strip()
-        quantity = int(row["quantity"] or 0)
-        if not crop_name or quantity <= 0:
-            continue
-
-        crop_totals[crop_name] += quantity
-        month_key = _parse_inventory_datetime(row.get("date_received")).strftime("%Y-%m")
-        monthly_totals[month_key] += quantity
-        crop_history[crop_name].append((month_key, quantity))
-```
-
-SUMMARY
--------
-These algorithms transform the system from a basic inventory platform into a decision-support tool for agricultural trading. They help farmers and buyers understand market conditions, detect risks, prioritize crop recommendations, and estimate future demand based on data.
-
-CORE FEATURES (current)
------------------------
-- User registration and login (passwords hashed using Werkzeug)
-- Roles: `admin`, `user` (default role assigned as 'user' or 'buyer' in UI)
-- CSV upload (server-validated) and manual harvest entry
-- Inventory CRUD (farmers can edit/delete own items; admins can edit/delete all)
-- Real-time dashboard with charts (monthly/yearly summaries and comparisons)
-- Persistent monthly analytics snapshots stored in the `analytics` table, including total harvest, top crop, top location, and related volumes
-- Dashboard shows a month-by-month analytics history section populated from saved analytics rows
-- `/api/stats` endpoint supports `monthly_offset` and `yearly_offset` to view previous periods
-- Location analytics with Leaflet map using geocoded coordinates
-- Simple chat system persisted in `messages` table; polling every 3 seconds when chat open
-- JWT-protected API endpoint `POST /api/harvest` for external data ingestion
-
-DATABASE SCHEMA
----------------
-- `users`:
-  - `id` INTEGER PRIMARY KEY AUTOINCREMENT
-  - `username` TEXT UNIQUE
-  - `password` TEXT (hashed)
-  - `role` TEXT (defaults to 'user')
-  - `location` TEXT (optional)
-
-- `inventory`:
-  - `id` INTEGER PRIMARY KEY AUTOINCREMENT
-  - `crop_name` TEXT
-  - `quantity` INTEGER
-  - `farmer` TEXT (username)
-  - `date_received` TEXT (stored as YYYY-MM-DD HH:MM:SS)
-  - `location` TEXT (optional)
-
-- `messages`:
-  - `id` INTEGER PRIMARY KEY AUTOINCREMENT
-  - `sender` TEXT
-  - `recipient` TEXT
-  - `message` TEXT
-  - `timestamp` TEXT
-
-- `analytics`:
-  - `id` INTEGER PRIMARY KEY AUTOINCREMENT
-  - `period_type` TEXT
-  - `period_value` TEXT (for example `2026-07`)
-  - `total_harvest` INTEGER
-  - `top_crop` TEXT
-  - `top_crop_volume` INTEGER
-  - `top_crop_id` INTEGER
-  - `top_location` TEXT
-  - `top_location_volume` INTEGER
-
-Notes on migrations:
-- On startup `init_db()` ensures tables exist and will ALTER tables to add `recipient` (messages) and `location` (inventory) if missing.
-- `update_analytics()` creates or updates monthly analytics rows and preserves historical monthly entries for the dashboard history view.
-
-FILE STRUCTURE (key files)
---------------------------
-- `app.py`                    - Main application, routes and logic
-- `SYSTEM_DOCUMENTATION.txt`  - This file
-- `requirements.txt`         - Python dependencies
-- `templates/`                - Jinja2 HTML templates (dashboard, crop_types, top_crop, locations, upload, profile, etc.)
-- `static/style.css`          - Custom styles
-- `uploads/`                  - CSV uploads
-- `database.db`               - SQLite database file (created at runtime)
-
-FRONTEND / TEMPLATES (notable pages)
-------------------------------------
-- `/dashboard` (templates/dashboard.html): real-time inventory table, summary cards, interactive charts, monthly/yearly offset controls, chat widget, and a monthly analytics history table
-- `/crop-types` (templates/crop_types.html): crop distribution chart and newly added monthly/yearly summary controls
-- `/top-crop` (templates/top_crop.html): top crops visual and monthly/yearly summary
-- `/locations` (templates/locations.html): location volume chart, map with user markers, monthly/yearly summary
-- `/upload` (templates/upload.html): CSV upload and manual entry form
-- `/profile` (templates/profile.html): user details and optional `location` field
-- `/admin` (templates/admin.html): admin inventory + user list
-
-ROUTES / API (summary)
----------------------
-Authentication & User Management
-- GET `/`                       - Redirects to `/dashboard` if logged in, otherwise `/login`
-- GET/POST `/login`              - Login form and processing
-- GET/POST `/register`           - Register new user
-- GET/POST `/profile`            - View/update user profile (location stored here)
-- GET `/logout`                  - Logout (clears session)
-- POST `/token`                  - Returns a JWT token for API use (expires in 24h)
-
-Dashboard & Data
-- GET `/dashboard`               - Dashboard page
-- GET `/dashboard-data`          - Returns inventory table HTML (used for polling)
-- GET `/api/stats`               - Returns JSON stats and summaries; supports query params `monthly_offset` and `yearly_offset` (integers >= 0)
-
-Inventory Management
-- GET/POST `/upload`             - Upload CSV or manual harvest entry
-- GET/POST `/inventory/edit/<id>`- Edit inventory item (permission-checked)
-- GET `/inventory/delete/<id>`   - Delete inventory item (permission-checked)
-- GET `/admin`                   - Admin console (admin only)
-
-Chat / Messages
-- GET `/api/users`               - Returns list of other users plus special `AgriBot`
-- GET `/api/messages?recipient=X`- Retrieve last 50 messages between current user and `X`
-- POST `/api/messages`           - Send message to a recipient (stores and optionally replies if recipient==AgriBot)
-
-API / External
-- POST `/api/harvest` (JWT)     - Add harvest data programmatically. Requires `Authorization: Bearer <token>` header.
-
-IMPLEMENTATION NOTES
---------------------
-- Tokens: `generate_jwt_token(username)` issues HS256 tokens using `JWT_SECRET` environment variable.
-- Authorization decorator `token_required` validates tokens for API endpoints.
-- `geocode_location(location)` will use `GOOGLE_MAPS_API_KEY` if present; otherwise a deterministic fallback coordinate is computed.
-- Uploads: CSV files must be UTF-8 and contain `crop_name` and `quantity` fields. Manual entries are also supported via form.
-- Dashboard polling: client JS fetches `/dashboard-data` (HTML) and `/api/stats` (JSON) every 2 seconds to update UI.
-- `/api/stats` returns top_monthly, top_yearly, monthly comparison arrays, labels for selected/previous periods.
-
-ENVIRONMENT VARIABLES & CONFIG
-------------------------------
-- `SECRET_KEY` (optional)      - Flask secret key (defaults to a built-in development string)
-- `JWT_SECRET` (optional)      - Secret used to sign JWT tokens (defaults to a local value)
-- `API_KEY` (optional)         - Present in code but not currently required by core features
-- `GOOGLE_MAPS_API_KEY` (optional) - For geocoding (if set, geocoding uses Google Maps API)
-- `UPLOAD_FOLDER`              - Configured as `uploads/` by default
-
-DEPENDENCIES
-------------
-Python packages (runtime):
-- Flask==2.3.3
-- Werkzeug==2.3.7
-- PyJWT==2.12.1
-- requests==2.31.0
-
-Python packages (testing):
-- pytest==8.3.3
-
-Note: `sqlite3` is part of the Python standard library and is used directly.
-
-Front-end libraries (included via CDN in templates):
-- Bootstrap 5 (CSS/JS)
-- Font Awesome (icons)
-- Chart.js (charts)
-- Leaflet.js (maps)
-
-TESTS / SCRIPTS
-----------------
-- `test_api_middleware.py`      - Automated tests (if present; run via pytest)
-- `test_upload.py`              - Upload-related tests
-- `test_market_insights.py`     - Analytics persistence and dashboard history regression tests
-
-DEPLOYMENT & RUNNING LOCALLY
-----------------------------
-1. Create and activate a virtualenv
-   - Windows: `python -m venv .venv` then `.venv\Scripts\activate``
-2. Install dependencies:
-   - `pip install -r requirements.txt`
-3. Initialize and run (development):
-   - `python app.py` (the app calls `init_db()` and starts Flask with `debug=True`)
-4. Open `http://127.0.0.1:5000` in a browser
-
-SECURITY & LIMITATIONS (current)
+CURRENT APPLICATION ARCHITECTURE
 --------------------------------
-- Passwords are hashed using Werkzeug.
-- API uses JWT tokens with expiration.
-- SQL statements use parameterized queries to reduce injection risk.
-- There is no explicit CSRF token implementation in `app.py` (Flask-WTF/CSRF is not used). If deploying publicly, add CSRF protection and review cookie settings.
-- File uploads are validated for `.csv` extension and basic row validation; further sanitization is recommended for production.
+The active application lives in the app package.
 
-MAINTENANCE & MIGRATIONS
-------------------------
-- `init_db()` will create tables and attempt simple ALTERs to add missing columns for existing databases.
-- Back up `database.db` before applying manual migrations in production.
-- Monitor `uploads/` and rotate or archive old upload files periodically.
+Primary runtime files:
+- app/__init__.py - application factory, app creation, route registration, and runtime compatibility wrappers
+- app/config.py - environment-based Flask configuration
+- app/extensions.py - shared Flask extensions: db, migrate, bcrypt, login_manager
+- app/legacy.py - compatibility facade for older imports and runtime compatibility
+- run.py - local developer entry point
+- config.py - compatibility layer for the root project import path
 
-NOTABLE RECENT UI CHANGES
+Current package structure:
+- app/
+  - __init__.py
+  - config.py
+  - extensions.py
+  - legacy.py
+  - models/
+    - __init__.py
+    - auth/
+    - agriculture/
+    - analytics/
+    - community/
+    - knowledge/
+    - marketplace/
+    - verification/
+    - transactions/
+    - users/
+    - database.py
+  - routes/
+    - __init__.py
+    - auth.py
+    - home.py
+    - inventory.py
+    - knowledge.py
+    - marketplace.py
+    - profile.py
+    - admin.py
+  - services/
+    - auth_service.py
+    - geo_service.py
+    - email_service.py
+    - upload_service.py
+    - notification_service.py
+  - forms/
+  - algorithms/
+  - utils/
+  - templates/
+  - static/
+
+Important cleanup notes:
+- Duplicate legacy template/static/model folders were placed in legacy_root/ and kept for reference.
+- The active app package is the canonical code location.
+- The project does not delete working functionality; old legacy files are archived instead.
+
+WHERE TO FIND THE CODE
+---------------------
+Main app bootstrap:
+- app/__init__.py
+- app/extensions.py
+- app/config.py
+
+Routes:
+- app/routes/auth.py
+- app/routes/home.py
+- app/routes/inventory.py
+- app/routes/knowledge.py
+- app/routes/marketplace.py
+- app/routes/profile.py
+- app/routes/admin.py
+
+Models:
+- app/models/auth/models.py
+- app/models/agriculture/models.py
+- app/models/marketplace/models.py
+- app/models/knowledge/models.py
+- app/models/database.py
+- app/models/base.py
+
+Services:
+- app/services/auth_service.py
+- app/services/geo_service.py
+- app/services/upload_service.py
+- app/services/notification_service.py
+- app/services/email_service.py
+
+Algorithms:
+- app/algorithms/market_analysis.py
+- app/algorithms/market_intelligence.py
+- app/algorithms/crop_recommendation.py
+- app/algorithms/demand_forecasting.py
+- app/algorithms/reliability_score.py
+- app/algorithms/supply_detection.py
+
+Templates:
+- app/templates/
+
+Static files:
+- app/static/
+
+Legacy archive:
+- legacy_root/
+
+ENVIRONMENT AND SECRET CONFIGURATION
+-----------------------------------
+Sensitive information is not committed to Git.
+
+Required configuration files:
+- .env - local environment variables used at runtime
+- .env.example - template version for teammates
+- .gitignore - excludes .env, __pycache__, .venv, uploads, and instance
+
+Environment variables used by the app include:
+- DATABASE_URL
+- SECRET_KEY
+- JWT_SECRET
+- POSTGRES_USER
+- POSTGRES_PASSWORD
+- POSTGRES_HOST
+- POSTGRES_PORT
+- POSTGRES_DB
+- MAIL_SERVER
+- MAIL_USERNAME
+- MAIL_PASSWORD
+- MAIL_USE_TLS
+- MAIL_USE_SSL
+
+Configuration behavior:
+- app/config.py loads values from .env through python-dotenv.
+- It falls back to PostgreSQL connection values from environment variables only if DATABASE_URL is not set.
+- Production secrets must not be stored directly in Git-tracked Python files.
+
+EXTENSIONS AND INIT ORDER
 -------------------------
-- `crop_types`, `top_crop`, and `locations` templates now include monthly/yearly offset controls and summary charts that call `/api/stats` to display selected vs previous period data.
-- Dashboard includes monthly/yearly comparison charts and client-side polling every 2 seconds.
+The correct extension order is defined in app/extensions.py and app/__init__.py.
 
-DEVELOPMENT NOTES
+Extensions:
+- db = SQLAlchemy()
+- migrate = Migrate()
+- bcrypt = Bcrypt()
+- login_manager = LoginManager()
+
+Application initialization pattern:
+1. create Flask app
+2. load config from app/config.py
+3. initialize db
+4. initialize migrate
+5. initialize bcrypt
+6. initialize login_manager
+7. register routes
+
+This avoids circular import problems and keeps the app package clean.
+
+DATABASE AND MIGRATION NOTES
+----------------------------
+Database backend:
+- PostgreSQL is the target database backend.
+- SQLite compatibility code is preserved only as a legacy transition layer.
+- The current project does not replace PostgreSQL with SQLite.
+
+Migration behavior:
+- Flask-Migrate remains configured and active through app/extensions.py.
+- The application must not run flask db migrate or flask db upgrade unless a real model change is intentionally made.
+- The project currently avoids schema modifications during reorganization.
+
+Schema helpers and compatibility layer:
+- app/models/database.py contains legacy schema initialization and compatibility helpers.
+- This file must be handled carefully because it still contains legacy SQLite-style SQL patterns.
+- It is not safe to move or rename database tables without confirming PostgreSQL compatibility.
+
+ROUTES AND KEY FEATURES
+-----------------------
+Primary route modules:
+- /login, /register, /logout - authentication
+- /dashboard - central dashboard and analytics view
+- /upload - harvest inventory upload
+- /inventory/edit/<id> - item management
+- /marketplace - marketplace listings and trade actions
+- /profile - profile page and local profile data
+- /knowledge - knowledge hub content
+- /admin - admin functions
+
+API endpoints:
+- /token - generate JWT token
+- /api/harvest - protected JWT endpoint for harvest submissions
+- /api/stats - returns analytics summary data
+- /api/current-user - provides current user information
+- /api/messages - chat API
+- /api/users - user list for chat UI
+
+AUTHENTICATION
+--------------
+The app uses:
+- Flask-Login for session-based UI auth support
+- Flask-Bcrypt for password hashing
+- JWT for API protection via app/services/auth_service.py
+
+Main auth code:
+- app/services/auth_service.py
+- app/routes/auth.py
+- app/models/auth/models.py
+
+SECURITY REMINDER
 -----------------
-- To add new API endpoints, implement route in `app.py` and update front-end fetch calls.
-- Charts are rendered client-side with Chart.js; supply arrays of `{name,total}` from `/api/stats`.
-- Geocoding may be rate-limited; use `GOOGLE_MAPS_API_KEY` for production geocoding.
+- Keep .env out of Git.
+- Do not print or expose database passwords or secret keys.
+- Default fallback secrets should never be committed to version control.
+- Use environment variables for all production credentials.
 
-KNOWN ISSUES & TODO
+PROJECT CLEANUP STATUS
+----------------------
+The project was reorganized safely without deleting functional code.
+
+Canonical runtime folders:
+- app/
+- app/templates/
+- app/static/
+- app/routes/
+- app/models/
+- app/services/
+
+Archived legacy duplicates:
+- legacy_root/
+
+The archived legacy content is not the active app code, but it is preserved for reference and historical comparison during team development.
+
+CODE LOCATION SUMMARY
+---------------------
+If you want to change a feature, start here:
+- Authentication: app/routes/auth.py and app/services/auth_service.py
+- Dashboard analytics: app/routes/home.py
+- Inventory logic: app/routes/inventory.py
+- Market features: app/routes/marketplace.py and app/algorithms/
+- Knowledge hub: app/routes/knowledge.py
+- Admin features: app/routes/admin.py
+- User model: app/models/auth/models.py
+- PostgreSQL/compat layer: app/models/database.py
+- App startup: app/__init__.py
+- Templates: app/templates/
+- Static assets: app/static/
+- Configuration: app/config.py
+- Environment sample: .env.example
+
+TESTING AND RUNNING
 -------------------
-- Add CSRF protection for forms in production.
-- Consider WebSocket or server-sent events for true real-time updates.
-- Add more robust error handling and logging for CSV parsing.
-- Implement paginated API endpoints for large datasets.
+To run locally:
+1. Activate the virtual environment.
+2. Set required values in .env.
+3. Install dependencies if needed: pip install -r requirements.txt
+4. Run: python run.py
 
-HOW TO CONTRIBUTE
------------------
-- Fork the repo, create a feature branch, run tests, submit a pull request.
+Important:
+- Do not run flask db migrate or flask db upgrade unless a real schema change is intended.
+- If PostgreSQL is not configured correctly, the app will fail at runtime before routes load.
 
-OTHER NOTES
------------
-- Default admin user is created on first run: username `admin`, password `admin`.
-- The app is intentionally kept simple and single-file for learning and small deployments.
+TEAM DEVELOPMENT NOTES
+---------------------
+The project is organized so multiple developers can work in parallel by feature area.
 
-VERSION: 1.1
-LAST UPDATED: May 22, 2026
+Suggested team split:
+- feature/authentication: auth + user accounts
+- feature/marketplace: listing and buyer flows
+- feature/agriculture-intelligence: analytics and recommendation logic
+
+This keeps the architecture understandable while still supporting a small student team.
+
+LAST UPDATED
+------------
+August 14, 2026
+
+VERSION
+-------
+1.2

@@ -1,0 +1,24 @@
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyc
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+instance/
+
+# Uploads and local artifacts
+uploads/
+app/static/uploads/
+database.db
+*.sqlite3
+
+# Editor and OS files
+.DS_Store

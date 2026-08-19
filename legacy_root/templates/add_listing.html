@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Listing - Agri-Direct</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        body {
+            background: #f5f5f5;
+        }
+        .navbar-custom {
+            background: linear-gradient(135deg, #1a3408 0%, #0f1f03 100%);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 0 0px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 70px;
+            z-index: 1030;
+        }
+        .sidebar {
+            background: #1a3408;
+            color: white;
+            min-height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 250px;
+            padding-top: 80px;
+            z-index: 1000;
+        }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            padding: 12px 20px;
+            margin: 5px 10px;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        .sidebar .nav-link:hover {
+            color: white;
+            background: rgba(255,255,255,0.1);
+        }
+        .sidebar .nav-link.active {
+            background: #4caf50;
+            color: white;
+        }
+        .main-content {
+            margin-left: 250px;
+            margin-top: 45px;
+            padding-top: 20px;
+        }
+        .form-container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .btn-success {
+            background: #2d5016;
+            border: none;
+        }
+        .btn-success:hover {
+            background: #1a3408;
+        }
+        .btn-secondary {
+            background: #6c757d;
+            border: none;
+        }
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        .inventory-warning {
+            border-left: 4px solid #ffc107;
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <nav class="nav flex-column">
+            <a class="nav-link" href="/dashboard">
+                <i class="fas fa-chart-line"></i> Dashboard
+            </a>
+            <a class="nav-link" href="/upload">
+                <i class="fas fa-upload"></i> Upload Harvest
+            </a>
+            <a class="nav-link" href="/market-intelligence">
+                <i class="fas fa-brain"></i> Market Intelligence
+            </a>
+            <a class="nav-link active" href="/marketplace">
+                <i class="fas fa-store"></i> Marketplace
+            </a>
+            <a class="nav-link" href="#" onclick="toggleChat()">
+                <i class="fas fa-comments"></i> Chat
+            </a>
+            <a class="nav-link" href="/logout">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </a>
+        </nav>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="navbar navbar-dark navbar-custom fixed-top">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1 ms-5">
+                <i class="fas fa-leaf"></i> Agri-Direct 
+            </span>
+            <div class="dropdown">
+                <button class="btn btn-outline-light dropdown-toggle" type="button" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-user-circle"></i> {{ session.get('user', 'User') }}
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
+                    <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge"></i> Profile</a></li>
+                    <li><a class="dropdown-item" href="/about"><i class="fas fa-info-circle"></i> About</a></li>
+                    <li><a class="dropdown-item" href="/marketplace/my-listings"><i class="fas fa-list"></i> My Listings</a></li>
+                    {% if session.get('role') == 'admin' %}
+                    <li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt"></i> Admin Console</a></li>
+                    {% endif %}
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="container-fluid py-4">
+            <div class="row justify-content-center">
+                <div class="col-lg-8">
+                    <div class="form-container">
+                        <h3 class="mb-4"><i class="fas fa-plus-circle"></i> Add New Marketplace Listing</h3>
+                        <p class="text-muted mb-4">List your crops for sale. Buyers can purchase directly from the marketplace.</p>
+                        
+                        {% if not crops %}
+                        <div class="alert alert-warning inventory-warning mb-4">
+                            <h5><i class="fas fa-exclamation-triangle"></i> No Crops in Inventory</h5>
+                            <p class="mb-0">You don't have any crops in your inventory. Please <a href="/upload" class="alert-link">upload harvest data</a> first before creating a listing.</p>
+                        </div>
+                        {% endif %}
+                        
+                        <form method="POST">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="crop_id" class="form-label">Select Your Crop *</label>
+                                    <select class="form-select" id="crop_id" name="crop_id" required {% if not crops %}disabled{% endif %}>
+                                        <option value="">Choose a crop from your inventory...</option>
+                                        {% if crops %}
+                                            {% for crop in crops %}
+                                            <option value="{{ crop['id'] }}" data-available="{{ crop['total_quantity'] }}">
+                                                {{ crop['crops_name'] }} ({{ crop['total_quantity'] }} available)
+                                            </option>
+                                            {% endfor %}
+                                        {% else %}
+                                            <option value="" disabled>No crops found in your inventory</option>
+                                        {% endif %}
+                                    </select>
+                                    <small class="text-muted">Only crops you have in your inventory are shown</small>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="amount" class="form-label">Amount to Sell *</label>
+                                    <input type="number" class="form-control" id="amount" name="amount" min="1" required {% if not crops %}disabled{% endif %}>
+                                    <small class="text-muted">Available in your inventory: 
+                                        <span id="availableDisplay">0</span>
+                                    </small>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="price" class="form-label">Price per Unit (₱) *</label>
+                                    <input type="number" class="form-control" id="price" name="price" min="0.01" step="0.01" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="unit" class="form-label">Unit</label>
+                                    <select class="form-select" id="unit" name="unit">
+                                        <option value="kg">kg</option>
+                                        <option value="g">g</option>
+                                        <option value="lb">lb</option>
+                                        <option value="oz">oz</option>
+                                        <option value="piece">piece</option>
+                                        <option value="bundle">bundle</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="description" class="form-label">Description (Optional)</label>
+                                <textarea class="form-control" id="description" name="description" rows="3" placeholder="Describe your crop quality, variety, harvest date, etc."></textarea>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="expiry_days" class="form-label">Listing Expiry</label>
+                                <select class="form-select" id="expiry_days" name="expiry_days">
+                                    <option value="7">7 days</option>
+                                    <option value="14">14 days</option>
+                                    <option value="30" selected>30 days</option>
+                                    <option value="60">60 days</option>
+                                    <option value="90">90 days</option>
+                                </select>
+                            </div>
+                            
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-success" {% if not crops %}disabled{% endif %}>
+                                    <i class="fas fa-plus"></i> Add Listing
+                                </button>
+                                <a href="/marketplace" class="btn btn-secondary">
+                                    <i class="fas fa-times"></i> Cancel
+                                </a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Show available inventory when crop is selected
+        document.getElementById('crop_id').addEventListener('change', function() {
+            const selected = this.options[this.selectedIndex];
+            const available = parseInt(selected.dataset.available) || 0;
+            const display = document.getElementById('availableDisplay');
+            const amountInput = document.getElementById('amount');
+            
+            display.textContent = available;
+            
+            // Set max amount
+            amountInput.max = available;
+            
+            if (available === 0 || !selected.value) {
+                amountInput.disabled = true;
+                amountInput.placeholder = 'No inventory available';
+                amountInput.value = '';
+            } else {
+                amountInput.disabled = false;
+                amountInput.placeholder = 'Max: ' + available;
+                amountInput.min = 1;
+            }
+        });
+        
+        // Trigger initial state
+        document.addEventListener('DOMContentLoaded', function() {
+            const event = new Event('change');
+            document.getElementById('crop_id').dispatchEvent(event);
+        });
+    </script>
+</body>
+</html>

@@ -1,5 +1,3 @@
-import sqlite3
-
 import app as app_module
 
 
@@ -40,7 +38,7 @@ def test_forecast_endpoint_returns_projection():
 
 def test_analytics_history_is_stored_per_month_and_populates_top_crop_id():
     app_module.init_db()
-    conn = sqlite3.connect('database.db')
+    conn = app_module.get_db()
     cur = conn.cursor()
     cur.execute("DELETE FROM inventory")
     cur.execute("DELETE FROM analytics")
@@ -53,7 +51,7 @@ def test_analytics_history_is_stored_per_month_and_populates_top_crop_id():
 
     app_module.update_analytics()
 
-    conn = sqlite3.connect('database.db')
+    conn = app_module.get_db()
     cur = conn.cursor()
     analytics_rows = cur.execute(
         "SELECT period_value, total_harvest, top_crop, top_crop_volume, top_crop_id FROM analytics ORDER BY period_value"
@@ -71,7 +69,7 @@ def test_analytics_history_is_stored_per_month_and_populates_top_crop_id():
 
 def test_analytics_history_preserves_previous_monthly_rows():
     app_module.init_db()
-    conn = sqlite3.connect('database.db')
+    conn = app_module.get_db()
     cur = conn.cursor()
     cur.execute("DELETE FROM inventory")
     cur.execute("DELETE FROM analytics")
@@ -87,7 +85,7 @@ def test_analytics_history_preserves_previous_monthly_rows():
 
     app_module.update_analytics()
 
-    conn = sqlite3.connect('database.db')
+    conn = app_module.get_db()
     cur = conn.cursor()
     analytics_rows = cur.execute(
         "SELECT period_value, total_harvest FROM analytics WHERE period_type=? ORDER BY period_value",
@@ -101,7 +99,7 @@ def test_analytics_history_preserves_previous_monthly_rows():
 
 def test_dashboard_renders_monthly_analytics_history():
     app_module.init_db()
-    conn = sqlite3.connect('database.db')
+    conn = app_module.get_db()
     cur = conn.cursor()
     cur.execute("DELETE FROM analytics")
     cur.execute("DELETE FROM inventory")
@@ -132,7 +130,7 @@ def test_dashboard_renders_monthly_analytics_history():
 
 def test_manual_upload_populates_inventory_for_dashboard():
     app_module.init_db()
-    conn = sqlite3.connect('database.db')
+    conn = app_module.get_db()
     cur = conn.cursor()
     cur.execute("DELETE FROM inventory WHERE farmer=?", ('uploaduser',))
     cur.execute("DELETE FROM analytics")
@@ -149,7 +147,7 @@ def test_manual_upload_populates_inventory_for_dashboard():
         session['user'] = 'uploaduser'
         session['role'] = 'user'
 
-    conn = sqlite3.connect('database.db')
+    conn = app_module.get_db()
     cur = conn.cursor()
     cur.execute("INSERT OR IGNORE INTO crops(crops_name) VALUES (?)", ('Maize',))
     conn.commit()
@@ -163,7 +161,7 @@ def test_manual_upload_populates_inventory_for_dashboard():
     }, follow_redirects=True)
     assert response.status_code == 200
 
-    conn = sqlite3.connect('database.db')
+    conn = app_module.get_db()
     cur = conn.cursor()
     row = cur.execute(
         "SELECT SUM(quantity) AS total FROM inventory WHERE farmer=? AND crop_name=?",
@@ -173,7 +171,7 @@ def test_manual_upload_populates_inventory_for_dashboard():
 
     assert row[0] == 12
 
-    conn = sqlite3.connect('database.db')
+    conn = app_module.get_db()
     cur = conn.cursor()
     analytics_row = cur.execute(
         "SELECT total_harvest, top_location, top_location_volume FROM analytics WHERE period_type=? ORDER BY period_value DESC LIMIT 1",
@@ -188,7 +186,7 @@ def test_manual_upload_populates_inventory_for_dashboard():
 
 def test_yearly_analytics_is_created_and_preserved():
     app_module.init_db()
-    conn = sqlite3.connect('database.db')
+    conn = app_module.get_db()
     cur = conn.cursor()
     cur.execute("DELETE FROM inventory")
     cur.execute("DELETE FROM analytics")
@@ -206,7 +204,7 @@ def test_yearly_analytics_is_created_and_preserved():
 
     app_module.update_analytics()
 
-    conn = sqlite3.connect('database.db')
+    conn = app_module.get_db()
     cur = conn.cursor()
     yearly_rows = cur.execute(
         "SELECT period_value, total_harvest FROM analytics WHERE period_type=? ORDER BY period_value",

@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agri-Direct Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        body {
+            background: linear-gradient(135deg, #2d5016 0%, #1a3408 100%);
+            color: #333;
+        }
+        .navbar-custom {
+            background: linear-gradient(135deg, #1a3408 0%, #0f1f03 100%);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 0 0px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 70px;
+            z-index: 1030;
+        }
+        .sidebar {
+            background: #1a3408;
+            color: white;
+            min-height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 250px;
+            padding-top: 80px;
+            z-index: 1000;
+        }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            padding: 12px 20px;
+            margin: 5px 10px;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        .sidebar .nav-link:hover {
+            color: white;
+            background: rgba(255,255,255,0.1);
+        }
+        .sidebar .nav-link.active {
+            background: #4caf50;
+            color: white;
+        }
+        .main-content {
+            margin-left: 250px;
+            margin-top: 45px;
+            padding-top: 20px;
+        }
+        .card {
+            border: none;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+            width: 100%;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #4caf50 0%, #2d5016 100%);
+            color: white;
+        }
+        .table-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow-x: auto; 
+        }
+        
+        .btn-primary {
+            background: #2d5016;
+            border: none;
+        }
+        .btn-primary:hover {
+            background: #1a3408;
+        }
+        .live-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background: #4caf50;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+            margin-right: 5px;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .badge {
+            font-size: 0.9rem;
+        }
+        .dashboard-header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            margin-top: 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        /* Chatbox Styles */
+        .chatbox {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 350px;
+            height: 500px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+            display: none;
+            flex-direction: column;
+            z-index: 1050;
+        }
+        .chatbox-header {
+            background: #2d5016;
+            color: white;
+            padding: 15px;
+            border-radius: 10px 10px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chatbox-body {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            max-height: 400px;
+        }
+        .chatbox-footer {
+            padding: 15px;
+            border-top: 1px solid #eee;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 18px;
+            max-width: 80%;
+        }
+        .message.sent {
+            background: #4caf50;
+            color: white;
+            margin-left: auto;
+            text-align: right;
+        }
+        .message.received {
+            background: #f1f1f1;
+            color: #333;
+        }
+        .chart-container {
+            min-height: 280px;
+            position: relative;
+        }
+        .summary-card-body {
+            min-height: 540px;
+            display: flex;
+            flex-direction: column;
+            padding-bottom: 15px;
+        }
+        .summary-row {
+            flex: 1;
+            margin-bottom: 10px;
+        }
+        .summary-chart-area {
+            min-height: 200px;
+            max-height: 200px;
+            position: relative;
+            margin-bottom: 15px;
+        }
+        .summary-chart-area canvas {
+            width: 100% !important;
+            height: 170px !important;
+        }
+        .summary-list-card {
+            max-height: none;
+            overflow: visible;
+        }
+        /* Sortable Table Headers */
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            padding-right: 25px;
+        }
+        .sortable:hover {
+            background-color: #e9ecef;
+        }
+        .sort-icon {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 0.75rem;
+            opacity: 0.5;
+        }
+        .sortable.sort-asc .sort-icon::after {
+            content: '\25B2';
+            opacity: 1;
+        }
+        .sortable.sort-desc .sort-icon::after {
+            content: '\25BC';
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <nav class="nav flex-column">
+            <a class="nav-link active" href="/dashboard">
+                <i class="fas fa-chart-line"></i> Dashboard
+            </a>
+            <a class="nav-link" href="/upload">
+                <i class="fas fa-upload"></i> Upload Harvest
+            </a>
+            <a class="nav-link" href="/market-intelligence">
+                <i class="fas fa-brain"></i> Market Intelligence
+            </a>
+            <a class="nav-link" href="/marketplace">
+                <i class="fas fa-store"></i> Marketplace
+            </a>
+            <a class="nav-link" href="/messages">
+                <i class="fas fa-comments"></i> Messages
+            </a>
+            <a class="nav-link" href="/knowledge">
+                <i class="fas fa-book-open"></i> Digital Knowledge Hub
+            </a>
+            <a class="nav-link" href="/profile">
+                <i class="fas fa-user-circle"></i> Profile
+            </a>
+            <a class="nav-link" href="/logout">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </a>
+        </nav>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="navbar navbar-dark navbar-custom fixed-top">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1 ms-5">
+                <i class="fas fa-leaf"></i> Agri-Direct 
+            </span>
+
+            <div class="d-flex ms-auto align-items-center">
+                <div class="dropdown me-2">
+                    <button class="btn btn-outline-light position-relative"
+                            id="notificationDropdown"
+                            data-bs-toggle="dropdown">
+                        <i class="fas fa-bell"></i>
+                        <span id="notification-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">0</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" style="width:350px;" id="notification-list">
+                        <li class="dropdown-header">Notifications</li>
+                        <li><span class="dropdown-item text-muted">No notifications</span></li>
+                    </ul>
+                </div>
+
+                <div class="dropdown">
+                    <button class="btn btn-outline-light dropdown-toggle" type="button" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-user-circle"></i> {{ session.get('user', 'User') }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
+                        <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge"></i> Profile</a></li>
+                        <li><a class="dropdown-item" href="/about"><i class="fas fa-info-circle"></i> About</a></li>
+                        {% if session.get('role') == 'admin' %}
+                        <li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt"></i> Admin Console</a></li>
+                        {% endif %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="container-fluid py-4">  
+            <!-- Dashboard Header -->
+            <div class="dashboard-header">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <h2><i class="fas fa-chart-line"></i> Real-Time Inventory Dashboard</h2>
+                        <p class="text-muted mb-0"><span class="live-indicator"></span>Live Updates (Every 2 seconds)</p>
+                    </div>
+                    <div class="col-auto">
+                        <a href="/upload" class="btn btn-primary">
+                            <i class="fas fa-upload"></i> Upload Harvests
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <a href="/total-harvest" style="text-decoration: none; color: inherit;">
+                <div class="card stat-card">
+                    <div class="card-body">
+                        <h6 class="card-title">Total Harvest</h6>
+                        <h3 id="total-quantity">{{ total }}</h3>
+                        <small>Units Received</small>
+                    </div>
+                </div>
+                </a>
+            </div>
+            <div class="col-md-3">
+                <a href="/top-crop" style="text-decoration: none; color: inherit;">
+                <div class="card stat-card">
+                    <div class="card-body">
+                        <h6 class="card-title">Top Crop</h6>
+                        <h3 id="top-crop">
+                            {% if crops %}{{ crops[0]['crop_name'] }}{% else %}N/A{% endif %}
+                        </h3>
+                        <small id="top-crop-qty">
+                            {% if crops %}{{ crops[0]['total'] }} units{% else %}No data{% endif %}
+                        </small>
+                    </div>
+                </div>
+                </a>
+            </div>
+            <div class="col-md-3">
+                <a href="/crop-types" style="text-decoration: none; color: inherit;">
+                <div class="card stat-card">
+                    <div class="card-body">
+                        <h6 class="card-title">Crop Types</h6>
+                        <h3 id="crops-count">{{ crops|length }}</h3>
+                        <small>Different Crops</small>
+                    </div>
+                </div>
+                </a>
+            </div>
+            <div class="col-md-3">
+                <a href="/locations" style="text-decoration: none; color: inherit;">
+                <div class="card stat-card">
+                    <div class="card-body">
+                        <h6 class="card-title">Location</h6>
+                        <h3 id="location-count">{{ location_count }}</h3>
+                        <small>Crops Locations</small>
+                    </div>
+                </div>
+                </a>
+            </div>
+        </div>
+
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-light border-0">
+                        <h5 class="mb-0"><i class="fas fa-history"></i> Monthly Analytics History</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if analytics_history %}
+                        <div class="table-container">
+                            <table class="table table-striped table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Month</th>
+                                        <th>Total Harvest</th>
+                                        <th>Top Crop</th>
+                                        <th>Top Crop Volume</th>
+                                        <th>Top Location</th>
+                                        <th>Top Location Volume</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for row in analytics_history %}
+                                    <tr>
+                                        <td>{{ row['period_value'] }}</td>
+                                        <td>{{ row['total_harvest'] }}</td>
+                                        <td>{{ row['top_crop'] or '-' }}</td>
+                                        <td>{{ row['top_crop_volume'] or 0 }}</td>
+                                        <td>{{ row['top_location'] or '-' }}</td>
+                                        <td>{{ row['top_location_volume'] or 0 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <p class="text-muted mb-0">No monthly analytics history available yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Crop Summary Graph -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-light border-0">
+                        <h5 class="mb-0"><i class="fas fa-seedling"></i> Crop Summary</h5>
+                    </div>
+                    <div class="card-body summary-card-body">
+                        {% if crops %}
+                        <div class="row gy-3 summary-row">
+                            <div class="col-12 mb-3">
+                                <div class="row gx-2 gy-2">
+                                    <div class="col-md-6">
+                                        <label for="monthly-offset" class="form-label mb-1">Monthly offset (months ago)</label>
+                                        <input id="monthly-offset" type="number" class="form-control" min="0" max="24" value="0" step="1">
+                                        <div class="form-text">View data for a previous month. 0 = this month.</div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="yearly-offset" class="form-label mb-1">Yearly offset (years ago)</label>
+                                        <input id="yearly-offset" type="number" class="form-control" min="0" max="10" value="0" step="1">
+                                        <div class="form-text">View data for a previous year. 0 = this year.</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-6">
+                                <div class="chart-container summary-chart-area">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <h6 class="mb-0" style="font-size: 0.95rem;">Monthly Harvest</h6>
+                                        <small class="text-muted" id="monthly-date-range" style="font-size: 0.8rem;">This Month</small>
+                                    </div>
+                                    <canvas id="monthly-summary-chart" height="170"></canvas>
+                                </div>
+                                <div class="card shadow-sm mt-2 summary-list-card">
+                                    <div class="card-header bg-light py-1" style="padding: 0.5rem 0.75rem !important;">
+                                        <h6 class="mb-0" style="font-size: 0.9rem;">Month Top</h6>
+                                    </div>
+                                    <div class="card-body p-2" style="overflow: hidden;">
+                                        <ul class="list-group list-group-sm" id="monthly-most-bought">
+                                            <li class="list-group-item text-muted" style="font-size: 0.8rem; padding: 0.25rem 0.5rem;">Loading...</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-lg-6">
+                                <div class="chart-container summary-chart-area">
+                                    <div class="d-flex justify-content-between align-items-center mb-1">
+                                        <h6 class="mb-0" style="font-size: 0.95rem;">Yearly Harvest</h6>
+                                        <small class="text-muted" id="yearly-date-range" style="font-size: 0.8rem;">This Year</small>
+                                    </div>
+                                    <canvas id="yearly-summary-chart" height="170"></canvas>
+                                </div>
+                                <div class="card shadow-sm mt-2 summary-list-card">
+                                    <div class="card-header bg-light py-1" style="padding: 0.5rem 0.75rem !important;">
+                                        <h6 class="mb-0" style="font-size: 0.9rem;">Year Top</h6>
+                                    </div>
+                                    <div class="card-body p-2" style="overflow: hidden;">
+                                        <ul class="list-group list-group-sm" id="yearly-most-bought">
+                                            <li class="list-group-item text-muted" style="font-size: 0.8rem; padding: 0.25rem 0.5rem;">Loading...</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="text-muted" style="font-size: 0.8rem; margin-top: 0.75rem; margin-bottom: 0;">Top crops by monthly & yearly harvest volume.</p>
+                        {% else %}
+                        <p class="text-muted">No crop data available</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+        
+        <!-- Real-Time Inventory Table -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="table-container">
+                    <div class="p-3 border-bottom">
+                        <div class="row align-items-center">
+                            <div class="col-md-6">
+                                <h5 class="mb-0"><i class="fas fa-table"></i>   Inventory</h5>
+                            </div>
+                            <div class="col-md-6 text-md-end mt-3 mt-md-0">
+                                <input id="inventory-search" type="text" class="form-control" placeholder="Search by farmer, crop, or location..." oninput="filterInventory()">
+                            </div>
+                        </div>
+                    </div>
+                    <table class="table table-striped table-hover mb-0" id="inventory-table-header">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="sortable" data-sort="farmer">Posted By <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="crop_name">Crop Name <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="quantity">Quantity <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="location">Location <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="date_received">Date Received <span class="sort-icon"></span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventory-table">
+                            {% for row in inventory %}
+                            <tr>
+                                <td>{{ row['farmer'] }}</td>
+                                <td><strong>{{ row['crop_name'] }}</strong></td>
+                                <td><span class="badge bg-success">{{ row['quantity'] }}</span></td>
+                                <td>{{ row['location'] or '-' }}</td>
+                                <td title="{{ row['date_received'] }}">{{ row['date_received'][:19] }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Sort state tracking
+        let sortDir = {};
+        let currentSort = { column: null, direction: null };
+        const sortableHeaders = document.querySelectorAll('.sortable');
+        let comparisonChart = null;
+        let monthlySummaryChart = null;
+        let yearlySummaryChart = null;
+
+        function createSummaryChart(canvasId, labels, values, labelText) {
+            const chartCanvas = document.getElementById(canvasId);
+            if (!chartCanvas) return;
+
+            const config = {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: labelText,
+                        data: values,
+                        backgroundColor: 'rgba(54, 162, 235, 0.75)',
+                        borderColor: 'rgba(33, 150, 243, 0.95)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: '#333' }, grid: { display: false } },
+                        y: { beginAtZero: true, ticks: { color: '#333' } }
+                    },
+                    plugins: { legend: { display: false }, tooltip: { enabled: true } }
+                }
+            };
+
+            const chartVar = canvasId === 'monthly-summary-chart' ? monthlySummaryChart : yearlySummaryChart;
+            if (chartVar) {
+                chartVar.data.labels = labels;
+                chartVar.data.datasets[0].data = values;
+                chartVar.update();
+            } else {
+                if (canvasId === 'monthly-summary-chart') {
+                    monthlySummaryChart = new Chart(chartCanvas, config);
+                } else {
+                    yearlySummaryChart = new Chart(chartCanvas, config);
+                }
+            }
+        }
+
+        function updateMonthlySummaryChart(topMonthly) {
+            const labels = topMonthly.map(item => item.name);
+            const values = topMonthly.map(item => item.total);
+            createSummaryChart('monthly-summary-chart', labels, values, 'Monthly Harvest');
+            renderMostBoughtList('monthly-most-bought', topMonthly);
+        }
+
+        function updateYearlySummaryChart(topYearly) {
+            const labels = topYearly.map(item => item.name);
+            const values = topYearly.map(item => item.total);
+            createSummaryChart('yearly-summary-chart', labels, values, 'Yearly Harvest');
+            renderMostBoughtList('yearly-most-bought', topYearly);
+        }
+
+        function renderMostBoughtList(listId, items) {
+            const list = document.getElementById(listId);
+            if (!list) return;
+            list.innerHTML = '';
+            if (!items || items.length === 0) {
+                list.innerHTML = '<li class="list-group-item text-muted" style="font-size: 0.8rem; padding: 0.25rem 0.5rem;">No data.</li>';
+                return;
+            }
+            items.slice(0, 4).forEach(item => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                li.style.cssText = 'font-size: 0.8rem; padding: 0.25rem 0.5rem;';
+                li.innerHTML = `<span style="overflow: hidden; text-overflow: ellipsis;">${item.name}</span><span class="badge bg-success rounded-pill" style="font-size: 0.7rem; margin-left: 0.5rem;">${item.total}</span>`;
+                list.appendChild(li);
+            });
+        }
+
+        function createComparisonChart(labels, currentValues, previousValues) {
+            const chartCanvas = document.getElementById('crop-comparison-chart');
+            if (!chartCanvas) return;
+
+            const config = {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'This Month',
+                            data: currentValues,
+                            backgroundColor: 'rgba(54, 162, 235, 0.65)'
+                        },
+                        {
+                            label: 'Last Month',
+                            data: previousValues,
+                            backgroundColor: 'rgba(255, 159, 64, 0.65)'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            ticks: { color: '#333' },
+                            grid: { display: false }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: { color: '#333' }
+                        }
+                    },
+                    plugins: {
+                        tooltip: { enabled: true }
+                    }
+                }
+            };
+
+            if (comparisonChart) {
+                comparisonChart.data.labels = labels;
+                comparisonChart.data.datasets[0].data = currentValues;
+                comparisonChart.data.datasets[1].data = previousValues;
+                comparisonChart.update();
+            } else {
+                comparisonChart = new Chart(chartCanvas, config);
+            }
+        }
+
+        function updateMonthlyComparisonChart(comparisonData) {
+            if (!comparisonData || comparisonData.length === 0) return;
+            const labels = comparisonData.map(entry => entry.name);
+            const currentValues = comparisonData.map(entry => entry.current);
+            const previousValues = comparisonData.map(entry => entry.previous);
+            createComparisonChart(labels, currentValues, previousValues);
+        }
+
+        // Initialize sort functionality
+        function initializeSort() {
+            const headers = document.querySelectorAll('.sortable');
+            headers.forEach(header => {
+                header.addEventListener('click', function() {
+                    const sortBy = this.getAttribute('data-sort');
+                    toggleSort(sortBy, this);
+                });
+            });
+        }
+        
+        function toggleSort(sortBy, headerElement) {
+            // Remove sort class from all headers
+            document.querySelectorAll('.sortable').forEach(h => {
+                h.classList.remove('sort-asc', 'sort-desc');
+            });
+            
+            // Toggle sort direction
+            if (sortDir[sortBy] === 'asc') {
+                sortDir[sortBy] = 'desc';
+                headerElement.classList.add('sort-desc');
+            } else {
+                sortDir[sortBy] = 'asc';
+                headerElement.classList.add('sort-asc');
+            }
+            
+            // Update current sort state
+            currentSort.column = sortBy;
+            currentSort.direction = sortDir[sortBy];
+            
+            // Perform sort
+            sortTable(sortBy, sortDir[sortBy]);
+        }
+        
+        function sortTable(sortBy, direction, skipStateUpdate = false) {
+            const tableBody = document.getElementById('inventory-table');
+            const rows = Array.from(tableBody.querySelectorAll('tr'));
+            
+            // Map column names to indices
+            const columnIndex = {
+                'farmer': 0,
+                'crop_name': 1,
+                'quantity': 2,
+                'location': 3,
+                'date_received': 4
+            };
+            
+            rows.sort((a, b) => {
+                const colIdx = columnIndex[sortBy];
+                let aValue = a.children[colIdx].textContent.trim();
+                let bValue = b.children[colIdx].textContent.trim();
+                
+                // Handle numeric sorting for quantity
+                if (sortBy === 'quantity') {
+                    aValue = parseInt(aValue) || 0;
+                    bValue = parseInt(bValue) || 0;
+                } else if (sortBy === 'date_received') {
+                    // Parse dates for proper sorting
+                    aValue = new Date(aValue).getTime() || 0;
+                    bValue = new Date(bValue).getTime() || 0;
+                } else {
+                    // String sorting (case-insensitive)
+                    aValue = aValue.toLowerCase();
+                    bValue = bValue.toLowerCase();
+                }
+                
+                if (aValue < bValue) {
+                    return direction === 'asc' ? -1 : 1;
+                } else if (aValue > bValue) {
+                    return direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+            
+            // Re-append sorted rows
+            rows.forEach(row => tableBody.appendChild(row));
+            
+            // Update visual state if not skipped
+            if (!skipStateUpdate) {
+                document.querySelectorAll('.sortable').forEach(h => {
+                    h.classList.remove('sort-asc', 'sort-desc');
+                    if (h.getAttribute('data-sort') === sortBy) {
+                        h.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
+                    }
+                });
+            }
+        }
+
+        // Real-time dashboard updates every 2 seconds
+        function getStatsUrl() {
+            const monthOffset = parseInt(document.getElementById('monthly-offset').value, 10) || 0;
+            const yearOffset = parseInt(document.getElementById('yearly-offset').value, 10) || 0;
+            return `/api/stats?monthly_offset=${monthOffset}&yearly_offset=${yearOffset}`;
+        }
+
+        function updateDashboard() {
+            // Update inventory table
+            fetch('/dashboard-data')
+                .then(response => response.text())
+                .then(html => {
+                    document.getElementById('inventory-table').innerHTML = html;
+                    
+                    // Reapply sort if one was active
+                    if (currentSort.column && currentSort.direction) {
+                        sortTable(currentSort.column, currentSort.direction, false);
+                    }
+                    filterInventory();
+                })
+                .catch(error => console.error('Error updating table:', error));
+
+            // Update statistics
+            fetch(getStatsUrl())
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('total-quantity').textContent = data.total_quantity;
+                    document.getElementById('top-crop').textContent = data.top_crop;
+                    document.getElementById('top-crop-qty').textContent = data.crops.length > 0 ? 
+                        (data.crops[0].quantity + ' units') : 'No data';
+                    document.getElementById('crops-count').textContent = data.crops_count;
+                    document.getElementById('location-count').textContent = data.location_count;
+                    updateMonthlySummaryChart(data.top_monthly);
+                    updateYearlySummaryChart(data.top_yearly);
+                    updateDateRanges(data);
+                })
+                .catch(error => console.error('Error updating stats:', error));
+        }
+
+        function updateDateRanges(data) {
+            if (data && data.selected_month_label && data.previous_month_label) {
+                document.getElementById('monthly-date-range').textContent = `${data.selected_month_label} vs ${data.previous_month_label}`;
+            }
+            if (data && data.selected_year_label && data.previous_year_label) {
+                document.getElementById('yearly-date-range').textContent = `${data.selected_year_label} vs ${data.previous_year_label}`;
+            }
+        }
+
+        function filterInventory() {
+            const query = document.getElementById('inventory-search').value.trim().toLowerCase();
+            const rows = document.querySelectorAll('#inventory-table tr');
+            rows.forEach(row => {
+                const farmer = row.children[0]?.textContent.trim().toLowerCase() || '';
+                const crop = row.children[1]?.textContent.trim().toLowerCase() || '';
+                const location = row.children[3]?.textContent.trim().toLowerCase() || '';
+
+                if (!query || farmer.includes(query) || crop.includes(query) || location.includes(query)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        // Update dashboard every 2 seconds
+        setInterval(updateDashboard, 2000);
+
+        // Initial update on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeSort();
+            document.getElementById('monthly-offset').addEventListener('input', function() {
+                if (this.value < 0) this.value = 0;
+                updateDashboard();
+            });
+            document.getElementById('yearly-offset').addEventListener('input', function() {
+                if (this.value < 0) this.value = 0;
+                updateDashboard();
+            });
+            updateDashboard();
+        });
+
+        // Chat functionality
+        let currentRecipient = '';
+
+        function toggleChat() {
+            const chatbox = document.getElementById('chatbox');
+            const toggleBtn = document.querySelector('.chat-toggle');
+            
+            if (chatbox.style.display === 'flex') {
+                chatbox.style.display = 'none';
+                toggleBtn.style.display = 'block';
+                currentRecipient = '';
+            } else {
+                chatbox.style.display = 'flex';
+                toggleBtn.style.display = 'none';
+                loadUsers();
+            }
+        }
+
+        function loadUsers() {
+            fetch('/api/users')
+                .then(response => response.json())
+                .then(users => {
+                    const select = document.getElementById('recipient-select');
+                    select.innerHTML = '<option value="">Choose a user...</option>';
+                    
+                    users.forEach(user => {
+                        const option = document.createElement('option');
+                        option.value = user;
+                        option.textContent = user;
+                        select.appendChild(option);
+                    });
+                })
+                .catch(error => console.error('Error loading users:', error));
+        }
+
+        function loadMessages() {
+            const recipient = document.getElementById('recipient-select').value;
+            const chatMessages = document.getElementById('chat-messages');
+            
+            if (!recipient) {
+                chatMessages.innerHTML = `
+                    <div class="text-center text-muted small mt-3">
+                        <i class="fas fa-comments"></i><br>
+                        Select a recipient to start chatting
+                    </div>
+                `;
+                currentRecipient = '';
+                return;
+            }
+            
+            currentRecipient = recipient;
+            
+            const endpoint = `/api/messages?recipient=${encodeURIComponent(recipient)}`;
+
+            fetch(endpoint)
+                .then(response => response.json())
+                .then(messages => {
+                    chatMessages.innerHTML = '';
+                    
+                    if (messages.length === 0) {
+                        chatMessages.innerHTML = `
+                            <div class="text-center text-muted small mt-3">
+                                <i class="fas fa-comment-dots"></i><br>
+                                No messages yet. Start the conversation!
+                            </div>
+                        `;
+                    } else {
+                        messages.forEach(msg => {
+                            const messageDiv = document.createElement('div');
+                            messageDiv.className = `message ${msg.sender === '{{ session.get('user', 'User') }}' ? 'sent' : 'received'}`;
+                            messageDiv.innerHTML = `
+                                <strong>${msg.sender}:</strong> ${msg.message}
+                                <small class="text-muted d-block">${new Date(msg.timestamp).toLocaleTimeString()}</small>
+                            `;
+                            chatMessages.appendChild(messageDiv);
+                        });
+                        
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                    }
+                })
+                .catch(error => console.error('Error loading messages:', error));
+        }
+
+        function sendMessage() {
+            if (!currentRecipient) {
+                alert('Please select a recipient first');
+                return;
+            }
+            
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            
+            if (!message) return;
+            
+            fetch('/api/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ 
+                    message: message,
+                    recipient: currentRecipient
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    input.value = '';
+                    loadMessages();
+                } else {
+                    alert('Error sending message: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(error => console.error('Error sending message:', error));
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // Load messages periodically when chat is open and recipient is selected
+        setInterval(() => {
+            if (document.getElementById('chatbox').style.display === 'flex' && currentRecipient) {
+                loadMessages();
+            }
+        }, 3000);
+
+
+        async function loadNotifications(){
+
+            const response = await fetch("/notifications");
+        
+            const notifications = await response.json();
+        
+            const list = document.getElementById("notification-list");
+        
+            const badge = document.getElementById("notification-count");
+        
+            badge.innerText = notifications.filter(n=>!n.is_read).length;
+        
+            list.innerHTML = `
+                <li class="dropdown-header">Notifications</li>
+            `;
+        
+            notifications.forEach(n=>{
+        
+                list.innerHTML += `
+                <li>
+        
+                    <a class="dropdown-item">
+        
+                        <strong>${n.title}</strong><br>
+        
+                        <small>${n.message}</small>
+        
+                    </a>
+        
+                </li>
+                `;
+        
+            });
+        
+        }
+        
+        async function markNotificationsRead(){
+            try{
+                await fetch('/notifications/mark-read', { method: 'POST' });
+            }catch(e){ console.error('Failed to mark notifications read', e); }
+            await loadNotifications();
+        }
+
+        document.addEventListener('DOMContentLoaded', ()=>{
+            // initial load and periodic refresh
+            loadNotifications();
+            setInterval(loadNotifications, 5000);
+            const btn = document.getElementById('notificationDropdown');
+            if(btn){ btn.addEventListener('click', markNotificationsRead); }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Listings - Agri-Direct</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        body {
+            background: #f5f5f5;
+        }
+        .navbar-custom {
+            background: linear-gradient(135deg, #1a3408 0%, #0f1f03 100%);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 0 0px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 70px;
+            z-index: 1030;
+        }
+        .sidebar {
+            background: #1a3408;
+            color: white;
+            min-height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 250px;
+            padding-top: 80px;
+            z-index: 1000;
+        }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            padding: 12px 20px;
+            margin: 5px 10px;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        .sidebar .nav-link:hover {
+            color: white;
+            background: rgba(255,255,255,0.1);
+        }
+        .sidebar .nav-link.active {
+            background: #4caf50;
+            color: white;
+        }
+        .main-content {
+            margin-left: 250px;
+            margin-top: 45px;
+            padding-top: 20px;
+        }
+        .listing-card {
+            transition: transform 0.2s;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .listing-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .status-badge {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+        .status-available {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-sold {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .status-traded {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .btn-danger {
+            background: #dc3545;
+            border: none;
+        }
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        .btn-success {
+            background: #2d5016;
+            border: none;
+        }
+        .btn-success:hover {
+            background: #1a3408;
+        }
+        .page-header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <nav class="nav flex-column">
+            <a class="nav-link" href="/dashboard">
+                <i class="fas fa-chart-line"></i> Dashboard
+            </a>
+            <a class="nav-link" href="/upload">
+                <i class="fas fa-upload"></i> Upload Harvest
+            </a>
+            <a class="nav-link" href="/market-intelligence">
+                <i class="fas fa-brain"></i> Market Intelligence
+            </a>
+            <a class="nav-link active" href="/marketplace">
+                <i class="fas fa-store"></i> Marketplace
+            </a>
+            <a class="nav-link" href="#" onclick="toggleChat()">
+                <i class="fas fa-comments"></i> Chat
+            </a>
+            <a class="nav-link" href="/logout">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </a>
+        </nav>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="navbar navbar-dark navbar-custom fixed-top">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1 ms-5">
+                <i class="fas fa-leaf"></i> Agri-Direct 
+            </span>
+            <div class="dropdown">
+                <button class="btn btn-outline-light dropdown-toggle" type="button" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                    <i class="fas fa-user-circle"></i> {{ session.get('user', 'User') }}
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
+                    <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge"></i> Profile</a></li>
+                    <li><a class="dropdown-item" href="/about"><i class="fas fa-info-circle"></i> About</a></li>
+                    <li><a class="dropdown-item" href="/marketplace/my-listings"><i class="fas fa-list"></i> My Listings</a></li>
+                    <li><a class="dropdown-item" href="/marketplace/my-purchases"><i class="fas fa-shopping-bag"></i> My Purchases & Ratings</a></li>
+                    {% if session.get('role') == 'admin' %}
+                    <li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt"></i> Admin Console</a></li>
+                    {% endif %}
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="container-fluid py-4">
+            <div class="page-header">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <h3><i class="fas fa-list"></i> My Marketplace Dashboard</h3>
+                        <p class="text-muted mb-0">Manage active listings, track sold orders, and confirm deliveries.</p>
+                    </div>
+                    <div class="col-auto">
+                        <a href="/marketplace/add" class="btn btn-success">
+                            <i class="fas fa-plus"></i> New Listing
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <div class="card p-3 shadow-sm">
+                        <h6 class="text-uppercase text-muted mb-2">Active Listings</h6>
+                        <p class="mb-0">Current crops you have listed for sale.</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card p-3 shadow-sm">
+                        <h6 class="text-uppercase text-muted mb-2">Sold Orders</h6>
+                        <p class="mb-0">Orders awaiting delivery confirmation.</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card p-3 shadow-sm">
+                        <h6 class="text-uppercase text-muted mb-2">Delivered Orders</h6>
+                        <p class="mb-0">Completed orders with delivery confirmed.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-12">
+                    <div class="card mb-4">
+                        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="card-title mb-0">Active Listings</h5>
+                                <small class="text-muted">Manage your available inventory.</small>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                {% if active_listings %}
+                                    {% for listing in active_listings %}
+                                    <div class="col-md-6 mb-4">
+                                        <div class="card listing-card h-100">
+                                            <div class="card-body">
+                                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                                    <div>
+                                                        <h5 class="card-title mb-1">{{ listing['crop_name'] }}</h5>
+                                                        <small class="text-muted">{{ listing['description'] or 'No description provided' }}</small>
+                                                    </div>
+                                                    <span class="status-badge status-available">Available</span>
+                                                </div>
+                                                <div class="row mt-3">
+                                                    <div class="col-6">
+                                                        <small class="text-muted">Amount</small>
+                                                        <h6>{{ listing['amount'] }} {{ listing['unit'] or 'kg' }}</h6>
+                                                    </div>
+                                                    <div class="col-6 text-end">
+                                                        <small class="text-muted">Price</small>
+                                                        <h6 class="text-success">₱{{ "%.2f"|format(listing['price']) }}</h6>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="card-footer bg-transparent text-muted small d-flex justify-content-between align-items-center">
+                                                <span>
+                                                    <i class="far fa-calendar-alt"></i> Listed: {{ listing['listing_date'][:16] }}
+                                                </span>
+                                                <button class="btn btn-danger btn-sm" onclick="deleteListing({{ listing['id'] }})">
+                                                    <i class="fas fa-trash"></i> Delete
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                {% else %}
+                                    <div class="col-12">
+                                        <div class="alert alert-info">
+                                            You have no active marketplace listings. Add a new listing to start selling.
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card mb-4">
+                        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="card-title mb-0">Sold Orders</h5>
+                                <small class="text-muted">Orders that are sold and waiting for delivery confirmation.</small>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                {% if sold_orders %}
+                                    {% for listing in sold_orders %}
+                                    <div class="col-md-6 mb-4">
+                                        <div class="card listing-card h-100">
+                                            <div class="card-body">
+                                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                                    <div>
+                                                        <h5 class="card-title mb-1">{{ listing['crop_name'] }}</h5>
+                                                        <small class="text-muted">Buyer: {{ listing['buyer_username'] or 'Unknown' }}</small>
+                                                    </div>
+                                                    <span class="status-badge status-sold">Sold</span>
+                                                </div>
+                                                <div class="row mt-3">
+                                                    <div class="col-6">
+                                                        <small class="text-muted">Amount</small>
+                                                        <h6>{{ listing['amount'] }} {{ listing['unit'] or 'kg' }}</h6>
+                                                    </div>
+                                                    <div class="col-6 text-end">
+                                                        <small class="text-muted">Order Date</small>
+                                                        <h6>{{ listing['order_date'][:16] if listing['order_date'] else 'N/A' }}</h6>
+                                                    </div>
+                                                </div>
+                                                {% if listing['description'] %}
+                                                <p class="card-text small text-muted">{{ listing['description'] }}</p>
+                                                {% endif %}
+                                            </div>
+                                            <div class="card-footer bg-transparent text-muted small d-flex justify-content-between align-items-center">
+                                                <button class="btn btn-primary btn-sm" onclick="confirmCompleteOrder({{ listing['id'] }})">
+                                                    <i class="fas fa-check-circle"></i> Mark Delivered
+                                                </button>
+                                                <span class="text-end">
+                                                    <strong>Total:</strong> ₱{{ "%.2f"|format(listing['price'] * listing['amount']) }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                {% else %}
+                                    <div class="col-12">
+                                        <div class="alert alert-warning">
+                                            You have no sold orders pending delivery confirmation.
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card mb-4">
+                        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="card-title mb-0">Delivered Orders</h5>
+                                <small class="text-muted">Orders that have been marked as delivered.</small>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                {% if delivered_orders %}
+                                    {% for listing in delivered_orders %}
+                                    <div class="col-md-6 mb-4">
+                                        <div class="card listing-card h-100">
+                                            <div class="card-body">
+                                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                                    <div>
+                                                        <h5 class="card-title mb-1">{{ listing['crop_name'] }}</h5>
+                                                        <small class="text-muted">Buyer: {{ listing['buyer_username'] or 'Unknown' }}</small>
+                                                    </div>
+                                                    <span class="status-badge status-traded">Delivered</span>
+                                                </div>
+                                                <div class="row mt-3">
+                                                    <div class="col-6">
+                                                        <small class="text-muted">Amount</small>
+                                                        <h6>{{ listing['amount'] }} {{ listing['unit'] or 'kg' }}</h6>
+                                                    </div>
+                                                    <div class="col-6 text-end">
+                                                        <small class="text-muted">Delivered</small>
+                                                        <h6>{{ listing['delivery_date'][:16] if listing['delivery_date'] else 'N/A' }}</h6>
+                                                    </div>
+                                                </div>
+                                                {% if listing['description'] %}
+                                                <p class="card-text small text-muted">{{ listing['description'] }}</p>
+                                                {% endif %}
+                                            </div>
+                                            <div class="card-footer bg-transparent text-muted small d-flex justify-content-between align-items-center">
+                                                <span>
+                                                    <strong>Total:</strong> ₱{{ "%.2f"|format(listing['price'] * listing['amount']) }}
+                                                </span>
+                                                <span>Delivery confirmed</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                {% else %}
+                                    <div class="col-12">
+                                        <div class="alert alert-secondary">
+                                            No delivered orders yet. Complete orders to move them here.
+                                        </div>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function deleteListing(id) {
+            if (!confirm('Are you sure you want to delete this listing?')) {
+                return;
+            }
+            
+            fetch('/marketplace/delete/' + id, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('Listing deleted successfully');
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                alert('Error: ' + error);
+            });
+        }
+
+        function confirmCompleteOrder(id) {
+            if (!confirm('Mark this order as delivered?')) {
+                return;
+            }
+
+            fetch('/marketplace/complete-order/' + id, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                alert('Error: ' + error);
+            });
+        }
+    </script>
+</body>
+</html>

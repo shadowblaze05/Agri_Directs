@@ -2,7 +2,7 @@
 
 ## 1. Purpose and scope
 
-Agri-Direct is a web platform for recording harvests, viewing agricultural supply information, connecting farmers and buyers, and supporting better market decisions. This document states what a user should see or be able to achieve on every implemented page. It reflects the current Flask implementation in `app.py` and the templates in `templates/`.
+Agri-Direct is a web platform for recording harvests, viewing agricultural supply information, connecting farmers and buyers, and supporting better market decisions. This document states what a user should see or be able to achieve on every implemented page. It reflects the current Flask package implementation in `app/` and the templates in `app/templates/`.
 
 ### User roles and access
 
@@ -22,7 +22,7 @@ Protected pages redirect an unauthenticated visitor to Login. Admin-only pages s
 
 **Expected outcome:** acts as a smart entry point. A signed-in user is sent to the Dashboard; a visitor is sent to Login. It does not display a separate landing screen.
 
-### Legacy landing template (`templates/index.html`)
+### Legacy landing template (`app/templates/index.html`)
 
 **Implementation note:** this template contains simple links to Upload Harvest Log and View Inventory, but the active `/` route currently redirects to Login or Dashboard instead of rendering it. It is therefore not an active user-facing page in the current build.
 
@@ -110,7 +110,7 @@ Protected pages redirect an unauthenticated visitor to Login. Admin-only pages s
 - Includes a quick-message/chat interface with user selection and AgriBot support.
 - Shows the Admin Console option only for an administrator.
 
-### Inventory table partial (`templates/inventory_table.html`)
+### Inventory table partial (`app/templates/inventory_table.html`)
 
 **Implementation note:** this is not a standalone route/page. It is the reusable recent-inventory table returned by `/dashboard-data` during Dashboard refreshes. Its expected result is an up-to-date view of recent inventory records without a full dashboard reload.
 
@@ -382,7 +382,7 @@ These endpoints support the pages above and are expected to return structured JS
 
 - Web authentication uses Flask sessions; the harvest API uses JWT bearer-token verification.
 - Passwords are stored and checked using secure password hashes.
-- The app uses SQLite for users, inventory, crops, analytics, marketplace activity, knowledge content, messages, and notifications.
+- The app uses PostgreSQL for users, inventory, crops, analytics, marketplace activity, knowledge content, messages, and notifications.
 - Server-side validation enforces required fields, positive quantities/prices, ownership rules, and role restrictions for the main operations.
 - Uploaded knowledge media is stored beneath the configured upload area; harvest CSV files are saved before being processed.
 

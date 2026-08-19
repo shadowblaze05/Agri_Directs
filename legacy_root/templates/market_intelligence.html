@@ -1,0 +1,123 @@
+{% extends "market_intelligence_layout.html" %}
+
+{% block content %}
+<div class="row g-4">
+    {% for card in summary_cards %}
+    <div class="col-lg-3 col-md-6">
+        <div class="card stat-card h-100">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <span class="small-muted">{{ card.label }}</span>
+                <span class="soft-chip">{{ card.badge }}</span>
+            </div>
+            <div class="display-6 fw-bold">{{ card.value }}</div>
+            <p class="mb-0 text-muted mt-2">{{ card.detail }}</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="row g-4 mt-1">
+    <div class="col-lg-8">
+        <div class="card chart-card">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <h5 class="mb-1">Price movement snapshot</h5>
+                    <p class="text-muted mb-0">A visualization of recent price trends across key crops.</p>
+                </div>
+                <span class="soft-chip">Live trend view</span>
+            </div>
+            <div style="height: 280px; position: relative;">
+                <canvas id="summaryPriceChart" style="width: 100%; height: 100%;"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card chart-card h-100">
+            <h5 class="mb-3">Market pulse</h5>
+            <ul class="list-group list-group-flush">
+                {% for item in pulse_items %}
+                <li class="list-group-item px-0">
+                    <div class="d-flex justify-content-between">
+                        <span>{{ item.label }}</span>
+                        <span class="fw-semibold">{{ item.value }}</span>
+                    </div>
+                    <div class="progress mt-2" style="height: 6px;">
+                        <div class="progress-bar bg-success" role="progressbar" style="width: {{ item.progress }}%"></div>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mt-1">
+    <div class="col-lg-7">
+        <div class="card chart-card">
+            <h5 class="mb-3">Recommended focus areas</h5>
+            {% for item in focus_items %}
+            <div class="border rounded p-3 mb-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h6 class="mb-1">{{ item.title }}</h6>
+                    <span class="soft-chip">{{ item.badge }}</span>
+                </div>
+                <p class="text-muted mb-2">{{ item.detail }}</p>
+                <div class="d-flex gap-3 text-muted small">
+                    <span><i class="fas fa-arrow-up"></i> {{ item.metric }}</span>
+                    <span><i class="fas fa-calendar-alt"></i> {{ item.timeline }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="col-lg-5">
+        <div class="card chart-card">
+            <h5 class="mb-3">Decision support outlook</h5>
+            <div class="list-group list-group-flush">
+                {% for insight in insight_items %}
+                <div class="list-group-item px-0">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="fw-semibold">{{ insight.title }}</span>
+                        <span class="soft-chip">{{ insight.level }}</span>
+                    </div>
+                    <p class="text-muted small mb-0 mt-2">{{ insight.desc }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const summaryChartCtx = document.getElementById('summaryPriceChart');
+    if (summaryChartCtx) {
+        new Chart(summaryChartCtx, {
+            type: 'line',
+            data: {
+                labels: {{ price_labels|tojson }},
+                datasets: [{
+                    label: 'Price index',
+                    data: {{ price_series|tojson }},
+                    borderColor: '#2d6a4f',
+                    backgroundColor: 'rgba(45, 106, 79, 0.16)',
+                    fill: true,
+                    tension: 0.35,
+                    pointRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: false, ticks: { color: '#64748b' }, grid: { color: 'rgba(100, 116, 139, 0.15)' } },
+                    x: { ticks: { color: '#64748b' }, grid: { display: false } }
+                }
+            }
+        });
+    }
+</script>
+{% endblock %}
