@@ -48,20 +48,52 @@
             background: #4caf50;
             color: white;
         }
+        .sidebar .nav-link .cart-badge {
+            background: #ff6b6b;
+            color: white;
+            border-radius: 50%;
+            padding: 2px 8px;
+            font-size: 0.75rem;
+            margin-left: 5px;
+        }
         .main-content {
             margin-left: 250px;
             margin-top: 45px;
             padding-top: 20px;
         }
+        .marketplace-header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
         .listing-card {
-            transition: transform 0.2s;
+            transition: transform 0.2s, box-shadow 0.2s;
             border: 1px solid #e0e0e0;
             border-radius: 10px;
             box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            cursor: pointer;
+            overflow: hidden;
+            height: 100%;
         }
         .listing-card:hover {
             transform: translateY(-5px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        .listing-card .card-img-top {
+            height: 200px;
+            object-fit: cover;
+            background: #f8f9fa;
+        }
+        .listing-card .card-img-top-placeholder {
+            height: 200px;
+            background: #e9ecef;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #adb5bd;
+            font-size: 3rem;
         }
         .price-tag {
             font-size: 1.5rem;
@@ -75,6 +107,14 @@
         .btn-success:hover {
             background: #1a3408;
         }
+        .btn-outline-success {
+            color: #2d5016;
+            border-color: #2d5016;
+        }
+        .btn-outline-success:hover {
+            background: #2d5016;
+            color: white;
+        }
         .status-badge {
             padding: 5px 10px;
             border-radius: 20px;
@@ -84,28 +124,57 @@
             background: #d4edda;
             color: #155724;
         }
-        .status-sold {
-            background: #f8d7da;
-            color: #721c24;
+        .listing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
         }
-        .status-traded {
+        .cart-icon-link {
+            position: relative;
+            color: white;
+            text-decoration: none;
+        }
+        .cart-badge-nav {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #ff6b6b;
+            color: white;
+            border-radius: 50%;
+            padding: 2px 8px;
+            font-size: 0.7rem;
+            min-width: 20px;
+            text-align: center;
+        }
+        .image-count-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+        }
+        .card-img-wrapper {
+            position: relative;
+        }
+        .reliability-badge {
+            font-size: 0.7rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+        }
+        .reliability-high {
+            background: #d4edda;
+            color: #155724;
+        }
+        .reliability-medium {
             background: #fff3cd;
             color: #856404;
         }
-        .marketplace-header {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        .btn-outline-success {
-            color: #2d5016;
-            border-color: #2d5016;
-        }
-        .btn-outline-success:hover {
-            background: #2d5016;
-            color: white;
+        .reliability-low {
+            background: #f8d7da;
+            color: #721c24;
         }
     </style>
 </head>
@@ -125,8 +194,20 @@
             <a class="nav-link active" href="/marketplace">
                 <i class="fas fa-store"></i> Marketplace
             </a>
-            <a class="nav-link" href="#" onclick="toggleChat()">
-                <i class="fas fa-comments"></i> Chat
+            <a class="nav-link" href="/messages">
+                <i class="fas fa-comments"></i> Messages
+            </a>
+            <a class="nav-link" href="/knowledge">
+                <i class="fas fa-book-open"></i> Digital Knowledge Hub
+            </a>
+            <a class="nav-link" href="/profile">
+                <i class="fas fa-user-circle"></i> Profile
+            </a>
+            <a class="nav-link" href="/marketplace/cart">
+                <i class="fas fa-shopping-cart"></i> Cart
+                {% if cart_count > 0 %}
+                <span class="cart-badge">{{ cart_count }}</span>
+                {% endif %}
             </a>
             <a class="nav-link" href="/logout">
                 <i class="fas fa-sign-out-alt"></i> Logout
@@ -140,21 +221,29 @@
             <span class="navbar-brand mb-0 h1 ms-5">
                 <i class="fas fa-leaf"></i> Agri-Direct 
             </span>
-            <div class="dropdown">
-                <button class="btn btn-outline-light dropdown-toggle" type="button" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                    <i class="fas fa-user-circle"></i> {{ session.get('user', 'User') }}
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
-                    <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge"></i> Profile</a></li>
-                    <li><a class="dropdown-item" href="/about"><i class="fas fa-info-circle"></i> About</a></li>
-                    <li><a class="dropdown-item" href="/marketplace/my-listings"><i class="fas fa-list"></i> My Listings</a></li>
-                    <li><a class="dropdown-item" href="/marketplace/my-purchases"><i class="fas fa-shopping-bag"></i> My Purchases & Ratings</a></li>
-                    {% if session.get('role') == 'admin' %}
-                    <li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt"></i> Admin Console</a></li>
+            <div class="d-flex align-items-center gap-3">
+                <a href="/marketplace/cart" class="cart-icon-link">
+                    <i class="fas fa-shopping-cart fa-lg"></i>
+                    {% if cart_count > 0 %}
+                    <span class="cart-badge-nav">{{ cart_count }}</span>
                     {% endif %}
-                    <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
-                </ul>
+                </a>
+                <div class="dropdown">
+                    <button class="btn btn-outline-light dropdown-toggle" type="button" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-user-circle"></i> {{ session.get('user', 'User') }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
+                        <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge"></i> Profile</a></li>
+                        <li><a class="dropdown-item" href="/about"><i class="fas fa-info-circle"></i> About</a></li>
+                        <li><a class="dropdown-item" href="/marketplace/my-listings"><i class="fas fa-list"></i> My Listings</a></li>
+                        <li><a class="dropdown-item" href="/marketplace/my-purchases"><i class="fas fa-shopping-bag"></i> My Purchases</a></li>
+                        {% if session.get('role') == 'admin' %}
+                        <li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt"></i> Admin Console</a></li>
+                        {% endif %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                    </ul>
+                </div>
             </div>
         </div>
     </nav>
@@ -204,16 +293,39 @@
                 </div>
             </div>
 
-            <!-- Listings -->
-            <div class="row" id="listingsContainer">
+            <!-- Listings Grid -->
+            <div class="listing-grid" id="listingsContainer">
                 {% if listings %}
                     {% for listing in listings %}
-                    <div class="col-lg-4 col-md-6 mb-4 listing-item" 
+                    <div class="listing-item" 
                          data-crop="{{ listing['crop_name'] }}"
                          data-price="{{ listing['price'] }}"
                          data-amount="{{ listing['amount'] }}"
                          data-date="{{ listing['listing_date'] }}">
-                        <div class="card listing-card h-100">
+                        <div class="card listing-card" onclick="window.location.href='/marketplace/product/{{ listing['id'] }}'">
+                            <div class="card-img-wrapper">
+                                <!-- ============ STEP 4: IMAGE DISPLAY ============ -->
+                                {% if listing['main_image'] %}
+                                <img src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}" 
+                                     class="card-img-top" 
+                                     alt="{{ listing['crop_name'] }}"
+                                     onerror="this.style.display='none'; this.parentElement.querySelector('.image-count-badge').style.display='none'; this.parentElement.innerHTML='<div class=\'card-img-top-placeholder\'><i class=\'fas fa-seedling\'></i></div>'">
+                                <!-- Image count badge -->
+                                <span class="image-count-badge">
+                                    <i class="fas fa-image"></i> 
+                                    {% set image_count = marketplace_images_count[listing['id']] if listing['id'] in marketplace_images_count else 0 %}
+                                    {% if image_count > 0 %}
+                                        {{ image_count }}
+                                    {% else %}
+                                        1
+                                    {% endif %}
+                                </span>
+                                {% else %}
+                                <div class="card-img-top-placeholder">
+                                    <i class="fas fa-seedling"></i>
+                                </div>
+                                {% endif %}
+                            </div>
                             <div class="card-body">
                                 <div class="d-flex justify-content-between align-items-start mb-2">
                                     <h5 class="card-title mb-0">{{ listing['crop_name'] }}</h5>
@@ -221,22 +333,11 @@
                                 </div>
                                 <p class="text-muted small mb-2">
                                     <i class="fas fa-user"></i> {{ listing['seller_name'] }}
-                                    {% if listing['location'] %}
-                                    <br><i class="fas fa-map-marker-alt"></i> {{ listing['location'] }}
+                                    {% if listing.get('reliability_status') %}
+                                    <span class="reliability-badge reliability-{{ listing['reliability_status']|lower|replace(' ', '-') }}">
+                                        {{ listing['reliability_status'] }}
+                                    </span>
                                     {% endif %}
-                                    <br>
-                                    {% if listing['reliability_score'] is not none %}
-                                        <span class="text-warning">
-                                            {% for _ in range(listing['reliability_score']|int) %}<i class="fas fa-star"></i>{% endfor %}
-                                            {% for _ in range(5 - (listing['reliability_score']|int)) %}<i class="far fa-star"></i>{% endfor %}
-                                        </span>
-                                        <span class="ms-1">{{ '%.1f'|format(listing['reliability_score']) }}/5</span>
-                                    {% else %}
-                                        <span class="text-warning"><i class="far fa-star"></i><i class="far fa-star"></i><i class="far fa-star"></i><i class="far fa-star"></i><i class="far fa-star"></i></span>
-                                        <span class="ms-1">No rating yet</span>
-                                    {% endif %}
-                                    <br>
-                                    {% if listing['reliability_status'] == 'High Reliability' %}<span class="badge bg-success ms-1">High Reliability</span>{% elif listing['reliability_status'] == 'Medium Reliability' %}<span class="badge bg-warning text-dark ms-1">Medium Reliability</span>{% elif listing['reliability_status'] == 'Low Reliability' %}<span class="badge bg-danger ms-1">Low Reliability</span>{% else %}<span class="badge bg-secondary ms-1">Not Yet Rated</span>{% endif %}
                                 </p>
                                 <div class="row mb-3">
                                     <div class="col-6">
@@ -249,147 +350,23 @@
                                         <small>per {{ listing['unit'] or 'kg' }}</small>
                                     </div>
                                 </div>
-                                {% if listing['description'] %}
-                                <p class="card-text small text-muted">{{ listing['description'] }}</p>
-                                {% endif %}
-                                <div class="d-flex gap-2">
-                                    <button class="btn btn-success btn-sm flex-grow-1" onclick="openBuyModal({{ listing['id'] }}, '{{ listing['crop_name'] }}', {{ listing['amount'] }}, {{ listing['price'] }})">
-                                        <i class="fas fa-shopping-cart"></i> Buy
-                                    </button>
-                                    <button class="btn btn-outline-success btn-sm" onclick="openTradeModal({{ listing['id'] }})">
-                                        <i class="fas fa-exchange-alt"></i> Trade
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="card-footer bg-transparent border-top-0 text-muted small">
-                                <i class="far fa-calendar-alt"></i> Listed: {{ listing['listing_date'][:16] }}
                             </div>
                         </div>
                     </div>
                     {% endfor %}
                 {% else %}
-                    <div class="col-12">
-                        <div class="text-center py-5">
-                            <i class="fas fa-store fa-3x text-muted mb-3"></i>
-                            <h4>No Listings Available</h4>
-                            <p class="text-muted">Be the first to list your crops for sale!</p>
-                            <a href="/marketplace/add" class="btn btn-success">
-                                <i class="fas fa-plus"></i> Add Your First Listing
-                            </a>
-                        </div>
+                    <div class="col-12 text-center py-5">
+                        <i class="fas fa-store fa-3x text-muted mb-3"></i>
+                        <h4>No Listings Available</h4>
+                        <p class="text-muted">Be the first to list your crops for sale!</p>
+                        <a href="/marketplace/add" class="btn btn-success">
+                            <i class="fas fa-plus"></i> Add Your First Listing
+                        </a>
                     </div>
                 {% endif %}
             </div>
         </div>
     </div>
-
-    <!-- Buy Modal -->
-    <div class="modal fade" id="buyModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Buy Crop</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="buyForm">
-                        <input type="hidden" id="buyListingId">
-                        <div class="mb-3">
-                            <label class="form-label">Crop</label>
-                            <p class="fw-bold" id="buyCropName"></p>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Available</label>
-                            <p id="buyAvailable"></p>
-                        </div>
-                        <div class="mb-3">
-                            <label for="buyQuantity" class="form-label">Quantity to Buy</label>
-                            <input type="number" class="form-control" id="buyQuantity" min="1" value="1" onchange="updateBuyTotal()">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Price per Unit</label>
-                            <p id="buyPrice"></p>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Total Price</label>
-                            <h4 id="buyTotal">₱0.00</h4>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-success" onclick="confirmBuy()">
-                        <i class="fas fa-check"></i> Confirm Purchase
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Trade Modal -->
-    <div class="modal fade" id="tradeModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Trade Crop</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="tradeForm" action="" method="POST">
-                        <input type="hidden" id="tradeListingId">
-                        <div class="mb-3">
-                            <label class="form-label">You will receive</label>
-                            <div class="alert alert-success">
-                                <strong id="tradeReceiveCrop"></strong> - <span id="tradeReceiveAmount"></span>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Your Crop to Trade</label>
-                            <select class="form-select" id="tradeCrop" name="trade_crop" required>
-                                <option value="">Select a crop...</option>
-                                {% for item in user_inventory %}
-                                <option value="{{ item['crop_name'] }}">{{ item['crop_name'] }} ({{ item['total_quantity'] }} available)</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="mb-3">
-                            <label for="tradeAmount" class="form-label">Amount to Trade</label>
-                            <input type="number" class="form-control" id="tradeAmount" name="trade_amount" min="1" required>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="confirmTrade()">
-                        <i class="fas fa-exchange-alt"></i> Confirm Trade
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {% if pending_ratings %}
-    <div class="modal fade" id="sellerRatingModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-labelledby="sellerRatingModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title" id="sellerRatingModalLabel"><i class="fas fa-star"></i> Rate Your Seller</h5>
-                </div>
-                <div class="modal-body text-center">
-                    <p class="mb-1">Your order for <strong>{{ pending_ratings[0]['crop_name'] }}</strong> was delivered by</p>
-                    <h6 class="mb-3">{{ pending_ratings[0]['seller_name'] }}</h6>
-                    <p class="text-muted small">Please choose a rating based on your transaction experience.</p>
-                    <form method="POST" action="{{ url_for('rate_marketplace_seller', listing_id=pending_ratings[0]['id']) }}" class="d-flex justify-content-center gap-2 flex-wrap">
-                        {% for value in range(1, 6) %}
-                        <button type="submit" name="rating" value="{{ value }}" class="btn btn-outline-warning" title="{{ value }} star{{ '' if value == 1 else 's' }}">{{ value }} <i class="fas fa-star"></i></button>
-                        {% endfor %}
-                    </form>
-                    {% if pending_ratings|length > 1 %}<p class="text-muted small mt-3 mb-0">You have {{ pending_ratings|length }} orders waiting for ratings. You will be prompted again after submitting this rating.</p>{% endif %}
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
@@ -414,7 +391,6 @@
                 if (show) visibleItems.push(item);
             });
             
-            // Sort visible items
             if (visibleItems.length > 1) {
                 visibleItems.sort((a, b) => {
                     switch(sort) {
@@ -433,90 +409,8 @@
                     }
                 });
                 
-                // Reorder DOM elements
                 visibleItems.forEach(item => container.appendChild(item));
             }
-        }
-        
-        let buyModal, tradeModal, sellerRatingModal;
-        document.addEventListener('DOMContentLoaded', function() {
-            buyModal = new bootstrap.Modal(document.getElementById('buyModal'));
-            tradeModal = new bootstrap.Modal(document.getElementById('tradeModal'));
-            {% if pending_ratings %}
-            sellerRatingModal = new bootstrap.Modal(document.getElementById('sellerRatingModal'));
-            sellerRatingModal.show();
-            {% endif %}
-        });
-        
-        function openBuyModal(id, cropName, available, price) {
-            document.getElementById('buyListingId').value = id;
-            document.getElementById('buyCropName').textContent = cropName;
-            document.getElementById('buyAvailable').textContent = available + ' units available';
-            document.getElementById('buyPrice').textContent = '₱' + price.toFixed(2) + ' per unit';
-            document.getElementById('buyQuantity').value = 1;
-            document.getElementById('buyQuantity').max = available;
-            updateBuyTotal();
-            buyModal.show();
-        }
-        
-        function updateBuyTotal() {
-            const quantity = parseInt(document.getElementById('buyQuantity').value) || 0;
-            const priceText = document.getElementById('buyPrice').textContent;
-            const price = parseFloat(priceText.replace('₱', '')) || 0;
-            const total = quantity * price;
-            document.getElementById('buyTotal').textContent = '₱' + total.toFixed(2);
-        }
-        
-        function confirmBuy() {
-            const id = document.getElementById('buyListingId').value;
-            const quantity = document.getElementById('buyQuantity').value;
-            
-            if (!quantity || quantity < 1) {
-                alert('Please enter a valid quantity');
-                return;
-            }
-            
-            fetch('/marketplace/buy/' + id, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ quantity: parseInt(quantity) })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    alert(data.message);
-                    location.reload();
-                } else {
-                    alert('Error: ' + data.error);
-                }
-            })
-            .catch(error => {
-                alert('Error: ' + error);
-            });
-        }
-        
-        function openTradeModal(id) {
-            document.getElementById('tradeListingId').value = id;
-            document.getElementById('tradeForm').action = '/marketplace/trade/' + id;
-            
-            // Get listing details
-            fetch('/api/listing/' + id)
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('tradeReceiveCrop').textContent = data.crop_name;
-                    document.getElementById('tradeReceiveAmount').textContent = data.amount + ' ' + (data.unit || 'kg');
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                });
-            
-            tradeModal.show();
-        }
-        
-        function confirmTrade() {
-            document.getElementById('tradeForm').submit();
         }
     </script>
 </body>

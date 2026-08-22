@@ -73,6 +73,52 @@
         .btn-secondary:hover {
             background: #5a6268;
         }
+        .upload-area {
+            border: 2px dashed #ddd;
+            padding: 30px;
+            border-radius: 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .upload-area:hover {
+            border-color: #2d5016;
+            background: #f8f9fa;
+        }
+        .upload-area.dragover {
+            border-color: #2d5016;
+            background: #e8f5e9;
+        }
+        .image-preview-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+        .image-preview-wrapper img {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 2px solid #ddd;
+        }
+        .image-preview-wrapper .remove-image {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .image-preview-wrapper .remove-image:hover {
+            background: #c82333;
+        }
         .inventory-warning {
             border-left: 4px solid #ffc107;
         }
@@ -94,8 +140,20 @@
             <a class="nav-link active" href="/marketplace">
                 <i class="fas fa-store"></i> Marketplace
             </a>
-            <a class="nav-link" href="#" onclick="toggleChat()">
-                <i class="fas fa-comments"></i> Chat
+            <a class="nav-link" href="/messages">
+                <i class="fas fa-comments"></i> Messages
+            </a>
+            <a class="nav-link" href="/knowledge">
+                <i class="fas fa-book-open"></i> Digital Knowledge Hub
+            </a>
+            <a class="nav-link" href="/profile">
+                <i class="fas fa-user-circle"></i> Profile
+            </a>
+            <a class="nav-link" href="/marketplace/cart">
+                <i class="fas fa-shopping-cart"></i> Cart
+                {% if cart_count > 0 %}
+                <span class="cart-badge">{{ cart_count }}</span>
+                {% endif %}
             </a>
             <a class="nav-link" href="/logout">
                 <i class="fas fa-sign-out-alt"></i> Logout
@@ -109,20 +167,30 @@
             <span class="navbar-brand mb-0 h1 ms-5">
                 <i class="fas fa-leaf"></i> Agri-Direct 
             </span>
-            <div class="dropdown">
-                <button class="btn btn-outline-light dropdown-toggle" type="button" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                    <i class="fas fa-user-circle"></i> {{ session.get('user', 'User') }}
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
-                    <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge"></i> Profile</a></li>
-                    <li><a class="dropdown-item" href="/about"><i class="fas fa-info-circle"></i> About</a></li>
-                    <li><a class="dropdown-item" href="/marketplace/my-listings"><i class="fas fa-list"></i> My Listings</a></li>
-                    {% if session.get('role') == 'admin' %}
-                    <li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt"></i> Admin Console</a></li>
+            <div class="d-flex align-items-center gap-3">
+                <a href="/cart" class="text-white text-decoration-none position-relative">
+                    <i class="fas fa-shopping-cart fa-lg"></i>
+                    {% if cart_count > 0 %}
+                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem;">
+                        {{ cart_count }}
+                    </span>
                     {% endif %}
-                    <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
-                </ul>
+                </a>
+                <div class="dropdown">
+                    <button class="btn btn-outline-light dropdown-toggle" type="button" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-user-circle"></i> {{ session.get('user', 'User') }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
+                        <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge"></i> Profile</a></li>
+                        <li><a class="dropdown-item" href="/about"><i class="fas fa-info-circle"></i> About</a></li>
+                        <li><a class="dropdown-item" href="/marketplace/my-listings"><i class="fas fa-list"></i> My Listings</a></li>
+                        {% if session.get('role') == 'admin' %}
+                        <li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt"></i> Admin Console</a></li>
+                        {% endif %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                    </ul>
+                </div>
             </div>
         </div>
     </nav>
@@ -143,7 +211,7 @@
                         </div>
                         {% endif %}
                         
-                        <form method="POST">
+                        <form method="POST" enctype="multipart/form-data">
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label for="crop_id" class="form-label">Select Your Crop *</label>
@@ -188,6 +256,21 @@
                                 </div>
                             </div>
                             
+                            <!-- Multiple Image Upload Section -->
+                            <div class="mb-3">
+                                <label class="form-label">Product Images (Max 5) *</label>
+                                <div class="upload-area" id="uploadArea" onclick="document.getElementById('imageInput').click()">
+                                    <i class="fas fa-cloud-upload-alt fa-3x text-muted"></i>
+                                    <p class="mb-0">Click or drag to upload up to 5 images</p>
+                                    <small class="text-muted">PNG, JPG, JPEG, GIF, WebP (Max 5MB each)</small>
+                                    <input type="file" class="d-none" id="imageInput" name="images" accept="image/*" multiple onchange="previewImages(this)">
+                                </div>
+                                <div id="imagePreviewContainer" class="row mt-3 g-2">
+                                    <!-- Image previews will appear here -->
+                                </div>
+                                <small class="text-muted" id="imageCount">0 of 5 images selected</small>
+                            </div>
+                            
                             <div class="mb-3">
                                 <label for="description" class="form-label">Description (Optional)</label>
                                 <textarea class="form-control" id="description" name="description" rows="3" placeholder="Describe your crop quality, variety, harvest date, etc."></textarea>
@@ -221,6 +304,86 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        let selectedFiles = [];
+
+        function previewImages(input) {
+            const container = document.getElementById('imagePreviewContainer');
+            const countDisplay = document.getElementById('imageCount');
+            
+            // Add new files to selectedFiles
+            for (let i = 0; i < input.files.length; i++) {
+                if (selectedFiles.length >= 5) {
+                    alert('Maximum 5 images allowed');
+                    break;
+                }
+                selectedFiles.push(input.files[i]);
+            }
+            
+            // Update the input with all selected files
+            const dataTransfer = new DataTransfer();
+            selectedFiles.forEach(file => dataTransfer.items.add(file));
+            document.getElementById('imageInput').files = dataTransfer.files;
+            
+            // Render previews
+            renderPreviews();
+            
+            countDisplay.textContent = `${selectedFiles.length} of 5 images selected`;
+        }
+
+        function renderPreviews() {
+            const container = document.getElementById('imagePreviewContainer');
+            container.innerHTML = '';
+            
+            selectedFiles.forEach((file, index) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'col-auto';
+                    wrapper.innerHTML = `
+                        <div class="image-preview-wrapper">
+                            <img src="${e.target.result}" alt="Preview ${index + 1}">
+                            <button type="button" class="remove-image" onclick="removeImage(${index})">×</button>
+                        </div>
+                    `;
+                    container.appendChild(wrapper);
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function removeImage(index) {
+            selectedFiles.splice(index, 1);
+            
+            // Update input
+            const dataTransfer = new DataTransfer();
+            selectedFiles.forEach(file => dataTransfer.items.add(file));
+            document.getElementById('imageInput').files = dataTransfer.files;
+            
+            renderPreviews();
+            document.getElementById('imageCount').textContent = `${selectedFiles.length} of 5 images selected`;
+        }
+
+        // Drag and drop for multiple files
+        const uploadArea = document.getElementById('uploadArea');
+        uploadArea.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            this.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            this.classList.remove('dragover');
+        });
+        uploadArea.addEventListener('drop', function(e) {
+            e.preventDefault();
+            this.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                const input = document.getElementById('imageInput');
+                input.files = files;
+                previewImages(input);
+            }
+        });
+
         // Show available inventory when crop is selected
         document.getElementById('crop_id').addEventListener('change', function() {
             const selected = this.options[this.selectedIndex];
@@ -230,7 +393,6 @@
             
             display.textContent = available;
             
-            // Set max amount
             amountInput.max = available;
             
             if (available === 0 || !selected.value) {
@@ -244,7 +406,6 @@
             }
         });
         
-        // Trigger initial state
         document.addEventListener('DOMContentLoaded', function() {
             const event = new Event('change');
             document.getElementById('crop_id').dispatchEvent(event);
