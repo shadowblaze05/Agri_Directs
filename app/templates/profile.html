@@ -1,329 +1,396 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Profile - Agri-Direct</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
-</head>
-<body>
-    <div class="container py-5">
-        <div class="card shadow-sm border-0">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center mb-4">
-                    <div>
-                        <h1 class="card-title"><i class="fas fa-user-circle"></i> Profile</h1>
-                        <p class="text-muted">Your account details and role-based access.</p>
-                    </div>
-                    <a href="/dashboard" class="btn btn-outline-success"><i class="fas fa-arrow-left"></i> Dashboard</a>
-                </div>
-
-                <dl class="row">
-                    <dt class="col-sm-3">Username</dt>
-                    <dd class="col-sm-9"><strong>{{ session.get('user') }}</strong></dd>
-
-                    <dt class="col-sm-3">Location</dt>
-                    <dd class="col-sm-9">{{ user.location if user.location else 'Not set' }}</dd>
-
-                    <dt class="col-sm-3">Member since</dt>
-                    <dd class="col-sm-9">Data stored on each upload and profile usage.</dd>
-                </dl>
-
-               <!-- <div class="card border-success-subtle bg-light mt-4"><div class="card-body">
-                    <h2 class="h5 mb-3"><i class="fas fa-star text-warning"></i> Farmer Reliability</h2>
-                    {% if user['reliability_score'] is not none %}<p class="text-warning mb-2"><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i><i class="fas fa-star"></i> {{ '%.1f'|format(user['reliability_score']) }}/5</p>{% else %}<p class="text-warning mb-2"><i class="far fa-star"></i><i class="far fa-star"></i><i class="far fa-star"></i><i class="far fa-star"></i><i class="far fa-star"></i></p>{% endif %}
-                    {% if user['reliability_status'] == 'High Reliability' %}<span class="badge bg-success">High Reliability</span>{% elif user['reliability_status'] == 'Medium Reliability' %}<span class="badge bg-warning text-dark">Medium Reliability</span>{% elif user['reliability_status'] == 'Low Reliability' %}<span class="badge bg-danger">Low Reliability</span>{% else %}<span class="badge bg-secondary">{{ user['reliability_status'] or 'Not Yet Rated' }}</span>{% endif %}
-                    <div class="row text-center mt-3"><div class="col-md-4"><strong>{{ user['completed_transactions'] or 0 }}</strong><br><small class="text-muted">Completed Orders</small></div><div class="col-md-4"><strong>{{ user['cancelled_transactions'] or 0 }}</strong><br><small class="text-muted">Cancelled Orders</small></div><div class="col-md-4"><strong>{{ user['total_transactions'] or 0 }}</strong><br><small class="text-muted">Total Transactions</small></div></div>
-                    {% if user['reliability_score'] is none %}<p class="text-muted small mb-0 mt-3">Your reliability score will be available after completing several marketplace transactions.</p>{% endif %}
-                </div></div>
-            -->
-                <form method="POST" class="mt-4">
-                    <div class="mb-3">
-                        <label class="form-label">Update Location</label>
-                        <div class="row g-2">
-                            <div class="col-md-3">
-                                <select class="form-select" id="region" name="region">
-                                    <option value="">Select Region</option>
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <select class="form-select" id="province" name="province" disabled>
-                                    <option value="">Select Province</option>
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <select class="form-select" id="city" name="city" disabled>
-                                    <option value="">Select City/Municipality</option>
-                                </select>
-                            </div>
-                            <div class="col-md-3">
-                                <select class="form-select" id="barangay" name="barangay" disabled>
-                                    <option value="">Select Barangay</option>
-                                </select>
-                            </div>
-                        </div>
-                        <input type="hidden" id="location" name="location" value="{{ user.location }}">
-                        <div class="form-text">Users must set their location to post crops. Select your location using the Philippine Standard Geographic Code (PSGC) dropdowns.</div>
-                    </div>
-                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Update Profile</button>
-                </form>
-
-                <div class="mt-4">
-                    <a href="/about" class="btn btn-secondary me-2"><i class="fas fa-info-circle"></i> About</a>
-                    <a href="/logout" class="btn btn-danger"><i class="fas fa-sign-out-alt"></i> Logout</a>
-                </div>
-
-                <div class="card shadow-sm border-0 mt-4">
-                    <div class="card-body">
-                        <h2 class="h5 mb-3"><i class="fas fa-warehouse"></i> Your Inventory</h2>
-                        {% if inventory %}
-                        <div class="table-responsive">
-                            <table class="table table-hover align-middle">
-                                <thead>
-                                    <tr>
-                                        <th>Crop</th>
-                                        <th>Total Quantity</th>
-                                        <th>Last Received</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for item in inventory %}
-                                    <tr>
-                                        <td>{{ item['crop_name'] }}</td>
-                                        <td><span class="badge bg-success">{{ item['total_quantity'] }}</span></td>
-                                        <td>{{ item['last_received'][:19] if item['last_received'] else 'N/A' }}</td>
-                                        <td>
-                                            <button type="button" class="btn btn-sm btn-outline-primary me-1" onclick="editCrop('{{ item['crop_name']|replace("'", "\\'") }}', {{ item['total_quantity'] }})">Edit</button>
-                                            <button type="button" class="btn btn-sm btn-outline-danger me-1" onclick="deleteCrop('{{ item['crop_name']|replace("'", "\\'") }}')">Delete</button>
-                                            <!-- <button type="button" class="btn btn-sm btn-outline-success" onclick="buyCrop('{{ item['crop_name']|replace("'", "\\'") }}')">Buy</button> -->
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
-                        {% else %}
-                        <div class="alert alert-info mb-0">
-                            No inventory found yet. Upload harvest or enter manual crop data to start tracking your stock.
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Profile - Agri-Direct</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
+    <style>
+      body {
+        background: #f5f5f5;
+        color: #333;
+      }
+      .navbar-custom {
+        background: linear-gradient(135deg, #1a3408 0%, #0f1f03 100%);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        height: 70px;
+        z-index: 1030;
+      }
+      .sidebar {
+        background: #1a3408;
+        color: #fff;
+        min-height: 100vh;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 250px;
+        padding-top: 80px;
+        z-index: 1000;
+      }
+      .sidebar .nav-link {
+        color: rgba(255, 255, 255, 0.8);
+        padding: 12px 20px;
+        margin: 5px 10px;
+        border-radius: 5px;
+        transition: all 0.3s;
+      }
+      .sidebar .nav-link:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .sidebar .nav-link.active {
+        background: #4caf50;
+        color: #fff;
+      }
+      .main-content {
+        margin-left: 250px;
+        margin-top: 70px;
+        padding: 20px;
+      }
+      .page-header,
+      .profile-card,
+      .profile-hero {
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      .page-header {
+        padding: 22px;
+        margin-bottom: 20px;
+      }
+      .page-header h2,
+      .section-title {
+        color: #2d5016;
+      }
+      .profile-hero {
+        padding: 28px;
+        margin-bottom: 20px;
+        border-left: 5px solid #2d5016;
+      }
+      .avatar {
+        width: 108px;
+        height: 108px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #e8f5e9;
+        color: #2d5016;
+        border: 3px solid #4caf50;
+        border-radius: 50%;
+        font-size: 2.7rem;
+        object-fit: cover;
+      }
+      .profile-card {
+        padding: 24px;
+        height: 100%;
+      }
+      .section-title {
+        font-size: 1rem;
+        font-weight: 700;
+      }
+      .detail-label {
+        color: #718071;
+        font-size: 0.77rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .stat-value {
+        color: #2d5016;
+        font-size: 1.55rem;
+        font-weight: 700;
+      }
+      .inventory-row + .inventory-row {
+        border-top: 1px solid #edf1ea;
+      }
+      .btn-success {
+        background: #2d5016;
+        border: none;
+      }
+      .btn-success:hover {
+        background: #1a3408;
+      }
+      .btn-outline-success {
+        color: #2d5016;
+        border-color: #2d5016;
+      }
+      .btn-outline-success:hover {
+        background: #2d5016;
+        color: #fff;
+      }
+      @media (max-width: 991px) {
+        .sidebar {
+          width: 70px;
+        }
+        .sidebar .nav-link {
+          text-align: center;
+          padding: 14px 5px;
+          font-size: 0;
+        }
+        .sidebar .nav-link i {
+          font-size: 1.15rem;
+        }
+        .main-content {
+          margin-left: 70px;
+        }
+      }
+      @media (max-width: 575px) {
+        .sidebar {
+          display: none;
+        }
+        .main-content {
+          margin-left: 0;
+          padding: 14px;
+        }
+        .navbar-brand {
+          margin-left: 0 !important;
+        }
+        .profile-hero {
+          padding: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="sidebar">
+      <nav class="nav flex-column">
+        <a class="nav-link" href="/home"><i class="fas fa-home"></i> Home</a
+        ><a class="nav-link" href="/dashboard"
+          ><i class="fas fa-chart-line"></i> Dashboard</a
+        ><a class="nav-link" href="/upload"
+          ><i class="fas fa-upload"></i> Upload Harvest</a
+        >{% if session.get('role') == 'admin' %}<a
+          class="nav-link"
+          href="/market-intelligence"
+          ><i class="fas fa-brain"></i> Market Intelligence</a
+        >{% endif %}<a class="nav-link" href="/marketplace"
+          ><i class="fas fa-store"></i> Marketplace</a
+        ><a class="nav-link" href="/knowledge"
+          ><i class="fas fa-book-open"></i> Knowledge Hub</a
+        ><a class="nav-link" href="/messages"
+          ><i class="fas fa-comments"></i> Messages</a
+        ><a class="nav-link" href="/notifications-center"
+          ><i class="fas fa-bell"></i> Notifications</a
+        ><a class="nav-link active" href="/profile"
+          ><i class="fas fa-user-circle"></i> Profile</a
+        ><a class="nav-link" href="/logout"
+          ><i class="fas fa-sign-out-alt"></i> Logout</a
+        >
+      </nav>
     </div>
-</body>
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-<script>
-$(document).ready(function() {
-    const $region = $('#region');
-    const $province = $('#province');
-    const $city = $('#city');
-    const $barangay = $('#barangay');
-
-    $('#region, #province, #city, #barangay').select2({
-        width: '100%'
-    });
-
-    loadRegions();
-
-    $region.on('change', function() {
-        const regionCode = $(this).val();
-        if (regionCode) {
-            $province.prop('disabled', false);
-            loadProvinces(regionCode);
-        } else {
-            resetDropdowns('province');
-        }
-        updateLocation();
-    });
-
-    $province.on('change', function() {
-        const provinceCode = $(this).val();
-        if (provinceCode) {
-            $city.prop('disabled', false);
-            loadCities(provinceCode);
-        } else {
-            resetDropdowns('city');
-        }
-        updateLocation();
-    });
-
-    $city.on('change', function() {
-        const cityCode = $(this).val();
-        if (cityCode) {
-            $barangay.prop('disabled', false);
-            loadBarangays(cityCode);
-        } else {
-            resetDropdowns('barangay');
-        }
-        updateLocation();
-    });
-
-    $barangay.on('change', updateLocation);
-
-    function loadRegions() {
-        $.getJSON('https://psgc.gitlab.io/api/regions/')
-            .done(function(data) {
-                const easternVisayasCode = '080000000';
-                const easternVisayasOption = data.find(function(region) {
-                    return region.code === easternVisayasCode || region.name.toLowerCase().includes('eastern visayas');
-                });
-
-                $region.empty();
-                if (easternVisayasOption) {
-                    $region.append(`<option value="${easternVisayasOption.code}">${easternVisayasOption.name}</option>`);
-                    $region.val(easternVisayasOption.code).prop('disabled', true);
-                    $province.prop('disabled', false);
-                    loadProvinces(easternVisayasOption.code);
-                } else {
-                    $region.append('<option value="">No region available</option>');
-                }
-            })
-            .fail(function() {
-                console.error('Failed to load regions');
-            });
-    }
-
-    function loadProvinces(regionCode) {
-        $city.empty().append('<option value="">Select City/Municipality</option>').prop('disabled', true);
-        $barangay.empty().append('<option value="">Select Barangay</option>').prop('disabled', true);
-
-        $.getJSON(`https://psgc.gitlab.io/api/regions/${regionCode}/provinces/`)
-            .done(function(data) {
-                $province.empty().append('<option value="">Select Province</option>');
-                data.forEach(function(province) {
-                    $province.append(`<option value="${province.code}">${province.name}</option>`);
-                });
-            })
-            .fail(function() {
-                console.error('Failed to load provinces');
-            });
-    }
-
-    function loadCities(provinceCode) {
-        $barangay.empty().append('<option value="">Select Barangay</option>').prop('disabled', true);
-
-        $.getJSON(`https://psgc.gitlab.io/api/provinces/${provinceCode}/cities-municipalities/`)
-            .done(function(data) {
-                $city.empty().append('<option value="">Select City/Municipality</option>');
-                data.forEach(function(city) {
-                    $city.append(`<option value="${city.code}">${city.name}</option>`);
-                });
-            })
-            .fail(function() {
-                console.error('Failed to load cities');
-            });
-    }
-
-    function loadBarangays(cityCode) {
-        $.getJSON(`https://psgc.gitlab.io/api/cities-municipalities/${cityCode}/barangays/`)
-            .done(function(data) {
-                $barangay.empty().append('<option value="">Select Barangay</option>');
-                data.forEach(function(barangay) {
-                    $barangay.append(`<option value="${barangay.code}">${barangay.name}</option>`);
-                });
-            })
-            .fail(function() {
-                console.error('Failed to load barangays');
-            });
-    }
-
-    function resetDropdowns(fromLevel) {
-        const levels = ['province', 'city', 'barangay'];
-        const startIndex = levels.indexOf(fromLevel);
-        for (let i = startIndex; i < levels.length; i++) {
-            const label = levels[i] === 'province' ? 'Province' : levels[i] === 'city' ? 'City/Municipality' : 'Barangay';
-            const $select = $(`#${levels[i]}`);
-            $select.empty().append(`<option value="">Select ${label}</option>`).prop('disabled', true);
-        }
-    }
-
-    function updateLocation() {
-        const region = $region.find('option:selected').text();
-        const province = $province.find('option:selected').text();
-        const city = $city.find('option:selected').text();
-        const barangay = $barangay.find('option:selected').text();
-
-        let location = '';
-
-        if (region && region !== 'Select Region') location += region;
-        if (province && province !== 'Select Province') location += ', ' + province;
-        if (city && city !== 'Select City/Municipality') location += ', ' + city;
-        if (barangay && barangay !== 'Select Barangay') location += ', ' + barangay;
-
-        $('#location').val(location);
-    }
-
-    window.buyCrop = function(cropName) {
-            const quantity = prompt(`How many units of ${cropName} were bought?`);
-            if (!quantity) return;
-            const qty = parseInt(quantity, 10);
-            if (Number.isNaN(qty) || qty <= 0) {
-                alert('Please enter a valid positive number');
-                return;
-            }
-            fetch('/inventory/buy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ crop_name: cropName, quantity: qty })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    location.reload();
-                } else {
-                    alert(data.error || 'Unable to complete buy action');
-                }
-            })
-            .catch(() => alert('Error contacting server'));
-        };
-
-        window.editCrop = function(cropName, currentTotal) {
-            const quantity = prompt(`Set new total quantity for ${cropName}:`, currentTotal);
-            if (quantity === null) return;
-            const qty = parseInt(quantity, 10);
-            if (Number.isNaN(qty) || qty <= 0) {
-                alert('Please enter a valid positive number');
-                return;
-            }
-            fetch('/inventory/edit_crop', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ crop_name: cropName, quantity: qty })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    location.reload();
-                } else {
-                    alert(data.error || 'Unable to update inventory');
-                }
-            })
-            .catch(() => alert('Error contacting server'));
-        };
-
-        window.deleteCrop = function(cropName) {
-            if (!confirm(`Delete all inventory for ${cropName}? This cannot be undone.`)) return;
-            fetch('/inventory/delete_crop', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ crop_name: cropName })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    location.reload();
-                } else {
-                    alert(data.error || 'Unable to delete inventory');
-                }
-            })
-            .catch(() => alert('Error contacting server'));
-        };
-    });
-</script>
+    <nav class="navbar navbar-dark navbar-custom fixed-top">
+      <div class="container-fluid">
+        <span class="navbar-brand mb-0 h1 ms-5"
+          ><i class="fas fa-leaf"></i> Agri-Direct</span
+        >
+        <div class="d-flex align-items-center gap-2">
+          <a href="/notifications-center" class="btn btn-outline-light" title="Notifications"><i class="fas fa-bell"></i></a>
+          <div class="dropdown">
+          <button
+            class="btn btn-outline-light dropdown-toggle"
+            type="button"
+            data-bs-toggle="dropdown"
+          >
+            <i class="fas fa-user-circle"></i> {{ session.get('user','User') }}
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li>
+              <a class="dropdown-item" href="/profile"
+                ><i class="fas fa-id-badge"></i> Profile</a
+              >
+            </li>
+            {% if session.get('role') == 'admin' %}
+            <li>
+              <a class="dropdown-item" href="/admin"
+                ><i class="fas fa-shield-alt"></i> Admin Console</a
+              >
+            </li>
+            {% endif %}
+            <li><hr class="dropdown-divider" /></li>
+            <li>
+              <a class="dropdown-item" href="/logout"
+                ><i class="fas fa-sign-out-alt"></i> Logout</a
+              >
+            </li>
+          </ul>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <main class="main-content">
+      <div class="container-fluid py-2">
+        {% with messages=get_flashed_messages() %}{% if messages %}
+        <div
+          class="alert alert-success alert-dismissible fade show"
+          role="alert"
+        >
+          {{ messages[0] }}<button
+            type="button"
+            class="btn-close"
+            data-bs-dismiss="alert"
+          ></button>
+        </div>
+        {% endif %}{% endwith %}
+        <div class="page-header">
+          <div class="row align-items-center">
+            <div class="col">
+              <h2><i class="fas fa-user-circle"></i> My Profile</h2>
+              <p class="text-muted mb-0">
+                Manage your personal details and farm information.
+              </p>
+            </div>
+            <div class="col-auto">
+              <a class="btn btn-success" href="{{ url_for('update_profile') }}"
+                ><i class="fas fa-pen"></i> Edit Profile</a
+              >
+            </div>
+          </div>
+        </div>
+        <section class="profile-hero">
+          <div
+            class="d-flex flex-column flex-md-row align-items-md-center gap-4"
+          >
+            {% if user.profile_picture %}<img
+              class="avatar"
+              src="{{ user.profile_picture }}"
+              alt="{{ user.username }} profile photo"
+            />{% else %}
+            <div class="avatar"><i class="fas fa-user"></i></div>
+            {% endif %}
+            <div>
+              <span class="badge bg-success text-capitalize mb-2"
+                >{{ user.role or 'Member' }}</span
+              >
+              <h1 class="h3 mb-1">
+                {{ (user.first_name ~ ' ' ~ user.last_name).strip() or
+                user.username }}
+              </h1>
+              <p class="mb-0 text-muted">
+                <i class="fas fa-at me-1"></i>{{ user.username }}{% if
+                user.location %}<span class="mx-2">|</span
+                ><i class="fas fa-location-dot me-1"></i>{{ user.location }}{%
+                endif %}
+              </p>
+            </div>
+          </div>
+        </section>
+        <div class="row g-4">
+          <div class="col-lg-8">
+            <section class="profile-card mb-4">
+              <h2 class="section-title mb-3">
+                <i class="fas fa-id-card me-2"></i>Account Information
+              </h2>
+              <div class="row g-4">
+                <div class="col-md-6">
+                  <div class="detail-label">Email Address</div>
+                  <div>{{ user.email or 'Not provided' }}</div>
+                </div>
+                <div class="col-md-6">
+                  <div class="detail-label">Phone Number</div>
+                  <div>{{ user.phone_number or 'Not provided' }}</div>
+                </div>
+                <div class="col-12">
+                  <div class="detail-label">Farm Location</div>
+                  <div>
+                    {{ user.location or 'Add your location to post harvest
+                    data.' }}
+                  </div>
+                </div>
+                <div class="col-12">
+                  <div class="detail-label">About</div>
+                  <div>
+                    {{ user.bio or 'Tell the Agri-Direct community a little
+                    about yourself and your farm.' }}
+                  </div>
+                </div>
+              </div>
+            </section>
+            <section class="profile-card">
+              <div
+                class="d-flex justify-content-between align-items-center mb-2"
+              >
+                <h2 class="section-title mb-0">
+                  <i class="fas fa-boxes-stacked me-2"></i>Recent Inventory
+                </h2>
+                <a
+                  href="{{ url_for('inventory') }}"
+                  class="small text-success text-decoration-none fw-semibold"
+                  >View inventory <i class="fas fa-arrow-right"></i
+                ></a>
+              </div>
+              {% for item in recent_inventory %}
+              <div
+                class="inventory-row py-3 d-flex justify-content-between align-items-center"
+              >
+                <div>
+                  <div class="fw-semibold">{{ item.crop_name }}</div>
+                  <small class="text-muted"
+                    >Last updated {{ item.last_received[:10] if
+                    item.last_received else '-' }}</small
+                  >
+                </div>
+                <span class="badge rounded-pill text-bg-success px-3 py-2"
+                  >{{ item.total_quantity }} units</span
+                >
+              </div>
+              {% else %}
+              <p class="text-muted mb-0 py-3">
+                No harvest has been added yet.
+                <a href="/upload" class="text-success"
+                  >Add your first record.</a
+                >
+              </p>
+              {% endfor %}
+            </section>
+          </div>
+          <aside class="col-lg-4">
+            <section class="profile-card mb-4">
+              <h2 class="section-title mb-3">Farm Activity</h2>
+              <div class="row text-center">
+                <div class="col-6 border-end">
+                  <div class="stat-value">
+                    {{ inventory_summary.crop_count or 0 }}
+                  </div>
+                  <small class="text-muted">Crop types</small>
+                </div>
+                <div class="col-6">
+                  <div class="stat-value">
+                    {{ inventory_summary.total_quantity or 0 }}
+                  </div>
+                  <small class="text-muted">Total units</small>
+                </div>
+              </div>
+            </section>
+            <section class="profile-card">
+              <h2 class="section-title mb-3">Profile Status</h2>
+              <p class="small text-muted mb-3">
+                Complete your account so buyers and the community can recognize
+                your farm.
+              </p>
+              <div class="d-flex align-items-center gap-2">
+                <i
+                  class="fas {{ 'fa-circle-check text-success' if user.is_verified else 'fa-circle-info text-warning' }}"
+                ></i
+                ><span
+                  >{{ 'Verified account' if user.is_verified else 'Account
+                  verification pending' }}</span
+                >
+              </div>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>

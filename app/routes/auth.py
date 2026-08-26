@@ -1,8 +1,3 @@
-"""Auth HTTP routes.
-
-Handlers retain the legacy SQL and template behavior while living in a domain module.
-"""
-
 from datetime import datetime
 
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
@@ -21,27 +16,37 @@ def login():
 
     if request.method == "POST":
 
-        username = request.form["username"]
-        password = request.form["password"]
+        # Accept the previous ``username`` field name for API and test-client
+        # compatibility while the browser form uses the clearer identifier name.
+        identifier = (request.form.get("identifier") or request.form.get("username") or "").strip()
+        password = request.form.get("password", "")
+
+        if not identifier or not password:
+            flash("Enter your username or email and password")
+            return render_template("login.html")
 
         conn = get_db()
         cur = conn.cursor()
 
-        cur.execute("SELECT * FROM users WHERE username=?", (username,))
+        cur.execute(
+            "SELECT * FROM users WHERE username=? OR email=?",
+            (identifier, identifier),
+        )
         user = cur.fetchone()
+        conn.close()
 
         if user:
             if check_password_hash(user["password"], password):
-                session["user"] = username
+                session["user"] = user["username"]
                 session["role"] = user["role"] if user["role"] else 'buyer'
-                logger.info(f"User {username} logged in")
-                return redirect("/dashboard")
+                logger.info(f"User {user['username']} logged in")
+                return redirect("/home")
             else:
-                logger.warning(f"Invalid password for {username}")
+                logger.warning(f"Invalid password for {identifier}")
         else:
-            logger.warning(f"User {username} not found")
+            logger.warning(f"User {identifier} not found")
 
-        flash("Invalid username or password")
+        flash("Invalid username, email, or password")
 
     return render_template("login.html")
 
@@ -49,8 +54,33 @@ def register_user():
 
     if request.method == "POST":
 
-        username = request.form["username"]
-        password = generate_password_hash(request.form["password"])
+        username = request.form.get("username", "").strip()
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        raw_password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+
+        if not all((username, first_name, last_name, email, raw_password, confirm_password)):
+            flash("Complete all registration fields")
+            return render_template("register.html")
+        if len(username) < 3:
+            flash("Username must be at least 3 characters")
+            return render_template("register.html")
+        if " " in username:
+            flash("Username cannot contain spaces")
+            return render_template("register.html")
+        if "@" not in email:
+            flash("Enter a valid email address")
+            return render_template("register.html")
+        if len(raw_password) < 6:
+            flash("Password must be at least 6 characters")
+            return render_template("register.html")
+        if raw_password != confirm_password:
+            flash("Passwords do not match")
+            return render_template("register.html")
+
+        password = generate_password_hash(raw_password)
         # New registrations are simple users by default
         role = "user"
 
@@ -58,15 +88,20 @@ def register_user():
         cur = conn.cursor()
 
         try:
-            cur.execute("INSERT INTO users(username,password,role) VALUES (?,?,?)",
-                        (username,password,role))
+            cur.execute(
+                """INSERT INTO users(username, first_name, last_name, email, password, role)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                (username, first_name, last_name, email, password, role),
+            )
             conn.commit()
             logger.info(f"User {username} registered with role {role}")
-            flash("Registration successful! Please login.")
-            return redirect("/login")
+            session["user"] = username
+            session["role"] = role
+            flash("Registration successful! Welcome to Agri-Direct.")
+            return redirect("/home")
         except IntegrityError:
-            flash("Username already exists")
-            logger.warning(f"Registration failed: username {username} already exists")
+            flash("That username or email address is already registered")
+            logger.warning(f"Registration failed: username or email already exists for {username}")
         finally:
             conn.close()
 

@@ -1,7 +1,7 @@
 import calendar
 from datetime import datetime, timedelta
 
-from flask import jsonify, redirect, render_template, request, session, url_for
+from flask import flash, jsonify, redirect, render_template, request, session, url_for
 from .. import legacy as core
 from ..algorithms.market_analysis import build_market_analysis
 from ..legacy import logger
@@ -11,10 +11,56 @@ from ..services.geo_service import geocode_location
 # Route implementations use the shared compatibility context.
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
 
+
+def _market_intelligence_access():
+    """Return a redirect response when the signed-in user is not an admin."""
+    if "user" not in session:
+        return redirect(url_for("login"))
+    if session.get("role") != "admin":
+        flash("Market Intelligence is available to administrators only.")
+        return redirect(url_for("portal_home"))
+    return None
+
 def home():
     if "user" in session:
-        return redirect("/dashboard")
+        return redirect(url_for("portal_home"))
     return redirect("/login")
+
+def portal_home():
+    """Signed-in landing page driven by published Knowledge Hub posts."""
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    conn = get_db()
+    cur = conn.cursor()
+    updates = cur.execute("""
+        SELECT kp.post_id, kp.title, kp.content, kp.image, kp.created_at, kp.author,
+               kc.category_name
+        FROM knowledge_posts kp
+        LEFT JOIN knowledge_categories kc ON kc.category_id = kp.category_id
+        WHERE kp.status = 'Published'
+        ORDER BY kp.created_at DESC LIMIT 6
+    """).fetchall()
+    featured_listings = cur.execute("""
+        SELECT m.id, m.crop_name, m.amount, m.price, m.unit, m.location,
+               u.username AS seller_name
+        FROM marketplace m JOIN users u ON u.id = m.user_id
+        WHERE m.status = 'available'
+        ORDER BY m.listing_date DESC LIMIT 3
+    """).fetchall()
+    marketplace_summary = cur.execute("""
+        SELECT COUNT(*) AS active_listings, COUNT(DISTINCT crop_name) AS crop_count
+        FROM marketplace WHERE status = 'available'
+    """).fetchone()
+    my_listing_summary = cur.execute("""
+        SELECT COUNT(*) AS active_listings FROM marketplace
+        WHERE user_id = (SELECT id FROM users WHERE username = ?)
+          AND status = 'available'
+    """, (session["user"],)).fetchone()
+    conn.close()
+    return render_template("home.html", updates=updates, featured_listings=featured_listings,
+                           marketplace_summary=marketplace_summary,
+                           my_listing_summary=my_listing_summary)
 
 def about():
     return render_template("about.html")
@@ -33,8 +79,9 @@ def crop_types():
     return render_template("crop_types.html", crops=crops, crop_types_count=crop_types_count)
 
 def market_intelligence():
-    if "user" not in session:
-        return redirect(url_for("login"))
+    access_denied = _market_intelligence_access()
+    if access_denied:
+        return access_denied
 
     summary_cards = [
         {"label": "Market value", "badge": "Stable", "value": "₱1.86M", "detail": "Reflects current trade volume for the period."},
@@ -72,8 +119,9 @@ def market_intelligence():
     )
 
 def market_intelligence_price_monitoring():
-    if "user" not in session:
-        return redirect(url_for("login"))
+    access_denied = _market_intelligence_access()
+    if access_denied:
+        return access_denied
 
     return render_template(
         "market_intelligence_price.html",
@@ -95,8 +143,9 @@ def market_intelligence_price_monitoring():
     )
 
 def market_intelligence_crop_recommendations():
-    if "user" not in session:
-        return redirect(url_for("login"))
+    access_denied = _market_intelligence_access()
+    if access_denied:
+        return access_denied
 
     return render_template(
         "market_intelligence_recommendations.html",
@@ -112,8 +161,9 @@ def market_intelligence_crop_recommendations():
     )
 
 def market_intelligence_demand_forecasting():
-    if "user" not in session:
-        return redirect(url_for("login"))
+    access_denied = _market_intelligence_access()
+    if access_denied:
+        return access_denied
 
     return render_template(
         "market_intelligence_forecast.html",
@@ -129,8 +179,9 @@ def market_intelligence_demand_forecasting():
     )
 
 def market_intelligence_supply_balance():
-    if "user" not in session:
-        return redirect(url_for("login"))
+    access_denied = _market_intelligence_access()
+    if access_denied:
+        return access_denied
 
     return render_template(
         "market_intelligence_supply.html",
@@ -218,6 +269,8 @@ def api_market_insights():
     """Return algorithm-driven market monitoring and recommendation insights."""
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    if session.get("role") != "admin":
+        return jsonify({"error": "Market Intelligence is available to administrators only."}), 403
 
     conn = get_db()
     cur = conn.cursor()
@@ -232,6 +285,8 @@ def api_forecast():
     """Return crop demand forecasting results."""
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    if session.get("role") != "admin":
+        return jsonify({"error": "Market Intelligence is available to administrators only."}), 403
 
     conn = get_db()
     cur = conn.cursor()
@@ -849,6 +904,25 @@ def notifications():
 
     return jsonify(data)
 
+
+def notification_center():
+    """Display the signed-in user's notification history."""
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    conn = get_db()
+    cur = conn.cursor()
+    rows = cur.execute("""
+        SELECT * FROM notifications
+        WHERE username=?
+        ORDER BY created_at DESC
+        LIMIT 50
+    """, (session["user"],)).fetchall()
+    cur.execute("UPDATE notifications SET is_read=1 WHERE username=? AND is_read=0", (session["user"],))
+    conn.commit()
+    conn.close()
+    return render_template("notifications.html", notifications=rows)
+
 def notifications_mark_read():
     if 'user' not in session:
         return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
@@ -868,6 +942,7 @@ def notifications_mark_read():
 def register(application):
     """Register this domain's routes on the existing Flask app."""
     application.add_url_rule('/', endpoint='home', view_func=home)
+    application.add_url_rule('/home', endpoint='portal_home', view_func=portal_home)
     application.add_url_rule('/about', endpoint='about', view_func=about)
     application.add_url_rule('/crop-types', endpoint='crop_types', view_func=crop_types)
     application.add_url_rule('/market-intelligence', endpoint='market_intelligence', view_func=market_intelligence)
@@ -894,9 +969,10 @@ def register(application):
     application.add_url_rule('/messages/send', endpoint='send_chat_message', view_func=send_chat_message, methods=['POST'])
     application.add_url_rule('/api/current-user', endpoint='api_current_user', view_func=api_current_user)
     application.add_url_rule('/notifications', endpoint='notifications', view_func=notifications)
+    application.add_url_rule('/notifications-center', endpoint='notification_center', view_func=notification_center)
     application.add_url_rule('/notifications/mark-read', endpoint='notifications_mark_read', view_func=notifications_mark_read, methods=['POST'])
     for _name in __all__:
         setattr(core, _name, globals()[_name])
 
 
-__all__ = ['home', 'about', 'crop_types', 'market_intelligence', 'market_intelligence_price_monitoring', 'market_intelligence_crop_recommendations', 'market_intelligence_demand_forecasting', 'market_intelligence_supply_balance', 'dashboard', 'dashboard_data', 'api_market_insights', 'api_forecast', 'api_stats', 'get_users', 'bot_response', 'get_messagess', 'send_message', 'total_harvest', 'top_crop', 'locations', 'messages_page', 'get_conversations', 'users_search', 'get_messages', 'send_chat_message', 'api_current_user', 'notifications', 'notifications_mark_read']
+__all__ = ['home', 'portal_home', 'about', 'crop_types', 'market_intelligence', 'market_intelligence_price_monitoring', 'market_intelligence_crop_recommendations', 'market_intelligence_demand_forecasting', 'market_intelligence_supply_balance', 'dashboard', 'dashboard_data', 'api_market_insights', 'api_forecast', 'api_stats', 'get_users', 'bot_response', 'get_messagess', 'send_message', 'total_harvest', 'top_crop', 'locations', 'messages_page', 'get_conversations', 'users_search', 'get_messages', 'send_chat_message', 'api_current_user', 'notifications', 'notification_center', 'notifications_mark_read']

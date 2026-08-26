@@ -293,6 +293,22 @@ def init_db():
 
     cur.execute("PRAGMA table_info(users)")
     users_columns = [row[1] for row in cur.fetchall()]
+    # Keep databases created before the expanded account model compatible with
+    # the profile-management pages.
+    profile_columns = {
+        'email': 'TEXT',
+        'first_name': 'TEXT',
+        'last_name': 'TEXT',
+        'phone_number': 'TEXT',
+        'profile_picture': 'TEXT',
+        'bio': 'TEXT',
+        'is_verified': 'INTEGER DEFAULT 0',
+        'created_at': 'TEXT',
+        'updated_at': 'TEXT',
+    }
+    for column, definition in profile_columns.items():
+        if column not in users_columns:
+            cur.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
     if 'reliability_score' not in users_columns:
         cur.execute("ALTER TABLE users ADD COLUMN reliability_score REAL DEFAULT NULL")
     if 'reliability_status' not in users_columns:

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Update Profile | Agri-Direct</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        body { min-height: 100vh; color: #333; background: #f5f5f5; }
+        .navbar-custom { background: linear-gradient(135deg, #1a3408 0%, #0f1f03 100%); box-shadow: 0 2px 10px rgba(0,0,0,.1); height: 70px; z-index: 1030; }
+        .sidebar { background: #1a3408; color: white; min-height: 100vh; position: fixed; top: 0; left: 0; width: 250px; padding-top: 80px; z-index: 1000; }
+        .sidebar .nav-link { color: rgba(255,255,255,.8); padding: 12px 20px; margin: 5px 10px; border-radius: 5px; transition: all .3s; }
+        .sidebar .nav-link:hover { color: white; background: rgba(255,255,255,.1); }
+        .sidebar .nav-link.active { background: #4caf50; color: white; }
+        .main-content { margin-left: 250px; margin-top: 70px; padding: 20px; }
+        .edit-wrap { max-width: 950px; margin: 12px auto; }
+        .card { border: 0; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+        .form-label { color: #315d31; font-weight: 600; }
+        .form-control { padding: .68rem .8rem; border-color: #d9e4d5; }
+        .form-control:focus { border-color: #4c9149; box-shadow: 0 0 0 .2rem rgba(76, 145, 73, .14); }
+        .avatar-preview { display: flex; align-items: center; justify-content: center; width: 110px; height: 110px; color: #2d6a2e; font-size: 2.6rem; background: #e5f0df; border-radius: 50%; object-fit: cover; }
+        .btn-agri { color: #fff; background: #2d6a2e; border-color: #2d6a2e; }
+        .btn-agri:hover { color: #fff; background: #1f5426; }
+        @media (max-width: 991px) { .sidebar { width:70px; } .sidebar .nav-link { text-align:center; padding:14px 5px; font-size:0; } .sidebar .nav-link i { font-size:1.15rem; } .main-content { margin-left:70px; } }
+        @media (max-width:575px) { .sidebar { display:none; } .main-content { margin-left:0; padding:14px; } .navbar-brand { margin-left:0!important; } }
+    </style>
+</head>
+<body>
+    <div class="sidebar"><nav class="nav flex-column"><a class="nav-link" href="/home"><i class="fas fa-home"></i> Home</a><a class="nav-link" href="/dashboard"><i class="fas fa-chart-line"></i> Dashboard</a><a class="nav-link" href="/upload"><i class="fas fa-upload"></i> Upload Harvest</a>{% if session.get('role') == 'admin' %}<a class="nav-link" href="/market-intelligence"><i class="fas fa-brain"></i> Market Intelligence</a>{% endif %}<a class="nav-link" href="/marketplace"><i class="fas fa-store"></i> Marketplace</a><a class="nav-link" href="/knowledge"><i class="fas fa-book-open"></i> Knowledge Hub</a><a class="nav-link" href="/messages"><i class="fas fa-comments"></i> Messages</a><a class="nav-link" href="/notifications-center"><i class="fas fa-bell"></i> Notifications</a><a class="nav-link active" href="/profile"><i class="fas fa-user-circle"></i> Profile</a><a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></nav></div>
+    <nav class="navbar navbar-dark navbar-custom fixed-top"><div class="container-fluid"><span class="navbar-brand mb-0 h1 ms-5"><i class="fas fa-leaf"></i> Agri-Direct</span><div class="d-flex align-items-center gap-2"><a href="/notifications-center" class="btn btn-outline-light" title="Notifications"><i class="fas fa-bell"></i></a><a href="{{ url_for('profile') }}" class="btn btn-sm btn-outline-light">Cancel</a></div></div></nav>
+
+    <main class="main-content"><div class="container edit-wrap">
+        <header class="mb-4">
+            <p class="text-success fw-semibold mb-1">ACCOUNT SETTINGS</p>
+            <h1 class="h2">Update your profile</h1>
+            <p class="text-muted mb-0">Keep your personal and farm details current for a trusted marketplace presence.</p>
+        </header>
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="alert alert-danger" role="alert">{{ messages[0] }}</div>
+            {% endif %}
+        {% endwith %}
+
+        <form method="POST" enctype="multipart/form-data">
+            <section class="card mb-4">
+                <div class="card-body p-4 p-md-5">
+                    <h2 class="h5 mb-4"><i class="fas fa-camera me-2 text-success"></i>Profile photo</h2>
+                    <div class="d-flex align-items-center gap-4">
+                        {% if user.profile_picture %}
+                            <img id="preview" class="avatar-preview" src="{{ user.profile_picture }}" alt="Current profile photo">
+                        {% else %}
+                            <div id="previewIcon" class="avatar-preview" aria-hidden="true"><i class="fas fa-user"></i></div>
+                            <img id="preview" class="avatar-preview d-none" alt="Profile preview">
+                        {% endif %}
+                        <div>
+                            <label for="profile_picture" class="form-label">Choose a photo</label>
+                            <input id="profile_picture" name="profile_picture" class="form-control" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+                            <div class="form-text">PNG, JPG, WEBP, or GIF. A square image works best.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="card">
+                <div class="card-body p-4 p-md-5">
+                    <h2 class="h5 mb-4"><i class="fas fa-user-pen me-2 text-success"></i>Personal and farm details</h2>
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label" for="first_name">First name *</label><input class="form-control" id="first_name" name="first_name" required value="{{ user.first_name or '' }}"></div>
+                        <div class="col-md-6"><label class="form-label" for="last_name">Last name *</label><input class="form-control" id="last_name" name="last_name" required value="{{ user.last_name or '' }}"></div>
+                        <div class="col-md-6"><label class="form-label" for="email">Email address *</label><input type="email" class="form-control" id="email" name="email" required value="{{ user.email or '' }}"></div>
+                        <div class="col-md-6"><label class="form-label" for="phone_number">Phone number</label><input type="tel" class="form-control" id="phone_number" name="phone_number" value="{{ user.phone_number or '' }}" placeholder="e.g. +63 912 345 6789"></div>
+                        <div class="col-12">
+                            <label class="form-label" for="region">Farm location</label>
+                            <div class="row g-2">
+                                <div class="col-md-3"><select class="form-select location-select" id="region" name="region"><option value="">Select Region</option></select></div>
+                                <div class="col-md-3"><select class="form-select location-select" id="province" name="province" disabled><option value="">Select Province</option></select></div>
+                                <div class="col-md-3"><select class="form-select location-select" id="city" name="city" disabled><option value="">Select City/Municipality</option></select></div>
+                                <div class="col-md-3"><select class="form-select location-select" id="barangay" name="barangay" disabled><option value="">Select Barangay</option></select></div>
+                            </div>
+                            <input type="hidden" id="location" name="location" value="{{ user.location or '' }}">
+                            <div class="form-text">Select your farm location using Philippine Standard Geographic Code (PSGC) data.</div>
+                        </div>
+                        <div class="col-12"><label class="form-label" for="bio">About your farm</label><textarea class="form-control" id="bio" name="bio" rows="4" maxlength="800" placeholder="Describe your farm, crops, or farming experience.">{{ user.bio or '' }}</textarea></div>
+                    </div>
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <a href="{{ url_for('profile') }}" class="btn btn-light border">Cancel</a>
+                        <button class="btn btn-agri px-4" type="submit"><i class="fas fa-check me-1"></i>Save changes</button>
+                    </div>
+                </div>
+            </section>
+        </form>
+    </div></main>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script>
+        document.getElementById('profile_picture').addEventListener('change', function (event) {
+            const file = event.target.files[0];
+            const preview = document.getElementById('preview');
+            const icon = document.getElementById('previewIcon');
+            if (!file) return;
+            preview.src = URL.createObjectURL(file);
+            preview.classList.remove('d-none');
+            if (icon) icon.classList.add('d-none');
+        });
+
+        $(function () {
+            const $region = $('#region');
+            const $province = $('#province');
+            const $city = $('#city');
+            const $barangay = $('#barangay');
+
+            $('.location-select').select2({ width: '100%' });
+            loadRegions();
+
+            $region.on('change', function () {
+                const code = $(this).val();
+                if (code) { $province.prop('disabled', false); loadProvinces(code); }
+                else resetDropdowns('province');
+                updateLocation();
+            });
+            $province.on('change', function () {
+                const code = $(this).val();
+                if (code) { $city.prop('disabled', false); loadCities(code); }
+                else resetDropdowns('city');
+                updateLocation();
+            });
+            $city.on('change', function () {
+                const code = $(this).val();
+                if (code) { $barangay.prop('disabled', false); loadBarangays(code); }
+                else resetDropdowns('barangay');
+                updateLocation();
+            });
+            $barangay.on('change', updateLocation);
+
+            function loadRegions() {
+                $.getJSON('https://psgc.gitlab.io/api/regions/')
+                    .done(function (data) {
+                        const easternVisayas = data.find(function (region) {
+                            return region.code === '080000000' || region.name.toLowerCase().includes('eastern visayas');
+                        });
+                        $region.empty();
+                        if (easternVisayas) {
+                            $region.append(new Option(easternVisayas.name, easternVisayas.code, true, true));
+                            $region.prop('disabled', true).trigger('change');
+                            $province.prop('disabled', false);
+                            loadProvinces(easternVisayas.code);
+                        } else {
+                            $region.append(new Option('No region available', ''));
+                        }
+                    })
+                    .fail(function () { $region.empty().append(new Option('Unable to load regions', '')); });
+            }
+
+            function loadProvinces(regionCode) {
+                resetDropdowns('city');
+                $.getJSON(`https://psgc.gitlab.io/api/regions/${regionCode}/provinces/`)
+                    .done(function (data) {
+                        $province.empty().append(new Option('Select Province', ''));
+                        data.forEach(function (province) { $province.append(new Option(province.name, province.code)); });
+                        $province.trigger('change.select2');
+                    });
+            }
+
+            function loadCities(provinceCode) {
+                resetDropdowns('barangay');
+                $.getJSON(`https://psgc.gitlab.io/api/provinces/${provinceCode}/cities-municipalities/`)
+                    .done(function (data) {
+                        $city.empty().append(new Option('Select City/Municipality', ''));
+                        data.forEach(function (city) { $city.append(new Option(city.name, city.code)); });
+                        $city.trigger('change.select2');
+                    });
+            }
+
+            function loadBarangays(cityCode) {
+                $.getJSON(`https://psgc.gitlab.io/api/cities-municipalities/${cityCode}/barangays/`)
+                    .done(function (data) {
+                        $barangay.empty().append(new Option('Select Barangay', ''));
+                        data.forEach(function (barangay) { $barangay.append(new Option(barangay.name, barangay.code)); });
+                        $barangay.trigger('change.select2');
+                    });
+            }
+
+            function resetDropdowns(fromLevel) {
+                const levels = ['province', 'city', 'barangay'];
+                const start = levels.indexOf(fromLevel);
+                for (let index = start; index < levels.length; index += 1) {
+                    const level = levels[index];
+                    const label = level === 'city' ? 'City/Municipality' : level.charAt(0).toUpperCase() + level.slice(1);
+                    $('#' + level).empty().append(new Option('Select ' + label, '')).prop('disabled', true).trigger('change.select2');
+                }
+            }
+
+            function updateLocation() {
+                const names = [$region, $province, $city, $barangay]
+                    .map(function ($select) { return $select.find('option:selected').text(); })
+                    .filter(function (name) { return name && !name.startsWith('Select ') && name !== 'No region available'; });
+                $('#location').val(names.join(', '));
+            }
+        });
+    </script>
+</body>
+</html>

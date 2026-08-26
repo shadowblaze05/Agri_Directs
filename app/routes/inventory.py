@@ -16,6 +16,27 @@ from ..legacy import app, get_db, logger, update_analytics
 # Route implementations use the shared compatibility context.
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
 
+def inventory():
+    """Display the signed-in user's harvest inventory as a dedicated workspace."""
+    if "user" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT crop_name, SUM(quantity) AS total_quantity, MAX(date_received) AS last_received, MAX(location) AS location "
+        "FROM inventory WHERE farmer=? GROUP BY crop_name ORDER BY last_received DESC",
+        (session["user"],),
+    )
+    items = cur.fetchall()
+    cur.execute(
+        "SELECT COUNT(DISTINCT crop_name) AS crop_count, COALESCE(SUM(quantity), 0) AS total_quantity "
+        "FROM inventory WHERE farmer=?", (session["user"],)
+    )
+    summary = cur.fetchone()
+    conn.close()
+    return render_template("inventory.html", items=items, summary=summary)
+
 def inventory_buy():
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
@@ -411,6 +432,7 @@ def upload():
 
 def register(application):
     """Register this domain's routes on the existing Flask app."""
+    application.add_url_rule('/inventory', endpoint='inventory', view_func=inventory)
     application.add_url_rule('/inventory/buy', endpoint='inventory_buy', view_func=inventory_buy, methods=['POST'])
     application.add_url_rule('/inventory/edit_crop', endpoint='inventory_edit_crop', view_func=inventory_edit_crop, methods=['POST'])
     application.add_url_rule('/inventory/delete_crop', endpoint='inventory_delete_crop', view_func=inventory_delete_crop, methods=['POST'])
@@ -421,4 +443,4 @@ def register(application):
         setattr(core, _name, globals()[_name])
 
 
-__all__ = ['inventory_buy', 'inventory_edit_crop', 'inventory_delete_crop', 'edit_inventory', 'delete_inventory', 'upload']
+__all__ = ['inventory', 'inventory_buy', 'inventory_edit_crop', 'inventory_delete_crop', 'edit_inventory', 'delete_inventory', 'upload']

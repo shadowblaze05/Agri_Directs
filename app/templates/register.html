@@ -131,19 +131,29 @@
                 <div class="mb-3">
                     <label class="form-label"><i class="fas fa-user"></i> Username</label>
                     <input type="text" name="username" class="form-control" placeholder="Choose a unique username" 
-                           required minlength="3" autofocus>
+                           required minlength="3" pattern="[^\s]+" autofocus autocomplete="username">
                     <small class="text-muted">At least 3 characters, no spaces</small>
                 </div>
 
                 <div class="mb-3">
-                    <label class="form-label"><i class="fas fa-user-tag"></i> Account Role</label>
-                    <div class="form-text">Accounts are created as general users. Admins are managed separately.</div>
+                    <label class="form-label"><i class="fas fa-id-card"></i> First Name</label>
+                    <input type="text" name="first_name" class="form-control" placeholder="Enter your first name" required autocomplete="given-name">
                 </div>
 
-                <div class="mb-4">
+                <div class="mb-3">
+                    <label class="form-label"><i class="fas fa-id-card"></i> Last Name</label>
+                    <input type="text" name="last_name" class="form-control" placeholder="Enter your last name" required autocomplete="family-name">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label"><i class="fas fa-envelope"></i> Email Address</label>
+                    <input type="email" name="email" class="form-control" placeholder="Enter your email address" required autocomplete="email">
+                </div>
+
+                <div class="mb-3">
                     <label class="form-label"><i class="fas fa-lock"></i> Password</label>
                     <input type="password" name="password" class="form-control" placeholder="Create a strong password" 
-                           required minlength="6" id="password">
+                           required minlength="6" id="password" autocomplete="new-password">
                     
                     <div class="password-requirements">
                         <h6>Password Requirements:</h6>
@@ -153,6 +163,12 @@
                             <li>✓ Try to include special characters</li>
                         </ul>
                     </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label"><i class="fas fa-lock"></i> Confirm Password</label>
+                    <input type="password" name="confirm_password" class="form-control" placeholder="Re-enter your password"
+                           required minlength="6" autocomplete="new-password">
                 </div>
 
                 <button type="submit" class="btn btn-register w-100 text-white">

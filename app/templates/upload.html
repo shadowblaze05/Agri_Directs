@@ -1,261 +1,379 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Agri-Direct Upload</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Upload Harvest - Agri-Direct</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='style.css') }}"
+    />
     <style>
-        body {
-            background: linear-gradient(135deg, #2d5016 0%, #1a3408 100%);
-            min-height: 100vh;
-            padding: 20px 0;
+      body {
+        background: #f5f5f5;
+        color: #333;
+      }
+      .navbar-custom {
+        background: linear-gradient(135deg, #1a3408 0%, #0f1f03 100%);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        height: 70px;
+        z-index: 1030;
+      }
+      .sidebar {
+        background: #1a3408;
+        color: white;
+        min-height: 100vh;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 250px;
+        padding-top: 80px;
+        z-index: 1000;
+      }
+      .sidebar .nav-link {
+        color: rgba(255, 255, 255, 0.8);
+        padding: 12px 20px;
+        margin: 5px 10px;
+        border-radius: 5px;
+        transition: all 0.3s;
+      }
+      .sidebar .nav-link:hover {
+        color: white;
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .sidebar .nav-link.active {
+        background: #4caf50;
+        color: white;
+      }
+      .main-content {
+        margin-left: 250px;
+        margin-top: 70px;
+        padding: 20px;
+      }
+      .page-header,
+      .upload-card {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      .page-header {
+        padding: 22px;
+        margin-bottom: 20px;
+      }
+      .page-header h2 {
+        color: #2d5016;
+      }
+      .upload-card {
+        max-width: 760px;
+        margin: 0 auto;
+        overflow: hidden;
+      }
+      .upload-card-header {
+        background: linear-gradient(135deg, #2d5016 0%, #1a3408 100%);
+        color: white;
+        padding: 24px 30px;
+      }
+      .upload-card-body {
+        padding: 30px;
+      }
+      .drop-zone {
+        border: 2px dashed #2d5016;
+        border-radius: 8px;
+        padding: 30px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s;
+        background: #f8f9fa;
+      }
+      .drop-zone:hover,
+      .drop-zone.dragover {
+        background: #e8f5e9;
+        border-color: #1a3408;
+      }
+      .drop-zone i {
+        font-size: 48px;
+        color: #2d5016;
+        margin-bottom: 15px;
+      }
+      .file-name {
+        margin-top: 15px;
+        padding: 10px;
+        background: #f8f9fa;
+        border-radius: 4px;
+        display: none;
+      }
+      .manual-entry {
+        background: #f8fbf8;
+        border: 1px solid #d8e7d9;
+        border-left: 4px solid #2d5016;
+        padding: 20px;
+        border-radius: 6px;
+        margin-top: 20px;
+      }
+      .manual-entry h6 {
+        color: #2d5016;
+        font-weight: 700;
+      }
+      .btn-success {
+        background: #2d5016;
+        border: none;
+      }
+      .btn-success:hover {
+        background: #1a3408;
+      }
+      .btn-outline-success {
+        color: #2d5016;
+        border-color: #2d5016;
+      }
+      .btn-outline-success:hover {
+        background: #2d5016;
+        color: white;
+      }
+      @media (max-width: 991px) {
+        .sidebar {
+          width: 70px;
         }
-        .upload-container {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            overflow: hidden;
-            max-width: 600px;
-            margin: 40px auto;
+        .sidebar .nav-link {
+          text-align: center;
+          padding: 14px 5px;
+          font-size: 0;
         }
-        .upload-header {
-            background: linear-gradient(135deg, #2d5016 0%, #1a3408 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
+        .sidebar .nav-link i {
+          font-size: 1.15rem;
         }
-        .upload-header h1 {
-            margin: 0;
-            font-size: 24px;
-            font-weight: bold;
+        .main-content {
+          margin-left: 70px;
         }
-        .upload-body {
-            padding: 40px;
+      }
+      @media (max-width: 575px) {
+        .sidebar {
+          display: none;
         }
-        .drop-zone {
-            border: 2px dashed #2d5016;
-            border-radius: 8px;
-            padding: 30px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-            background: #f8f9fa;
+        .main-content {
+          margin-left: 0;
+          padding: 14px;
         }
-        .drop-zone:hover {
-            background: #e8f5e9;
-            border-color: #1a3408;
+        .navbar-brand {
+          margin-left: 0 !important;
         }
-        .drop-zone.dragover {
-            background: #e8f5e9;
-            border-color: #4caf50;
+        .upload-card-body {
+          padding: 20px;
         }
-        .drop-zone i {
-            font-size: 48px;
-            color: #2d5016;
-            margin-bottom: 15px;
-        }
-        .drop-zone p {
-            margin: 10px 0;
-            color: #555;
-        }
-        .file-input-label {
-            cursor: pointer;
-            color: #2d5016;
-            font-weight: 600;
-            text-decoration: underline;
-        }
-        #file::-webkit-file-upload-button {
-            cursor: pointer;
-        }
-        .btn-upload {
-            background: linear-gradient(135deg, #2d5016 0%, #1a3408 100%);
-            border: none;
-            padding: 12px;
-            font-weight: 600;
-            border-radius: 6px;
-            transition: all 0.3s;
-        }
-        .btn-upload:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(45, 80, 22, 0.3);
-            color: white;
-        }
-        .csv-template {
-            background: #f0f7ff;
-            border: 1px solid #2196F3;
-            border-left: 4px solid #2196F3;
-            padding: 15px;
-            border-radius: 4px;
-            margin-top: 20px;
-        }
-        .csv-template h6 {
-            font-size: 12px;
-            font-weight: 600;
-            margin-bottom: 10px;
-            color: #2196F3;
-        }
-        .csv-template code {
-            background: white;
-            padding: 10px;
-            border-radius: 4px;
-            display: block;
-            font-size: 12px;
-            overflow-x: auto;
-        }
-        .back-link {
-            text-align: center;
-            margin-top: 20px;
-        }
-        .back-link a {
-            color: #2d5016;
-            text-decoration: none;
-            font-weight: 500;
-        }
-        .back-link a:hover {
-            text-decoration: underline;
-        }
-        .file-name {
-            margin-top: 15px;
-            padding: 10px;
-            background: #f8f9fa;
-            border-radius: 4px;
-            display: none;
-        }
+      }
     </style>
-</head>
-<body>
-    <div class="upload-container">
-        <!-- Header -->
-        <div class="upload-header">
-            <h1><i class="fas fa-cloud-upload-alt"></i> Upload Harvest Data</h1>
-            <p>Submit CSV file with your crops and quantities</p>
-        </div>
-
-        <!-- Body -->
-        <div class="upload-body">
-            <!-- Flash Messages -->
-            {% with messages = get_flashed_messages() %}
-                {% if messages %}
-                    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                        <i class="fas fa-exclamation-circle"></i> {{ messages[0] }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                    </div>
-                {% endif %}
-            {% endwith %}
-
-            <!-- Upload Form -->
-            <form method="POST" enctype="multipart/form-data" id="uploadForm">
-                <!-- Drop Zone -->
-                <div class="drop-zone" id="dropZone">
-                    <i class="fas fa-file-csv"></i>
-                    <p><strong>Click to select CSV file or drag it here</strong></p>
-                    <p style="font-size: 12px; color: #999;">Only .csv files are accepted</p>
-                    <input type="file" name="file" id="file" accept=".csv" class="d-none">
-                </div>
-
-                <!-- Selected File Display -->
-                <div class="file-name" id="fileName">
-                    <small>📄 Selected: <strong id="selectedName"></strong></small>
-                </div>
-
-                <div class="csv-template mt-4">
-                    <h6>Manual Entry</h6>
-                    <div class="mb-3">
-                        <label for="manual_crop_name" class="form-label">Crop Name</label>
-                        <input type="text" class="form-control" id="manual_crop_name" name="manual_crop_name" list="cropOptions" autocomplete="off" placeholder="Start typing a crop name">
-                        <datalist id="cropOptions">
-                            {% for crop in crops %}
-                                <option value="{{ crop[1] }}" data-id="{{ crop[0] }}">{{ crop[1] }}</option>
-                            {% endfor %}
-                        </datalist>
-                        <input type="hidden" name="crop_id" id="crop_id" value="">
-                    </div>
-                    <div class="mb-3">
-                        <label for="manual_quantity" class="form-label">Quantity</label>
-                        <input type="number" min="1" class="form-control" id="manual_quantity" name="manual_quantity" placeholder="Enter quantity">
-                    </div>
-                    <div class="mb-3">
-                        <label for="manual_date" class="form-label">Date</label>
-                        <input type="date" class="form-control" id="manual_date" name="manual_date">
-                        <div class="form-text">Leave blank to use today&apos;s date.</div>
-                    </div>
-                    <div class="form-text">You can either upload a CSV file or submit one manual harvest entry.</div>
-                </div>
-
-                <!-- Upload Button -->
-                <button type="submit" class="btn btn-upload w-100 text-white mt-4">
-                    <i class="fas fa-arrow-up"></i> Submit Harvest Data
-                </button>
-            </form>
-
-            <!-- Back Link -->
-            <div class="back-link">
-                <a href="/dashboard">
-                    <i class="fas fa-arrow-left"></i> Back to Dashboard
-                </a>
-            </div>
-        </div>
+  </head>
+  <body>
+    <div class="sidebar">
+      <nav class="nav flex-column">
+        <a class="nav-link" href="/home"><i class="fas fa-home"></i> Home</a
+        ><a class="nav-link" href="/dashboard"
+          ><i class="fas fa-chart-line"></i> Dashboard</a
+        ><a class="nav-link active" href="/upload"
+          ><i class="fas fa-upload"></i> Upload Harvest</a
+        >{% if session.get('role') == 'admin' %}<a
+          class="nav-link"
+          href="/market-intelligence"
+          ><i class="fas fa-brain"></i> Market Intelligence</a
+        >{% endif %}<a class="nav-link" href="/marketplace"
+          ><i class="fas fa-store"></i> Marketplace</a
+        ><a class="nav-link" href="/knowledge"
+          ><i class="fas fa-book-open"></i> Knowledge Hub</a
+        ><a class="nav-link" href="/messages"
+          ><i class="fas fa-comments"></i> Messages</a
+        ><a class="nav-link" href="/notifications-center"
+          ><i class="fas fa-bell"></i> Notifications</a
+        ><a class="nav-link" href="/profile"
+          ><i class="fas fa-user-circle"></i> Profile</a
+        ><a class="nav-link" href="/logout"
+          ><i class="fas fa-sign-out-alt"></i> Logout</a
+        >
+      </nav>
     </div>
-
+    <nav class="navbar navbar-dark navbar-custom fixed-top">
+      <div class="container-fluid">
+        <span class="navbar-brand mb-0 h1 ms-5"
+          ><i class="fas fa-leaf"></i> Agri-Direct</span
+        >
+        <div class="dropdown">
+          <button
+            class="btn btn-outline-light dropdown-toggle"
+            type="button"
+            data-bs-toggle="dropdown"
+          >
+            <i class="fas fa-user-circle"></i> {{ session.get('user', 'User') }}
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li>
+              <a class="dropdown-item" href="/profile"
+                ><i class="fas fa-id-badge"></i> Profile</a
+              >
+            </li>
+            {% if session.get('role') == 'admin' %}
+            <li>
+              <a class="dropdown-item" href="/admin"
+                ><i class="fas fa-shield-alt"></i> Admin Console</a
+              >
+            </li>
+            {% endif %}
+            <li><hr class="dropdown-divider" /></li>
+            <li>
+              <a class="dropdown-item" href="/logout"
+                ><i class="fas fa-sign-out-alt"></i> Logout</a
+              >
+            </li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+    <main class="main-content">
+      <div class="container-fluid py-2">
+        <div class="upload-card">
+          <div class="upload-card-header">
+            <h4 class="mb-1">
+              <i class="fas fa-file-csv"></i> Harvest Submission
+            </h4>
+            <p class="mb-0 small opacity-75">
+              Your uploaded harvest information is used in the system dashboard.
+            </p>
+          </div>
+          <div class="upload-card-body">
+            {% with messages = get_flashed_messages() %}{% if messages %}
+            <div
+              class="alert alert-danger alert-dismissible fade show"
+              role="alert"
+            >
+              <i class="fas fa-exclamation-circle"></i> {{ messages[0] }}<button
+                type="button"
+                class="btn-close"
+                data-bs-dismiss="alert"
+              ></button>
+            </div>
+            {% endif %}{% endwith %}
+            <form method="POST" enctype="multipart/form-data" id="uploadForm">
+              <div class="drop-zone" id="dropZone">
+                <i class="fas fa-file-csv"></i>
+                <p class="mb-1">
+                  <strong>Click to select a CSV file or drag it here</strong>
+                </p>
+                <p class="small text-muted mb-0">
+                  Only .csv files are accepted
+                </p>
+                <input
+                  type="file"
+                  name="file"
+                  id="file"
+                  accept=".csv"
+                  class="d-none"
+                />
+              </div>
+              <div class="file-name" id="fileName">
+                <small
+                  ><i class="fas fa-file"></i> Selected:
+                  <strong id="selectedName"></strong
+                ></small>
+              </div>
+              <div class="manual-entry">
+                <h6><i class="fas fa-pen"></i> Manual Entry</h6>
+                <div class="mb-3">
+                  <label for="manual_crop_name" class="form-label"
+                    >Crop Name</label
+                  ><input
+                    type="text"
+                    class="form-control"
+                    id="manual_crop_name"
+                    name="manual_crop_name"
+                    list="cropOptions"
+                    autocomplete="off"
+                    placeholder="Start typing a crop name"
+                  /><datalist id="cropOptions">
+                    {% for crop in crops %}
+                    <option value="{{ crop[1] }}" data-id="{{ crop[0] }}">
+                      {{ crop[1] }}
+                    </option>
+                    {% endfor %}</datalist
+                  ><input type="hidden" name="crop_id" id="crop_id" value="" />
+                </div>
+                <div class="mb-3">
+                  <label for="manual_quantity" class="form-label"
+                    >Quantity</label
+                  ><input
+                    type="number"
+                    min="1"
+                    class="form-control"
+                    id="manual_quantity"
+                    name="manual_quantity"
+                    placeholder="Enter quantity"
+                  />
+                </div>
+                <div class="mb-2">
+                  <label for="manual_date" class="form-label">Date</label
+                  ><input
+                    type="date"
+                    class="form-control"
+                    id="manual_date"
+                    name="manual_date"
+                  />
+                  <div class="form-text">Leave blank to use today's date.</div>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-success w-100 mt-4">
+                <i class="fas fa-arrow-up"></i> Submit Harvest Data
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    </main>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        const dropZone = document.getElementById('dropZone');
-        const fileInput = document.getElementById('file');
-        const fileName = document.getElementById('fileName');
-        const selectedName = document.getElementById('selectedName');
-        const cropInput = document.getElementById('manual_crop_name');
-        const cropIdInput = document.getElementById('crop_id');
-
-        // Click to select file
-        dropZone.addEventListener('click', () => fileInput.click());
-
-        // Drag and drop
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('dragover');
-        });
-
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover');
-        });
-
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                fileInput.files = files;
-                updateFileName();
-            }
-        });
-
-        // File input change
-        fileInput.addEventListener('change', updateFileName);
-
-        function updateFileName() {
-            if (fileInput.files.length > 0) {
-                const name = fileInput.files[0].name;
-                selectedName.textContent = name;
-                fileName.style.display = 'block';
-            } else {
-                fileName.style.display = 'none';
-            }
+      const dropZone = document.getElementById("dropZone");
+      const fileInput = document.getElementById("file");
+      const fileName = document.getElementById("fileName");
+      const selectedName = document.getElementById("selectedName");
+      const cropInput = document.getElementById("manual_crop_name");
+      const cropIdInput = document.getElementById("crop_id");
+      dropZone.addEventListener("click", () => fileInput.click());
+      dropZone.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        dropZone.classList.add("dragover");
+      });
+      dropZone.addEventListener("dragleave", () =>
+        dropZone.classList.remove("dragover"),
+      );
+      dropZone.addEventListener("drop", (event) => {
+        event.preventDefault();
+        dropZone.classList.remove("dragover");
+        if (event.dataTransfer.files.length > 0) {
+          fileInput.files = event.dataTransfer.files;
+          updateFileName();
         }
-
-        function syncCropSelection() {
-            const value = cropInput.value.trim().toLowerCase();
-            const option = Array.from(document.querySelectorAll('#cropOptions option')).find((item) => {
-                return item.value.toLowerCase() === value;
-            });
-
-            cropIdInput.value = option ? option.getAttribute('data-id') || '' : '';
+      });
+      fileInput.addEventListener("change", updateFileName);
+      function updateFileName() {
+        if (fileInput.files.length > 0) {
+          selectedName.textContent = fileInput.files[0].name;
+          fileName.style.display = "block";
+        } else {
+          fileName.style.display = "none";
         }
-
-        cropInput.addEventListener('input', syncCropSelection);
-        cropInput.addEventListener('change', syncCropSelection);
+      }
+      function syncCropSelection() {
+        const value = cropInput.value.trim().toLowerCase();
+        const option = Array.from(
+          document.querySelectorAll("#cropOptions option"),
+        ).find((item) => item.value.toLowerCase() === value);
+        cropIdInput.value = option ? option.getAttribute("data-id") || "" : "";
+      }
+      cropInput.addEventListener("input", syncCropSelection);
+      cropInput.addEventListener("change", syncCropSelection);
     </script>
-</body>
+  </body>
 </html>

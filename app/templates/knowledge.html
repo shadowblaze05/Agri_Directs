@@ -3,131 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Knowledge Hub</title>
+    <title>Digital Knowledge Hub - Agri-Direct</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
-        body { background: #f4f8f2; }
-        .hero-card { background: linear-gradient(135deg, #1f4d2e, #3a7d44); color: white; border: none; }
-        .feed-card { border: none; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
-        .mini-stat { background: white; border-radius: 12px; padding: 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        body { background: #f5f5f5; color: #333; }
+        .navbar-custom { background: linear-gradient(135deg, #1a3408 0%, #0f1f03 100%); box-shadow: 0 2px 10px rgba(0,0,0,.1); height: 70px; z-index: 1030; }
+        .sidebar { background: #1a3408; color: white; min-height: 100vh; position: fixed; top: 0; left: 0; width: 250px; padding-top: 80px; z-index: 1000; }
+        .sidebar .nav-link { color: rgba(255,255,255,.8); padding: 12px 20px; margin: 5px 10px; border-radius: 5px; transition: all .3s; }
+        .sidebar .nav-link:hover { color: white; background: rgba(255,255,255,.1); }
+        .sidebar .nav-link.active { background: #4caf50; color: white; }
+        .main-content { margin-left: 250px; margin-top: 70px; padding: 20px; }
+        .page-header, .feed-card, .summary-card { background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+        .page-header { padding: 22px; margin-bottom: 20px; }
+        .page-header h2, .section-title { color: #2d5016; }
+        .hero-card { background: linear-gradient(135deg, #2d5016 0%, #1a3408 100%); color: white; border: none; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.14); }
+        .feed-card { border: 1px solid #e3e3e3; transition: transform .2s, box-shadow .2s; }
+        .feed-card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,.1); }
+        .summary-card { padding: 16px; }
+        .btn-success { background: #2d5016; border: none; }
+        .btn-success:hover { background: #1a3408; }
+        .btn-outline-success { color: #2d5016; border-color: #2d5016; }
+        .btn-outline-success:hover { background: #2d5016; color: white; }
+        @media (max-width: 991px) { .sidebar { width: 70px; } .sidebar .nav-link { text-align: center; padding: 14px 5px; font-size: 0; } .sidebar .nav-link i { font-size: 1.15rem; } .main-content { margin-left: 70px; } }
+        @media (max-width: 575px) { .sidebar { display: none; } .main-content { margin-left: 0; padding: 14px; } .navbar-brand { margin-left: 0 !important; } }
     </style>
 </head>
 <body>
-    <div class="container py-4">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h2>Digital Knowledge Hub</h2>
-                <p class="text-muted">A separate organization communication space for updates, announcements, and knowledge posts.</p>
-            </div>
-            <a href="/dashboard" class="btn btn-outline-secondary">Back to Dashboard</a>
-        </div>
-
-        <div class="card hero-card mb-4">
-            <div class="card-body">
-                <div class="row align-items-center">
-                    <div class="col-md-8">
-                        <h4 class="mb-2">Latest Updates</h4>
-                        <p class="mb-0">A separate social-style updates space for organization news, announcements, and quick posts. Use the buttons below to switch between updates and articles.</p>
-                    </div>
-                    <div class="col-md-4 text-md-end">
-                        <div class="fw-bold">Organization Feed</div>
-                        <div class="small opacity-75">Updates • News • Knowledge</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="d-flex gap-2 mb-4">
-            <a class="btn btn-success" href="/knowledge">Updates Feed</a>
-            <a class="btn btn-outline-secondary" href="/knowledge?view=articles">Articles & Topics</a>
-        </div>
-
+    <div class="sidebar"><nav class="nav flex-column">
+        <a class="nav-link" href="/home"><i class="fas fa-home"></i> Home</a>
+        <a class="nav-link" href="/dashboard"><i class="fas fa-chart-line"></i> Dashboard</a>
+        <a class="nav-link" href="/upload"><i class="fas fa-upload"></i> Upload Harvest</a>
+        {% if session.get('role') == 'admin' %}<a class="nav-link" href="/market-intelligence"><i class="fas fa-brain"></i> Market Intelligence</a>{% endif %}
+        <a class="nav-link" href="/marketplace"><i class="fas fa-store"></i> Marketplace</a>
+        <a class="nav-link active" href="/knowledge"><i class="fas fa-book-open"></i> Knowledge Hub</a>
+        <a class="nav-link" href="/messages"><i class="fas fa-comments"></i> Messages</a>
+        <a class="nav-link" href="/notifications-center"><i class="fas fa-bell"></i> Notifications</a>
+        <a class="nav-link" href="/profile"><i class="fas fa-user-circle"></i> Profile</a>
+        <a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
+    </nav></div>
+    <nav class="navbar navbar-dark navbar-custom fixed-top"><div class="container-fluid"><span class="navbar-brand mb-0 h1 ms-5"><i class="fas fa-leaf"></i> Agri-Direct</span><div class="dropdown"><button class="btn btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown"><i class="fas fa-user-circle"></i> {{ session.get('user', 'User') }}</button><ul class="dropdown-menu dropdown-menu-end"><li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge"></i> Profile</a></li>{% if session.get('role') == 'admin' %}<li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt"></i> Admin Console</a></li>{% endif %}<li><hr class="dropdown-divider"></li><li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li></ul></div></div></nav>
+    <main class="main-content"><div class="container-fluid py-2">
+        <div class="page-header"><div class="row align-items-center"><div class="col"><h2><i class="fas fa-book-open"></i> Digital Knowledge Hub</h2><p class="text-muted mb-0">Agricultural updates, guides, advisories, and practical knowledge for the Agri-Direct community.</p></div><div class="col-auto"><a href="/home" class="btn btn-outline-success"><i class="fas fa-home"></i> Back to Home</a></div></div></div>
+        <div class="card hero-card mb-4"><div class="card-body p-4"><div class="row align-items-center"><div class="col-md-8"><h4 class="mb-2"><i class="fas fa-bullhorn"></i> Latest Updates</h4><p class="mb-0">Official agricultural information published through the Knowledge Hub appears here and on your Home feed.</p></div><div class="col-md-4 text-md-end mt-3 mt-md-0"><div class="fw-bold">Organization Feed</div><div class="small opacity-75">Updates | News | Knowledge</div></div></div></div></div>
+        <div class="d-flex gap-2 mb-4"><a class="btn btn-success" href="/knowledge"><i class="fas fa-bullhorn"></i> Updates Feed</a><a class="btn btn-outline-success" href="/knowledge?view=articles"><i class="fas fa-newspaper"></i> Articles and Topics</a></div>
         {% if request.args.get('view') == 'articles' %}
-        <div class="row g-3 mb-4">
-            <div class="col-md-6">
-                <div class="mini-stat">
-                    <div class="text-muted small">Published Posts</div>
-                    <h4 class="mb-0">{{ posts|length }}</h4>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="mini-stat">
-                    <div class="text-muted small">Categories</div>
-                    <h4 class="mb-0">{{ categories|length }}</h4>
-                </div>
-            </div>
-        </div>
-
-        <form method="get" class="row g-2 mb-4">
-            <input type="hidden" name="view" value="articles">
-            <div class="col-md-6">
-                <input type="text" class="form-control" name="q" value="{{ query }}" placeholder="Search articles, updates, or topics...">
-            </div>
-            <div class="col-md-4">
-                <select class="form-select" name="category_id">
-                    <option value="">All Categories</option>
-                    {% for category in categories %}
-                    <option value="{{ category['category_id'] }}" {% if category_id == category['category_id']|string %}selected{% endif %}>{{ category['category_name'] }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-2">
-                <button class="btn btn-success w-100" type="submit">Search</button>
-            </div>
-        </form>
-
-        <div class="row g-4">
-            {% for post in posts %}
-            <div class="col-md-6">
-                <div class="card feed-card h-100">
-                    {% if post['image'] %}
-                    <img src="{{ post['image'] }}" class="card-img-top" alt="{{ post['title'] }}" style="height: 220px; object-fit: cover;">
-                    {% endif %}
-                    <div class="card-body">
-                        <div class="text-muted small mb-2">{{ post['category_name'] or 'General' }} • {{ post['created_at'][:19] }}</div>
-                        <h5 class="card-title">{{ post['title'] }}</h5>
-                        <p class="card-text">{{ post['content'][:180] }}{% if post['content'] | length > 180 %}...{% endif %}</p>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <a href="/knowledge/{{ post['post_id'] }}" class="btn btn-outline-primary btn-sm">Read More</a>
-                            <span class="text-muted small">{{ post['like_count'] }} likes • {{ post['comment_count'] }} comments</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% else %}
-            <div class="col-12">
-                <div class="alert alert-info">No updates found yet. Create a post from the admin panel to start the feed.</div>
-            </div>
-            {% endfor %}
-        </div>
+        <div class="row g-3 mb-4"><div class="col-md-6"><div class="summary-card"><div class="text-muted small">Published Posts</div><h4 class="mb-0 text-success">{{ posts|length }}</h4></div></div><div class="col-md-6"><div class="summary-card"><div class="text-muted small">Categories</div><h4 class="mb-0 text-success">{{ categories|length }}</h4></div></div></div>
+        <form method="get" class="row g-2 mb-4"><input type="hidden" name="view" value="articles"><div class="col-md-6"><input type="text" class="form-control" name="q" value="{{ query }}" placeholder="Search articles, updates, or topics..."></div><div class="col-md-4"><select class="form-select" name="category_id"><option value="">All Categories</option>{% for category in categories %}<option value="{{ category['category_id'] }}" {% if category_id == category['category_id']|string %}selected{% endif %}>{{ category['category_name'] }}</option>{% endfor %}</select></div><div class="col-md-2"><button class="btn btn-success w-100" type="submit">Search</button></div></form>
+        <div class="row g-4">{% for post in posts %}<div class="col-md-6"><article class="card feed-card h-100">{% if post['image'] %}<img src="{{ post['image'] }}" class="card-img-top" alt="{{ post['title'] }}" style="height:220px;object-fit:cover">{% endif %}<div class="card-body"><div class="text-muted small mb-2">{{ post['category_name'] or 'General' }} | {{ post['created_at'][:19] }}</div><h5 class="card-title">{{ post['title'] }}</h5><p class="card-text">{{ post['content'][:180] }}{% if post['content']|length > 180 %}...{% endif %}</p><div class="d-flex justify-content-between align-items-center"><a href="/knowledge/{{ post['post_id'] }}" class="btn btn-outline-success btn-sm">Read More</a><span class="text-muted small">{{ post['like_count'] }} likes | {{ post['comment_count'] }} comments</span></div></div></article></div>{% else %}<div class="col-12"><div class="alert alert-info">No updates found yet. Create a post from the admin panel to start the feed.</div></div>{% endfor %}</div>
         {% else %}
-        <div class="row g-4">
-            {% for post in posts %}
-            <div class="col-12">
-                <div class="card feed-card">
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <div>
-                                <div class="text-muted small">{{ post['category_name'] or 'General' }} • {{ post['created_at'][:19] }}</div>
-                                <h5 class="card-title mb-1">{{ post['title'] }}</h5>
-                            </div>
-                            <span class="badge bg-success">Update</span>
-                        </div>
-                        <p class="card-text">{{ post['content'][:220] }}{% if post['content'] | length > 220 %}...{% endif %}</p>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <a href="/knowledge/{{ post['post_id'] }}" class="btn btn-outline-primary btn-sm">Open Post</a>
-                            <span class="text-muted small">{{ post['like_count'] }} likes • {{ post['comment_count'] }} comments</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            {% else %}
-            <div class="col-12">
-                <div class="alert alert-info">No updates available yet. Switch to Articles & Topics to browse knowledge content.</div>
-            </div>
-            {% endfor %}
-        </div>
+        <h3 class="section-title h5 mb-3"><i class="fas fa-bullhorn"></i> Published Updates</h3><div class="row g-4">{% for post in posts %}<div class="col-12"><article class="card feed-card"><div class="card-body"><div class="d-flex justify-content-between align-items-start mb-2"><div><div class="text-muted small">{{ post['category_name'] or 'General' }} | {{ post['created_at'][:19] }}</div><h5 class="card-title mb-1">{{ post['title'] }}</h5></div><span class="badge bg-success">Update</span></div><p class="card-text">{{ post['content'][:220] }}{% if post['content']|length > 220 %}...{% endif %}</p><div class="d-flex justify-content-between align-items-center"><a href="/knowledge/{{ post['post_id'] }}" class="btn btn-outline-success btn-sm">Open Post</a><span class="text-muted small">{{ post['like_count'] }} likes | {{ post['comment_count'] }} comments</span></div></div></article></div>{% else %}<div class="col-12"><div class="alert alert-info">No updates available yet. Switch to Articles and Topics to browse knowledge content.</div></div>{% endfor %}</div>
         {% endif %}
-    </div>
+    </div></main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

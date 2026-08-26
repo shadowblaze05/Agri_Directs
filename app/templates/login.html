@@ -121,13 +121,13 @@
             <!-- Login Form -->
             <form method="POST">
                 <div class="mb-3">
-                    <label class="form-label"><i class="fas fa-user"></i> Username</label>
-                    <input type="text" name="username" class="form-control" placeholder="Enter your username" required autofocus>
+                    <label class="form-label"><i class="fas fa-user"></i> Username or Email</label>
+                    <input type="text" name="identifier" class="form-control" placeholder="Enter your username or email" required autofocus autocomplete="username">
                 </div>
 
                 <div class="mb-4">
                     <label class="form-label"><i class="fas fa-lock"></i> Password</label>
-                    <input type="password" name="password" class="form-control" placeholder="Enter your password" required>
+                    <input type="password" name="password" class="form-control" placeholder="Enter your password" required autocomplete="current-password">
                 </div>
 
                 <button type="submit" class="btn btn-login w-100 text-white">

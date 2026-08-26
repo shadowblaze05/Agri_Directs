@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Inventory | Agri-Direct</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        body { min-height: 100vh; background: #f4f7f1; color: #21351b; }
+        .topbar { padding: 16px 0; background: linear-gradient(115deg, #173b19, #2d6a2e); }
+        .brand { color: #fff; font-size: 1.2rem; font-weight: 700; text-decoration: none; }
+        .page-wrap { max-width: 1120px; margin: 42px auto; }
+        .hero { padding: 30px; color: #fff; background: linear-gradient(135deg, #1f5426, #3c8539); border-radius: 18px; box-shadow: 0 14px 34px rgba(23, 59, 25, .18); }
+        .metric { background: #fff; border: 0; border-radius: 14px; box-shadow: 0 6px 20px rgba(28, 57, 29, .08); }
+        .metric .number { color: #1f5426; font-size: 1.65rem; font-weight: 700; }
+        .table-card { overflow: hidden; border: 0; border-radius: 15px; box-shadow: 0 6px 20px rgba(28, 57, 29, .08); }
+        thead { color: #315d31; background: #eff6eb; }
+        .btn-agri { color: #fff; background: #2d6a2e; border-color: #2d6a2e; }
+        .btn-agri:hover { color: #fff; background: #1f5426; }
+        .empty { padding: 68px 20px; color: #6d7c6d; text-align: center; }
+        .crop-icon { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; color: #2d6a2e; background: #e4f1dd; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <nav class="topbar">
+        <div class="container d-flex justify-content-between align-items-center">
+            <a class="brand" href="/dashboard"><i class="fas fa-leaf me-2"></i>Agri-Direct</a>
+            <div>
+                <a href="{{ url_for('profile') }}" class="btn btn-sm btn-outline-light me-2"><i class="fas fa-user me-1"></i>Profile</a>
+                <a href="/dashboard" class="btn btn-sm btn-outline-light">Dashboard</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container page-wrap">
+        <section class="hero mb-4">
+            <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+                <div><p class="text-uppercase small fw-semibold mb-1 opacity-75">Harvest management</p><h1 class="h2 mb-1">My inventory</h1><p class="mb-0 opacity-75">Monitor your available harvest and keep stock records accurate.</p></div>
+                <a class="btn btn-light text-success fw-semibold" href="/upload"><i class="fas fa-plus me-1"></i>Add harvest</a>
+            </div>
+        </section>
+
+        {% with messages = get_flashed_messages() %}
+            {% if messages %}
+                <div class="alert alert-success alert-dismissible fade show" role="alert">{{ messages[0] }}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div>
+            {% endif %}
+        {% endwith %}
+
+        <div class="row g-3 mb-4">
+            <div class="col-sm-6"><div class="metric p-4"><div class="text-muted small text-uppercase">Crop varieties</div><div class="number">{{ summary.crop_count or 0 }}</div></div></div>
+            <div class="col-sm-6"><div class="metric p-4"><div class="text-muted small text-uppercase">Total available units</div><div class="number">{{ summary.total_quantity or 0 }}</div></div></div>
+        </div>
+
+        <section class="table-card bg-white">
+            <div class="p-4 border-bottom d-flex justify-content-between align-items-center">
+                <div><h2 class="h5 mb-1">Available harvest</h2><p class="small text-muted mb-0">Grouped by crop type</p></div>
+                <a href="/upload" class="btn btn-sm btn-agri"><i class="fas fa-upload me-1"></i>Upload records</a>
+            </div>
+            {% if items %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead><tr><th class="ps-4">Crop</th><th>Available quantity</th><th>Latest record</th><th>Location</th><th class="text-end pe-4">Actions</th></tr></thead>
+                        <tbody>
+                            {% for item in items %}
+                                <tr>
+                                    <td class="ps-4"><span class="crop-icon me-2"><i class="fas fa-seedling"></i></span><strong>{{ item.crop_name }}</strong></td>
+                                    <td><span class="badge rounded-pill text-bg-success px-3 py-2">{{ item.total_quantity }} units</span></td>
+                                    <td>{{ item.last_received[:10] if item.last_received else '-' }}</td>
+                                    <td>{{ item.location or '-' }}</td>
+                                    <td class="text-end pe-4">
+                                        <button type="button" class="btn btn-sm btn-outline-success me-1" onclick="editCrop({{ item.crop_name|tojson }}, {{ item.total_quantity }})"><i class="fas fa-pen"></i><span class="visually-hidden">Edit {{ item.crop_name }}</span></button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteCrop({{ item.crop_name|tojson }})"><i class="fas fa-trash"></i><span class="visually-hidden">Delete {{ item.crop_name }}</span></button>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty"><i class="fas fa-box-open fa-3x text-success mb-3"></i><h2 class="h5">Your inventory is empty</h2><p class="mb-3">Add a manual harvest entry or upload a CSV record to begin tracking your stock.</p><a href="/upload" class="btn btn-agri">Add harvest</a></div>
+            {% endif %}
+        </section>
+    </main>
+
+    <script>
+        async function editCrop(cropName, currentTotal) {
+            const value = prompt(`Set new total quantity for ${cropName}:`, currentTotal);
+            if (value === null) return;
+            const quantity = parseInt(value, 10);
+            if (Number.isNaN(quantity) || quantity < 0) { alert('Enter a valid quantity (zero or greater).'); return; }
+            const response = await fetch('/inventory/edit_crop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ crop_name: cropName, quantity }) });
+            const data = await response.json();
+            if (data.status === 'success') location.reload();
+            else alert(data.error || 'Unable to update inventory.');
+        }
+        async function deleteCrop(cropName) {
+            if (!confirm(`Delete all inventory for ${cropName}? This cannot be undone.`)) return;
+            const response = await fetch('/inventory/delete_crop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ crop_name: cropName }) });
+            const data = await response.json();
+            if (data.status === 'success') location.reload();
+            else alert(data.error || 'Unable to delete inventory.');
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

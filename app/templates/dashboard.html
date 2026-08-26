@@ -215,23 +215,31 @@
     <!-- Sidebar -->
     <div class="sidebar">
         <nav class="nav flex-column">
+            <a class="nav-link" href="/home">
+                <i class="fas fa-home"></i> Home
+            </a>
             <a class="nav-link active" href="/dashboard">
                 <i class="fas fa-chart-line"></i> Dashboard
             </a>
             <a class="nav-link" href="/upload">
                 <i class="fas fa-upload"></i> Upload Harvest
             </a>
+            {% if session.get('role') == 'admin' %}
             <a class="nav-link" href="/market-intelligence">
                 <i class="fas fa-brain"></i> Market Intelligence
             </a>
+            {% endif %}
             <a class="nav-link" href="/marketplace">
                 <i class="fas fa-store"></i> Marketplace
+            </a>
+            <a class="nav-link" href="/knowledge">
+                <i class="fas fa-book-open"></i> Knowledge Hub
             </a>
             <a class="nav-link" href="/messages">
                 <i class="fas fa-comments"></i> Messages
             </a>
-            <a class="nav-link" href="/knowledge">
-                <i class="fas fa-book-open"></i> Digital Knowledge Hub
+            <a class="nav-link" href="/notifications-center">
+                <i class="fas fa-bell"></i> Notifications
             </a>
             <a class="nav-link" href="/profile">
                 <i class="fas fa-user-circle"></i> Profile
@@ -289,7 +297,7 @@
                 <div class="row align-items-center">
                     <div class="col">
                         <h2><i class="fas fa-chart-line"></i> Real-Time Inventory Dashboard</h2>
-                        <p class="text-muted mb-0"><span class="live-indicator"></span>Live Updates (Every 2 seconds)</p>
+                        <p class="text-muted mb-0"><span class="live-indicator"></span>Live Updates</p>
                     </div>
                     <div class="col-auto">
                         <a href="/upload" class="btn btn-primary">
