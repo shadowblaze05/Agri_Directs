@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ listing.crop_name }} - Agri-Direct</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        body {
+            background: #f5f5f5;
+        }
+        .navbar-custom {
+            background: linear-gradient(135deg, #1a3408 0%, #0f1f03 100%);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 0 0px;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 70px;
+            z-index: 1030;
+        }
+        .sidebar {
+            background: #1a3408;
+            color: white;
+            min-height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 250px;
+            padding-top: 80px;
+            z-index: 1000;
+        }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            padding: 12px 20px;
+            margin: 5px 10px;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        .sidebar .nav-link:hover {
+            color: white;
+            background: rgba(255,255,255,0.1);
+        }
+        .sidebar .nav-link.active {
+            background: #4caf50;
+            color: white;
+        }
+        .sidebar .nav-link .cart-badge {
+            background: #ff6b6b;
+            color: white;
+            border-radius: 50%;
+            padding: 2px 8px;
+            font-size: 0.75rem;
+            margin-left: 5px;
+        }
+        .main-content {
+            margin-left: 250px;
+            margin-top: 45px;
+            padding-top: 20px;
+        }
+        .product-image-container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .carousel-inner img {
+            height: 450px;
+            object-fit: contain;
+            background: #f8f9fa;
+        }
+        .carousel-control-prev-icon,
+        .carousel-control-next-icon {
+            background-color: rgba(0,0,0,0.6);
+            border-radius: 50%;
+            padding: 20px;
+        }
+        .thumbnail-wrapper {
+            cursor: pointer;
+            border: 2px solid transparent;
+            border-radius: 8px;
+            transition: all 0.2s;
+            padding: 2px;
+            flex-shrink: 0;
+        }
+        .thumbnail-wrapper:hover {
+            border-color: #2d5016;
+        }
+        .thumbnail-wrapper.active {
+            border-color: #2d5016;
+            border-width: 3px;
+        }
+        .thumbnail-wrapper img {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 6px;
+        }
+        .product-details {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .price-large {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #2d5016;
+        }
+        .btn-success {
+            background: #2d5016;
+            border: none;
+        }
+        .btn-success:hover {
+            background: #1a3408;
+        }
+        .btn-primary {
+            background: #0d6efd;
+            border: none;
+        }
+        .btn-primary:hover {
+            background: #0b5ed7;
+        }
+        .seller-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .thumbnail-scroll {
+            overflow-x: auto;
+            display: flex;
+            gap: 8px;
+            padding: 5px 0;
+        }
+        .thumbnail-scroll::-webkit-scrollbar {
+            height: 4px;
+        }
+        .thumbnail-scroll::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        .status-badge {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+        .status-available {
+            background: #d4edda;
+            color: #155724;
+        }
+        .cart-icon-link {
+            position: relative;
+            color: white;
+            text-decoration: none;
+        }
+        .cart-badge-nav {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #ff6b6b;
+            color: white;
+            border-radius: 50%;
+            padding: 2px 8px;
+            font-size: 0.7rem;
+            min-width: 20px;
+            text-align: center;
+        }
+        .breadcrumb {
+            background: transparent;
+            padding: 0;
+        }
+        .breadcrumb-item a {
+            color: #2d5016;
+            text-decoration: none;
+        }
+        .breadcrumb-item a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <nav class="nav flex-column">
+            <a class="nav-link" href="/dashboard">
+                <i class="fas fa-chart-line"></i> Dashboard
+            </a>
+            <a class="nav-link" href="/upload">
+                <i class="fas fa-upload"></i> Upload Harvest
+            </a>
+            <a class="nav-link" href="/market-intelligence">
+                <i class="fas fa-brain"></i> Market Intelligence
+            </a>
+            <a class="nav-link active" href="/marketplace">
+                <i class="fas fa-store"></i> Marketplace
+            </a>
+            <a class="nav-link" href="/messages">
+                <i class="fas fa-comments"></i> Messages
+            </a>
+            <a class="nav-link" href="/knowledge">
+                <i class="fas fa-book-open"></i> Digital Knowledge Hub
+            </a>
+            <a class="nav-link" href="/profile">
+                <i class="fas fa-user-circle"></i> Profile
+            </a>
+            <a class="nav-link" href="/marketplace/cart">
+                <i class="fas fa-shopping-cart"></i> Cart
+                {% if cart_count > 0 %}
+                <span class="cart-badge">{{ cart_count }}</span>
+                {% endif %}
+            </a>
+            <a class="nav-link" href="/logout">
+                <i class="fas fa-sign-out-alt"></i> Logout
+            </a>
+        </nav>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="navbar navbar-dark navbar-custom fixed-top">
+        <div class="container-fluid">
+            <span class="navbar-brand mb-0 h1 ms-5">
+                <i class="fas fa-leaf"></i> Agri-Direct 
+            </span>
+            <div class="d-flex align-items-center gap-3">
+                <a href="/marketplace/cart" class="cart-icon-link">
+                    <i class="fas fa-shopping-cart fa-lg"></i>
+                    {% if cart_count > 0 %}
+                    <span class="cart-badge-nav">{{ cart_count }}</span>
+                    {% endif %}
+                </a>
+                <div class="dropdown">
+                    <button class="btn btn-outline-light dropdown-toggle" type="button" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-user-circle"></i> {{ session.get('user', 'User') }}
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
+                        <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge"></i> Profile</a></li>
+                        <li><a class="dropdown-item" href="/about"><i class="fas fa-info-circle"></i> About</a></li>
+                        <li><a class="dropdown-item" href="/marketplace/my-listings"><i class="fas fa-list"></i> My Listings</a></li>
+                        <li><a class="dropdown-item" href="/marketplace/my-purchases"><i class="fas fa-shopping-bag"></i> My Purchases</a></li>
+                        {% if session.get('role') == 'admin' %}
+                        <li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt"></i> Admin Console</a></li>
+                        {% endif %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="container-fluid py-4">
+            <!-- Breadcrumb -->
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="/marketplace">Marketplace</a></li>
+                    <li class="breadcrumb-item active">{{ listing.crop_name }}</li>
+                </ol>
+            </nav>
+
+            <div class="row">
+                <!-- Product Images -->
+                <div class="col-md-6 mb-4">
+                    <div class="product-image-container">
+                        <!-- Main Carousel -->
+                        <div id="productCarousel" class="carousel slide" data-bs-ride="carousel">
+                            <div class="carousel-inner">
+                                <!-- ============ FIX: Loop through images ============ -->
+                                {% for img in images %}
+                                <div class="carousel-item {% if loop.first %}active{% endif %}">
+                                    <img src="{{ url_for('static', filename='uploads/marketplace/' + img.image_filename) }}" 
+                                         class="d-block w-100" 
+                                         alt="{{ listing.crop_name }} - Image {{ loop.index }}"
+                                         onerror="this.style.objectFit='fill'; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'400\'%3E%3Crect fill=\'%23e9ecef\' width=\'400\' height=\'400\'/%3E%3Ctext x=\'200\' y=\'210\' font-family=\'Arial\' font-size=\'20\' fill=\'%236c757d\' text-anchor=\'middle\'%3ENo Image%3C/text%3E%3C/svg%3E'">
+                                </div>
+                                {% endfor %}
+                            </div>
+                            
+                            <!-- Carousel Controls -->
+                            {% if images|length > 1 %}
+                            <button class="carousel-control-prev" type="button" data-bs-target="#productCarousel" data-bs-slide="prev">
+                                <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+                                <span class="visually-hidden">Previous</span>
+                            </button>
+                            <button class="carousel-control-next" type="button" data-bs-target="#productCarousel" data-bs-slide="next">
+                                <span class="carousel-control-next-icon" aria-hidden="true"></span>
+                                <span class="visually-hidden">Next</span>
+                            </button>
+                            {% endif %}
+                        </div>
+                        
+                        <!-- Thumbnail Navigation -->
+                        {% if images|length > 1 %}
+                        <div class="thumbnail-scroll mt-3">
+                            {% for img in images %}
+                            <div class="thumbnail-wrapper {% if loop.first %}active{% endif %}" 
+                                 onclick="goToSlide({{ loop.index0 }})"
+                                 data-slide="{{ loop.index0 }}">
+                                <img src="{{ url_for('static', filename='uploads/marketplace/' + img.image_filename) }}" 
+                                     alt="Thumbnail {{ loop.index }}">
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        
+                        <!-- Image Counter -->
+                        <div class="mt-2 text-muted small">
+                            <i class="fas fa-images"></i> {{ images|length }} image(s)
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Product Details -->
+                <div class="col-md-6">
+                    <div class="product-details">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <h1>{{ listing.crop_name }}</h1>
+                            <span class="status-badge status-available">Available</span>
+                        </div>
+
+                        <div class="price-large">₱{{ "%.2f"|format(listing.price) }}</div>
+                        <p class="text-muted">per {{ listing.unit or 'kg' }}</p>
+
+                        <div class="row mb-3">
+                            <div class="col-6">
+                                <strong>Amount Available:</strong>
+                                <span>{{ listing.amount }} {{ listing.unit or 'kg' }}</span>
+                            </div>
+                            <div class="col-6">
+                                <strong>Listed:</strong>
+                                <span>{{ listing.listing_date[:16] }}</span>
+                            </div>
+                        </div>
+
+                        {% if listing.description %}
+                        <div class="mb-3">
+                            <h6>Description</h6>
+                            <p>{{ listing.description }}</p>
+                        </div>
+                        {% endif %}
+
+                        <!-- Quantity and Add to Cart -->
+                        <div class="row g-2 mb-3">
+                            <div class="col-4">
+                                <label for="quantity" class="form-label">Quantity</label>
+                                <input type="number" class="form-control" id="quantity" value="1" min="1" max="{{ listing.amount }}">
+                            </div>
+                            <div class="col-8 d-flex align-items-end">
+                                <button class="btn btn-success w-100 me-2" onclick="addToCart({{ listing.id }})">
+                                    <i class="fas fa-cart-plus"></i> Add to Cart
+                                </button>
+                                <button class="btn btn-primary w-100" onclick="buyNow({{ listing.id }})">
+                                    <i class="fas fa-bolt"></i> Buy Now
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Seller Info -->
+                        <div class="seller-info">
+                            <h6><i class="fas fa-user"></i> Seller</h6>
+                            <p class="mb-1"><strong>{{ listing.seller_name }}</strong></p>
+                            {% if listing.location %}
+                            <p class="text-muted small mb-0">
+                                <i class="fas fa-map-marker-alt"></i> {{ listing.location }}
+                            </p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Related Listings -->
+            {% if seller_other_listings %}
+            <div class="mt-5">
+                <h4>More from {{ listing.seller_name }}</h4>
+                <div class="row">
+                    {% for item in seller_other_listings %}
+                    <div class="col-md-3 col-sm-6 mb-3" onclick="window.location.href='/marketplace/product/{{ item.id }}'">
+                        <div class="card h-100">
+                            {% if item.main_image %}
+                            <img src="{{ url_for('static', filename='uploads/marketplace/' + item.main_image) }}" 
+                                 class="card-img-top" alt="{{ item.crop_name }}" style="height:150px; object-fit:cover;">
+                            {% else %}
+                            <div class="card-img-top d-flex align-items-center justify-content-center bg-light" style="height:150px;">
+                                <i class="fas fa-seedling fa-2x text-muted"></i>
+                            </div>
+                            {% endif %}
+                            <div class="card-body">
+                                <h6 class="card-title">{{ item.crop_name }}</h6>
+                                <p class="card-text text-success fw-bold">₱{{ "%.2f"|format(item.price) }}</p>
+                                <small class="text-muted">{{ item.amount }} {{ item.unit or 'kg' }} available</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function goToSlide(index) {
+            const carousel = document.getElementById('productCarousel');
+            const bsCarousel = bootstrap.Carousel.getInstance(carousel);
+            if (bsCarousel) {
+                bsCarousel.to(index);
+            } else {
+                new bootstrap.Carousel(carousel).to(index);
+            }
+            
+            document.querySelectorAll('.thumbnail-wrapper').forEach((el, i) => {
+                el.classList.toggle('active', i === index);
+            });
+        }
+
+        document.getElementById('productCarousel').addEventListener('slid.bs.carousel', function(event) {
+            const index = event.to;
+            document.querySelectorAll('.thumbnail-wrapper').forEach((el, i) => {
+                el.classList.toggle('active', i === index);
+            });
+        });
+
+        function addToCart(listingId) {
+            const quantity = document.getElementById('quantity').value;
+            
+            if (!quantity || quantity < 1) {
+                alert('Please enter a valid quantity');
+                return;
+            }
+            
+            fetch('/marketplace/cart/add/' + listingId, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ quantity: parseInt(quantity) })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('Added to cart!');
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                alert('Error: ' + error);
+            });
+        }
+
+        function buyNow(listingId) {
+            const quantity = document.getElementById('quantity').value;
+            
+            if (!quantity || quantity < 1) {
+                alert('Please enter a valid quantity');
+                return;
+            }
+            
+            if (confirm('Buy ' + quantity + ' units now?')) {
+                fetch('/marketplace/cart/add/' + listingId, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ quantity: parseInt(quantity) })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        window.location.href = '/marketplace/cart';
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    alert('Error: ' + error);
+                });
+            }
+        }
+    </script>
+</body>
+</html>
