@@ -1,7 +1,7 @@
 """Database helpers and declarative model exports."""
 
 from .analytics.models import Analytics
-from .agriculture.models import Crop, Harvest, Inventory
+from .agriculture.models import Crop, Harvest, Inventory, CropCategory
 from .auth.models import User
 from .community.models import Message, Notification
 from .knowledge.models import (
@@ -42,4 +42,5 @@ __all__ = [
     "KnowledgePost",
     "KnowledgeReply",
     "MarketplaceListing",
+    "CropCategory",
 ]

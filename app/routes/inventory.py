@@ -24,13 +24,13 @@ def inventory():
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "SELECT crop_name, SUM(quantity) AS total_quantity, MAX(date_received) AS last_received, MAX(location) AS location "
-        "FROM inventory WHERE farmer=? GROUP BY crop_name ORDER BY last_received DESC",
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total_quantity, MAX(i.date_received) AS last_received, MAX(i.location) AS location "
+        "FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.farmer=? GROUP BY i.crop_id, c.crops_name ORDER BY last_received DESC",
         (session["user"],),
     )
     items = cur.fetchall()
     cur.execute(
-        "SELECT COUNT(DISTINCT crop_name) AS crop_count, COALESCE(SUM(quantity), 0) AS total_quantity "
+        "SELECT COUNT(DISTINCT crop_id) AS crop_count, COALESCE(SUM(quantity), 0) AS total_quantity "
         "FROM inventory WHERE farmer=?", (session["user"],)
     )
     summary = cur.fetchone()
@@ -58,7 +58,7 @@ def inventory_buy():
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT SUM(quantity) AS total FROM inventory WHERE farmer=? AND crop_name=?", (session["user"], crop_name))
+    cur.execute("SELECT SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.farmer=? AND c.crops_name=?", (session["user"], crop_name))
     row = cur.fetchone()
     total = row["total"] or 0
 
@@ -68,7 +68,7 @@ def inventory_buy():
 
     needed = quantity
     cur.execute(
-        "SELECT id, quantity FROM inventory WHERE farmer=? AND crop_name=? ORDER BY date_received DESC",
+        "SELECT i.id, i.quantity FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.farmer=? AND c.crops_name=? ORDER BY i.date_received DESC",
         (session["user"], crop_name)
     )
     rows = cur.fetchall()
@@ -109,7 +109,7 @@ def inventory_edit_crop():
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT SUM(quantity) AS total FROM inventory WHERE farmer=? AND crop_name=?", (session["user"], crop_name))
+    cur.execute("SELECT SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.farmer=? AND c.crops_name=?", (session["user"], crop_name))
     row = cur.fetchone()
     current_total = row["total"] or 0
 
@@ -122,13 +122,13 @@ def inventory_edit_crop():
         cur.execute("SELECT location FROM users WHERE username=?", (session["user"],))
         user_loc = cur.fetchone()["location"]
         cur.execute(
-            "INSERT INTO inventory(crop_name,quantity,farmer,date_received,location) VALUES(?,?,?,?,?)",
-            (crop_name, add_amount, session["user"], datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_loc)
+            "INSERT INTO inventory(crop_id,quantity,farmer,date_received,location) SELECT id, ?, ?, ?, ? FROM crops WHERE crops_name=?",
+            (add_amount, session["user"], datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_loc, crop_name)
         )
     else:
         remove_amount = current_total - quantity
         cur.execute(
-            "SELECT id, quantity FROM inventory WHERE farmer=? AND crop_name=? ORDER BY date_received DESC",
+            "SELECT i.id, i.quantity FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.farmer=? AND c.crops_name=? ORDER BY i.date_received DESC",
             (session["user"], crop_name)
         )
         rows = cur.fetchall()
@@ -161,7 +161,7 @@ def inventory_delete_crop():
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("DELETE FROM inventory WHERE farmer=? AND crop_name=?", (session["user"], crop_name))
+    cur.execute("DELETE FROM inventory WHERE farmer=? AND crop_id=(SELECT id FROM crops WHERE crops_name=?)", (session["user"], crop_name))
     conn.commit()
     conn.close()
 
@@ -173,7 +173,7 @@ def edit_inventory(item_id):
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM inventory WHERE id=?", (item_id,))
+    cur.execute("SELECT i.*, c.crops_name AS crop_name FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.id=?", (item_id,))
     item = cur.fetchone()
 
     if not item:
@@ -200,7 +200,7 @@ def edit_inventory(item_id):
             conn.close()
             return redirect(request.url)
 
-        cur.execute("UPDATE inventory SET crop_name=?, quantity=? WHERE id=?",
+        cur.execute("UPDATE inventory SET crop_id=(SELECT id FROM crops WHERE crops_name=?), quantity=? WHERE id=?",
                     (cropped_name, quantity, item_id))
         conn.commit()
         conn.close()
@@ -216,7 +216,7 @@ def delete_inventory(item_id):
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM inventory WHERE id=?", (item_id,))
+    cur.execute("SELECT i.*, c.crops_name AS crop_name FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.id=?", (item_id,))
     item = cur.fetchone()
     if not item:
         conn.close()
@@ -248,12 +248,6 @@ def upload():
     location = user[1] if user else None
 
     if request.method == "POST":
-        # Require that the user has a profile location before accepting harvest uploads
-        if not location:
-            flash("You must set your location in your profile before uploading harvest data.")
-            conn.close()
-            return redirect(request.url)
-
         file = request.files.get("file")
         crop_id = request.form.get("crop_id")
         manual_quantity = request.form.get("manual_quantity", "").strip()
@@ -310,11 +304,6 @@ def upload():
                                 logger.warning(f"Skipped row with non-positive quantity: {quantity}")
                                 continue
 
-                            crop_name = cur.execute("SELECT crops_name FROM crops WHERE id=?", (crop_id,)).fetchone()["crops_name"] if cur.execute("SELECT crops_name FROM crops WHERE id=?", (crop_id,)).fetchone() else None
-                            if not crop_name:
-                                flash(f"Crop '{crop}' could not be resolved for upload")
-                                continue
-
                             try:
                                 row_date = cleaned_row.get("date_received", "").strip()
                                 if row_date:
@@ -326,7 +315,7 @@ def upload():
 
                             cur.execute("""
                             INSERT INTO inventory(
-                                crop_name,
+                                crop_id,
                                 quantity,
                                 farmer,
                                 date_received,
@@ -334,7 +323,7 @@ def upload():
                             )
                             VALUES(?,?,?,?,?)
                             """, (
-                                crop_name,
+                                crop_id,
                                 quantity,
                                 session["user"],
                                 date_received,
@@ -388,16 +377,9 @@ def upload():
                 conn.close()
                 return redirect(request.url)
 
-            crop_name_row = cur.execute("SELECT crops_name FROM crops WHERE id=?", (crop_id,)).fetchone()
-            crop_name = crop_name_row["crops_name"] if crop_name_row else None
-            if not crop_name:
-                flash("Selected crop could not be found")
-                conn.close()
-                return redirect(request.url)
-
             cur.execute("""
             INSERT INTO inventory(
-                crop_name,
+                crop_id,
                 quantity,
                 farmer,
                 date_received,
@@ -405,7 +387,7 @@ def upload():
             )
             VALUES(?,?,?,?,?)
             """, (
-                crop_name,
+                crop_id,
                 quantity,
                 session["user"],
                 date_received,

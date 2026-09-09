@@ -1,0 +1,110 @@
+:root {
+    --agri-deep: #1a3408;
+    --agri-dark: #0f1f03;
+    --agri-green: #2d5016;
+    --agri-bright: #4caf50;
+    --agri-soft: #e8f5e9;
+    --agri-border: #e4e9e2;
+}
+
+body.admin-page {
+    min-height: 100vh;
+    background: #f5f5f5 !important;
+    color: #263326;
+    font-family: Arial, sans-serif;
+}
+
+.admin-page .admin-navbar {
+    background: linear-gradient(135deg, var(--agri-deep) 0%, var(--agri-dark) 100%) !important;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, .12);
+}
+
+.admin-page .admin-navbar .navbar-brand {
+    letter-spacing: .02em;
+}
+
+.admin-page .admin-navbar .navbar-brand i,
+.admin-page h1,
+.admin-page h2,
+.admin-page h3 {
+    color: var(--agri-green);
+}
+
+.admin-page .admin-navbar .navbar-brand,
+.admin-page .admin-navbar .navbar-brand i {
+    color: #fff;
+}
+
+.admin-page .page-heading {
+    border-left: 4px solid var(--agri-bright);
+    padding-left: 1rem;
+}
+
+.admin-page .card {
+    border: 1px solid var(--agri-border) !important;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .08) !important;
+}
+
+.admin-page .card-header {
+    border-bottom: 1px solid var(--agri-border);
+    background: #fff;
+}
+
+.admin-page .btn-success,
+.admin-page .bg-success {
+    background-color: var(--agri-green) !important;
+    border-color: var(--agri-green) !important;
+}
+
+.admin-page .btn-success:hover {
+    background-color: var(--agri-deep) !important;
+    border-color: var(--agri-deep) !important;
+}
+
+.admin-page .btn-outline-success {
+    color: var(--agri-green);
+    border-color: var(--agri-green);
+}
+
+.admin-page .btn-outline-success:hover {
+    background-color: var(--agri-green);
+    border-color: var(--agri-green);
+    color: #fff;
+}
+
+.admin-page .form-control:focus,
+.admin-page .form-select:focus {
+    border-color: var(--agri-bright);
+    box-shadow: 0 0 0 .2rem rgba(76, 175, 80, .15);
+}
+
+.admin-page .table {
+    margin-bottom: 0;
+}
+
+.admin-page .table thead th {
+    background: #f7faf7;
+    border-bottom: 2px solid var(--agri-border);
+    color: #536252;
+    font-size: .78rem;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.admin-page .table tbody tr:hover {
+    background: var(--agri-soft);
+}
+
+.admin-page .empty-state {
+    padding: 3rem 1rem;
+    text-align: center;
+    color: #758174;
+}
+
+.admin-page .breadcrumb-link {
+    color: var(--agri-green);
+    font-size: .9rem;
+    font-weight: 600;
+    text-decoration: none;
+}

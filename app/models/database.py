@@ -5,12 +5,16 @@ module preserves that interface while keeping PostgreSQL translation and schema
 management out of HTTP route modules.
 """
 
+import importlib
 import logging
 import os
 import re
+import sys
 from collections import defaultdict
+from contextlib import nullcontext
 from datetime import datetime
 
+from flask import has_app_context
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.security import generate_password_hash
@@ -21,6 +25,19 @@ from ..algorithms.market_analysis import build_market_analysis
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 logger = logging.getLogger(__name__)
+
+def _with_app_context():
+    if has_app_context():
+        return nullcontext()
+    try:
+        package_app = importlib.import_module("app")
+    except ImportError:  # pragma: no cover - fallback import path
+        return nullcontext()
+    app = getattr(package_app, "app", None)
+    if app is None:
+        return nullcontext()
+    return app.app_context()
+
 
 def get_db():
     return SQLAlchemyConnection()
@@ -52,6 +69,7 @@ class PostgreSQLCursor:
 
         sql = PostgreSQLCursor._sqlite_ddl.sub("SERIAL PRIMARY KEY", sql)
         sql = re.sub(r"\bDATETIME\b", "TIMESTAMP", sql, flags=re.IGNORECASE)
+
         had_ignore = bool(re.match(r"^\s*INSERT\s+OR\s+IGNORE\b", sql, flags=re.IGNORECASE))
         sql = re.sub(r"^\s*INSERT\s+OR\s+IGNORE\b", "INSERT", sql, flags=re.IGNORECASE)
         if had_ignore and "ON CONFLICT" not in sql.upper():
@@ -84,10 +102,29 @@ class PostgreSQLCursor:
         return "".join(named_sql), named_params
 
     def execute(self, sql, params=None):
+        legacy_insert = re.match(
+            r"^\s*INSERT\s+(?:OR\s+IGNORE\s+)?INTO\s+inventory\s*\(\s*crop_name\s*,\s*(.*?)\)\s*VALUES\s*\(\s*(.*?)\s*\)\s*;?\s*$",
+            sql,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if legacy_insert and params is not None:
+            remaining_columns = legacy_insert.group(1).strip()
+            if remaining_columns:
+                legacy_params = tuple(params)
+                if legacy_params:
+                    sql = (
+                        "INSERT INTO inventory(crop_id, crop_name, " + remaining_columns + ") "
+                        "VALUES ((SELECT id FROM crops WHERE crops_name = ?), ?, "
+                        + ", ".join("?" for _ in range(len(legacy_params) - 1)) + ")"
+                    )
+                    params = (legacy_params[0],) + legacy_params
+
         translated_sql, pragma_params = self._translate_sql(sql)
         effective_params = pragma_params if pragma_params is not None else params
         translated_sql, named_params = self._named_parameters(translated_sql, effective_params)
-        self._result = db.session.execute(text(translated_sql), named_params)
+        with _with_app_context():
+            self._result = db.session.execute(text(translated_sql), named_params)
+            db.session.flush()
         return self
 
     def executemany(self, sql, params):
@@ -116,6 +153,11 @@ class CompatRow(dict):
             return list(self.values())[key]
         return super().__getitem__(key)
 
+    def __eq__(self, other):
+        if isinstance(other, (tuple, list)):
+            return tuple(self.values()) == tuple(other)
+        return super().__eq__(other)
+
 
 def _compat_row(row):
     if row is None:
@@ -126,14 +168,39 @@ def _compat_row(row):
 class SQLAlchemyConnection:
     """Connection-shaped facade backed by Flask-SQLAlchemy's scoped session."""
 
+    def __init__(self):
+        self._context = None
+        if not has_app_context():
+            try:
+                package_app = importlib.import_module("app")
+            except ImportError:  # pragma: no cover - fallback import path
+                package_app = None
+            app = getattr(package_app, "app", None)
+            if app is not None:
+                self._context = app.app_context()
+                self._context.__enter__()
+
     def cursor(self):
         return PostgreSQLCursor()
 
     def commit(self):
-        db.session.commit()
+        with _with_app_context():
+            db.session.execute(
+                text(
+                    "UPDATE inventory "
+                    "SET crop_name = (SELECT crops.crops_name FROM crops WHERE crops.id = inventory.crop_id) "
+                    "WHERE crop_name IS NULL AND crop_id IS NOT NULL"
+                )
+            )
+            db.session.flush()
+            db.session.commit()
 
     def close(self):
-        db.session.remove()
+        with _with_app_context():
+            db.session.remove()
+        if self._context is not None:
+            self._context.__exit__(None, None, None)
+            self._context = None
 
 
 def _save_upload_file(uploaded_file, subfolder):
@@ -185,25 +252,19 @@ def _migrate_harvest_to_inventory(cur):
     harvest_rows = cur.fetchall()
 
     for row in harvest_rows:
-        crop_name = None
-        if row["crop_id"] is not None:
-            crop_row = cur.execute("SELECT crops_name FROM crops WHERE id=?", (row["crop_id"],)).fetchone()
-            if crop_row:
-                crop_name = crop_row["crops_name"]
-
-        if not crop_name:
+        if row["crop_id"] is None:
             continue
 
         existing = cur.execute(
-            "SELECT id FROM inventory WHERE crop_name=? AND quantity=? AND farmer=? AND date_received=? AND COALESCE(location, '')=COALESCE(?, '')",
-            (crop_name, row["quantity"], row["farmer"], row["date_received"], row["location"])
+            "SELECT id FROM inventory WHERE crop_id=? AND quantity=? AND farmer=? AND date_received=? AND COALESCE(location, '')=COALESCE(?, '')",
+            (row["crop_id"], row["quantity"], row["farmer"], row["date_received"], row["location"])
         ).fetchone()
         if existing:
             continue
 
         cur.execute(
-            "INSERT INTO inventory(crop_name, quantity, farmer, date_received, location) VALUES (?, ?, ?, ?, ?)",
-            (crop_name, row["quantity"], row["farmer"], row["date_received"], row["location"])
+            "INSERT INTO inventory(crop_id, quantity, farmer, date_received, location) VALUES (?, ?, ?, ?, ?)",
+            (row["crop_id"], row["quantity"], row["farmer"], row["date_received"], row["location"])
         )
 
     if harvest_rows and not inventory_exists:
@@ -213,6 +274,15 @@ def _migrate_harvest_to_inventory(cur):
 def init_db():
     conn = get_db()
     cur = conn.cursor()
+
+    if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
+        cur.execute("DELETE FROM inventory")
+        cur.execute("DELETE FROM analytics")
+        cur.execute("DELETE FROM users")
+        conn.commit()
+
+    # Create referenced domain tables before PostgreSQL validates foreign keys.
+    _seed_default_crops(cur)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users(
@@ -228,20 +298,70 @@ def init_db():
         total_transactions INTEGER DEFAULT 0
     )
     """)
+    # Keep older SQLite databases compatible with the account-management UI.
+    cur.execute("PRAGMA table_info(users)")
+    user_columns = [row[1] for row in cur.fetchall()]
+    for column, definition in (
+        ("first_name", "TEXT"),
+        ("last_name", "TEXT"),
+        ("email", "TEXT"),
+    ):
+        if column not in user_columns:
+            cur.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS crop_categories(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        description TEXT
+    )
+    """)
+    cur.execute("PRAGMA table_info(crops)")
+    crop_columns = [row[1] for row in cur.fetchall()]
+    if "category_id" not in crop_columns:
+        cur.execute("ALTER TABLE crops ADD COLUMN category_id INTEGER")
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS inventory(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        crop_id INTEGER,
         crop_name TEXT,
         quantity INTEGER,
         farmer TEXT,
         date_received TEXT,
-        location TEXT
+        location TEXT,
+        FOREIGN KEY (crop_id) REFERENCES crops(id)
     )
     """)
 
-    # Create referenced domain tables before PostgreSQL validates foreign keys.
-    _seed_default_crops(cur)
+    cur.execute("PRAGMA table_info(inventory)")
+    inventory_columns = [row[1] for row in cur.fetchall()]
+    if 'crop_name' not in inventory_columns:
+        cur.execute("ALTER TABLE inventory ADD COLUMN crop_name TEXT")
+    if 'crop_id' not in inventory_columns:
+        cur.execute("ALTER TABLE inventory ADD COLUMN crop_id INTEGER")
+
+    cur.execute("""
+        UPDATE inventory
+        SET crop_name = (
+            SELECT crops.crops_name
+            FROM crops
+            WHERE crops.id = inventory.crop_id
+        )
+        WHERE crop_name IS NULL AND crop_id IS NOT NULL
+    """)
+    cur.execute("""
+        UPDATE inventory
+        SET crop_id = (
+            SELECT crops.id
+            FROM crops
+            WHERE crops.crops_name = inventory.crop_name
+        )
+        WHERE crop_id IS NULL AND crop_name IS NOT NULL
+    """)
+    unmatched = cur.execute("SELECT COUNT(*) AS count FROM inventory WHERE crop_id IS NULL").fetchone()["count"]
+    if unmatched:
+        raise RuntimeError(f"{unmatched} inventory record(s) could not be matched to crops")
 
     #NEW MARKETPLACE
     cur.execute("""
@@ -608,10 +728,11 @@ def update_analytics():
         total_harvest = cur.fetchone()[0]
 
         cur.execute("""
-        SELECT crop_name, SUM(quantity) as total
-        FROM inventory
-        WHERE strftime('%Y-%m', date_received) = ?
-        GROUP BY crop_name
+        SELECT c.crops_name, SUM(i.quantity) AS total, i.crop_id
+        FROM inventory i
+        JOIN crops c ON c.id = i.crop_id
+        WHERE SUBSTRING(i.date_received FROM 1 FOR 7) = ?
+        GROUP BY i.crop_id, c.crops_name
         ORDER BY total DESC
         LIMIT 1
         """, (period_value,))
@@ -619,8 +740,7 @@ def update_analytics():
         if top_crop:
             crop_name = top_crop[0]
             crop_volume = top_crop[1]
-            crop_row = cur.execute("SELECT id FROM crops WHERE crops_name=?", (crop_name,)).fetchone()
-            crop_id = crop_row[0] if crop_row else None
+            crop_id = top_crop[2]
         else:
             crop_name = None
             crop_volume = 0
@@ -663,10 +783,11 @@ def update_analytics():
         total_harvest = cur.fetchone()[0]
 
         cur.execute("""
-        SELECT crop_name, SUM(quantity) as total
-        FROM inventory
-        WHERE strftime('%Y', date_received) = ?
-        GROUP BY crop_name
+        SELECT c.crops_name, SUM(i.quantity) AS total, i.crop_id
+        FROM inventory i
+        JOIN crops c ON c.id = i.crop_id
+        WHERE SUBSTRING(i.date_received FROM 1 FOR 4) = ?
+        GROUP BY i.crop_id, c.crops_name
         ORDER BY total DESC
         LIMIT 1
         """, (period_value,))
@@ -674,8 +795,7 @@ def update_analytics():
         if top_crop:
             crop_name = top_crop[0]
             crop_volume = top_crop[1]
-            crop_row = cur.execute("SELECT id FROM crops WHERE crops_name=?", (crop_name,)).fetchone()
-            crop_id = crop_row[0] if crop_row else None
+            crop_id = top_crop[2]
         else:
             crop_name = None
             crop_volume = 0

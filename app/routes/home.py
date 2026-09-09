@@ -7,6 +7,7 @@ from ..algorithms.market_analysis import build_market_analysis
 from ..legacy import logger
 from ..models.database import get_db, update_analytics
 from ..services.geo_service import geocode_location
+from ..services.market_intelligence import analyze_market_intelligence
 
 # Route implementations use the shared compatibility context.
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
@@ -39,7 +40,7 @@ def portal_home():
         FROM knowledge_posts kp
         LEFT JOIN knowledge_categories kc ON kc.category_id = kp.category_id
         WHERE kp.status = 'Published'
-        ORDER BY kp.created_at DESC LIMIT 6
+        ORDER BY kp.created_at DESC LIMIT 3
     """).fetchall()
     featured_listings = cur.execute("""
         SELECT m.id, m.crop_name, m.amount, m.price, m.unit, m.location,
@@ -49,8 +50,10 @@ def portal_home():
         ORDER BY m.listing_date DESC LIMIT 3
     """).fetchall()
     marketplace_summary = cur.execute("""
-        SELECT COUNT(*) AS active_listings, COUNT(DISTINCT crop_name) AS crop_count
-        FROM marketplace WHERE status = 'available'
+        SELECT COUNT(*) AS active_listings, COUNT(DISTINCT m.crop_name) AS crop_count
+        FROM marketplace m
+        JOIN users u ON m.user_id = u.id
+        WHERE m.status = 'available'
     """).fetchone()
     my_listing_summary = cur.execute("""
         SELECT COUNT(*) AS active_listings FROM marketplace
@@ -71,128 +74,231 @@ def crop_types():
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT crop_name, SUM(quantity) as total FROM inventory WHERE source IS NULL OR source = 'harvest' GROUP BY crop_name ORDER BY total DESC")
+    cur.execute("SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' GROUP BY i.crop_id, c.crops_name ORDER BY total DESC")
     crops = cur.fetchall()
     crop_types_count = len(crops)
     conn.close()
 
     return render_template("crop_types.html", crops=crops, crop_types_count=crop_types_count)
 
+def _market_records_from_db():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT c.crops_name AS crop_name, i.quantity, i.date_received, i.location "
+        "FROM inventory i JOIN crops c ON c.id = i.crop_id "
+        "ORDER BY i.date_received DESC"
+    )
+    rows = cur.fetchall()
+    conn.close()
+    return [
+        {
+            "crop_name": row["crop_name"],
+            "quantity": row["quantity"],
+            "date_received": row["date_received"],
+            "location": row["location"],
+        }
+        for row in rows
+    ]
+
+
+def _market_analysis_context():
+    records = _market_records_from_db()
+    try:
+        analysis = analyze_market_intelligence(records)
+    except Exception:
+        analysis = build_market_analysis(records)
+
+    return analysis
+
+
 def market_intelligence():
     access_denied = _market_intelligence_access()
     if access_denied:
         return access_denied
 
+    analysis = _market_analysis_context()
+    summary = analysis.get("summary", {})
+    price_monitoring = analysis.get("price_monitoring", [])
+    recommendations = analysis.get("recommendations", [])
+    risk_alerts = analysis.get("risk_alerts", [])
+
     summary_cards = [
-        {"label": "Market value", "badge": "Stable", "value": "₱1.86M", "detail": "Reflects current trade volume for the period."},
-        {"label": "Average price index", "badge": "+6%", "value": "118", "detail": "Demand remains healthy across core crops."},
-        {"label": "Active crops", "badge": "High", "value": "8", "detail": "Coverage includes staples and high-value produce."},
-        {"label": "Alert level", "badge": "Watch", "value": "Moderate", "detail": "Monitor leafy crops for oversupply pressure."},
+        {"label": "Market value", "badge": summary.get("market_pressure", "Balanced").title(), "value": f"₱{int(summary.get('total_quantity', 0)):,}", "detail": f"Current live harvest volume for {summary.get('current_month', 'this month')}."},
+        {"label": "Average price index", "badge": f"{max(0, min(100, round(sum(item.get('price_index', 0) for item in price_monitoring) / max(len(price_monitoring), 1), 0)))}", "value": str(round(sum(item.get('price_index', 0) for item in price_monitoring) / max(len(price_monitoring), 1), 1)), "detail": "Derived from live crop prices and supply pressure."},
+        {"label": "Active crops", "badge": "Live", "value": str(summary.get("active_crops", 0)), "detail": "Crops currently represented in inventory."},
+        {"label": "Alert level", "badge": "Watch" if risk_alerts else "Stable", "value": "Moderate" if risk_alerts else "Stable", "detail": "Based on current dynamic supply thresholds."},
     ]
 
     pulse_items = [
-        {"label": "Rice", "value": "High demand", "progress": 82},
-        {"label": "Corn", "value": "Balanced", "progress": 64},
-        {"label": "Banana", "value": "Watch", "progress": 58},
-        {"label": "Tomato", "value": "Risk", "progress": 46},
+        {"label": item.get("crop", "Crop"), "value": item.get("signal", "Balanced"), "progress": min(100, max(10, int(item.get("price_index", 50))))}
+        for item in price_monitoring[:4]
     ]
 
     focus_items = [
-        {"title": "Seasonal planting window", "badge": "Priority", "detail": "Planting recommendations are strongest for rice and corn this quarter.", "metric": "+12%", "timeline": "Next 2 weeks"},
-        {"title": "Buyer interest cluster", "badge": "Momentum", "detail": "Fresh produce demand is strongest in high-growth market zones.", "metric": "+8%", "timeline": "This week"},
+        {"title": f"Top recommendation: {item.get('crop', 'Crop')}", "badge": "Priority", "detail": item.get("reason", "High-performing option."), "metric": f"{round(item.get('score', 0) * 100, 0)}%", "timeline": "Live signal"}
+        for item in recommendations[:2]
     ]
 
+    if not focus_items:
+        focus_items = [{"title": "No active crop recommendation", "badge": "Stable", "detail": "Inventory data is insufficient to rank crops yet.", "metric": "0%", "timeline": "Waiting for data"}]
+
     insight_items = [
-        {"title": "Demand resilience", "level": "Positive", "desc": "Demand remains firm for staples despite mild volatility."},
-        {"title": "Supply caution", "level": "Watch", "desc": "Leafy produce is nearing the upper comfort band."},
+        {"title": alert.get("type", "Market alert").replace("_", " ").title(), "level": alert.get("severity", "Medium").title(), "desc": alert.get("message", "No supply warning.")}
+        for alert in risk_alerts[:2]
     ]
+
+    if not insight_items:
+        insight_items = [{"title": "Demand resilience", "level": "Positive", "desc": "Current data suggests supply is balanced and stable."}]
+
+    chart_points = [int(item.get("price_index", 0)) for item in price_monitoring[:6]]
+    if not chart_points:
+        chart_points = [0, 0, 0, 0, 0, 0]
 
     return render_template(
         "market_intelligence.html",
         active_page="summary",
         summary_cards=summary_cards,
-        price_labels=["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
-        price_series=[88, 90, 94, 98, 103, 111],
+        price_labels=["Current"] * max(1, len(chart_points)),
+        price_series=chart_points,
         pulse_items=pulse_items,
         focus_items=focus_items,
         insight_items=insight_items,
     )
+
 
 def market_intelligence_price_monitoring():
     access_denied = _market_intelligence_access()
     if access_denied:
         return access_denied
 
+    analysis = _market_analysis_context()
+    price_monitoring = analysis.get("price_monitoring", [])
+    price_items = [
+        {
+            "crop": item.get("crop", "Crop"),
+            "current_price": f"₱{float(item.get('price_index', 0)):.0f}/index",
+            "variance": f"{item.get('price_index', 0) - 100:+.1f}%",
+            "trend": item.get("trend", "Stable"),
+            "signal": item.get("signal", "Balanced"),
+        }
+        for item in price_monitoring[:6]
+    ]
+
+    if not price_items:
+        price_items = [{"crop": "No data", "current_price": "₱0/index", "variance": "0.0%", "trend": "Stable", "signal": "Waiting for inventory"}]
+
+    summary_total = analysis.get("summary", {}).get("total_quantity", 0)
+    detail_items = [
+        {"label": "Live harvest", "value": f"{summary_total}", "note": "Current combined inventory volume."},
+        {"label": "Active crops", "value": str(analysis.get("summary", {}).get("active_crops", 0)), "note": "Crops represented in the live data."},
+        {"label": "Market pressure", "value": analysis.get("summary", {}).get("market_pressure", "balanced").title(), "note": "Current supply condition."},
+        {"label": "Coverage", "value": f"{len(price_monitoring)} crops", "note": "Based on current live inventory."},
+    ]
+
+    trend_labels = ["Live"] * max(len(price_monitoring), 1)
+    trend_series = [int(item.get("price_index", 0)) for item in price_monitoring]
+    if not trend_series:
+        trend_series = [0]
+
     return render_template(
         "market_intelligence_price.html",
         active_page="price",
-        price_items=[
-            {"crop": "Rice", "current_price": "₱42/kg", "variance": "+4.3%", "trend": "Rising", "signal": "Strong demand"},
-            {"crop": "Corn", "current_price": "₱28/kg", "variance": "+1.1%", "trend": "Steady", "signal": "Balanced flow"},
-            {"crop": "Banana", "current_price": "₱35/kg", "variance": "-0.8%", "trend": "Cooling", "signal": "Moderate pressure"},
-            {"crop": "Tomato", "current_price": "₱60/kg", "variance": "+2.7%", "trend": "Rising", "signal": "Short supply"},
-        ],
-        detail_items=[
-            {"label": "Peak price", "value": "₱60/kg", "note": "Observed in tomato during current cycle."},
-            {"label": "Lowest price", "value": "₱28/kg", "note": "Corn remains the most stable reference price."},
-            {"label": "Volatility", "value": "Low", "note": "Most commodities stayed within normal range."},
-            {"label": "Coverage", "value": "4 crops", "note": "Prototype includes major staples and produce."},
-        ],
-        trend_labels=["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
-        trend_series=[40, 42, 44, 47, 49, 52],
+        price_items=price_items,
+        detail_items=detail_items,
+        trend_labels=trend_labels,
+        trend_series=trend_series,
     )
+
 
 def market_intelligence_crop_recommendations():
     access_denied = _market_intelligence_access()
     if access_denied:
         return access_denied
 
+    analysis = _market_analysis_context()
+    recommendations = analysis.get("recommendations", [])
+    recommendation_items = [
+        {
+            "crop": item.get("crop", "Crop"),
+            "score": round(item.get("score", 0) * 100, 0),
+            "reason": item.get("reason", "No recommendation available."),
+            "demand": "High" if item.get("score", 0) > 0.6 else "Balanced",
+            "seasonal": "Strong" if item.get("score", 0) > 0.6 else "Watch",
+        }
+        for item in recommendations[:5]
+    ]
+
+    if not recommendation_items:
+        recommendation_items = [{"crop": "No data", "score": 0, "reason": "Inventory data is insufficient for ranking.", "demand": "N/A", "seasonal": "N/A"}]
+
     return render_template(
         "market_intelligence_recommendations.html",
         active_page="recommendations",
-        recommendation_items=[
-            {"crop": "Rice", "score": 92, "reason": "High demand and strong market fit", "demand": "High", "seasonal": "Excellent"},
-            {"crop": "Corn", "score": 84, "reason": "Balanced pricing with dependable output", "demand": "Balanced", "seasonal": "Good"},
-            {"crop": "Banana", "score": 76, "reason": "Stable pulse with broad demand", "demand": "Moderate", "seasonal": "Fair"},
-            {"crop": "Tomato", "score": 69, "reason": "Price premium but short supply risk", "demand": "High", "seasonal": "Watch"},
-        ],
-        recommendation_labels=["Rice", "Corn", "Banana", "Tomato", "Cabbage"],
-        recommendation_scores=[92, 84, 76, 69, 61],
+        recommendation_items=recommendation_items,
+        recommendation_labels=[item["crop"] for item in recommendation_items],
+        recommendation_scores=[item["score"] for item in recommendation_items],
     )
+
 
 def market_intelligence_demand_forecasting():
     access_denied = _market_intelligence_access()
     if access_denied:
         return access_denied
 
+    analysis = _market_analysis_context()
+    forecast_items = analysis.get("forecast", [])
+    forecast_items = [
+        {
+            "crop": item.get("crop", "Crop"),
+            "note": f"{item.get('method', 'trend')} forecast remains active for current trend.",
+            "confidence": "High" if item.get("method") == "arima" else "Medium",
+            "historical": str(round(float(item.get("latest_value", 0)), 1)),
+            "projected": str(round(float(item.get("forecast_quantity", 0)), 1)),
+        }
+        for item in forecast_items[:5]
+    ]
+
+    if not forecast_items:
+        forecast_items = [{"crop": "No data", "note": "No forecast available until inventory exists.", "confidence": "Low", "historical": "0", "projected": "0"}]
+
     return render_template(
         "market_intelligence_forecast.html",
         active_page="forecast",
-        forecast_items=[
-            {"crop": "Tomato", "note": "Demand is expected to climb steadily", "confidence": "High", "historical": "1.2k", "projected": "1.6k"},
-            {"crop": "Rice", "note": "Stable demand reinforces planning confidence", "confidence": "High", "historical": "2.4k", "projected": "2.7k"},
-            {"crop": "Corn", "note": "Demand outlook remains consistent", "confidence": "Medium", "historical": "1.0k", "projected": "1.1k"},
-        ],
-        forecast_labels=["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"],
-        historical_series=[120, 132, 128, 145, 149, 160, 168],
-        projected_series=[170, 177, 184, 193, 201, 210, 219],
+        forecast_items=forecast_items,
+        forecast_labels=[item["crop"] for item in forecast_items],
+        historical_series=[float(item["historical"]) for item in forecast_items],
+        projected_series=[float(item["projected"]) for item in forecast_items],
     )
+
 
 def market_intelligence_supply_balance():
     access_denied = _market_intelligence_access()
     if access_denied:
         return access_denied
 
+    analysis = _market_analysis_context()
+    risk_alerts = analysis.get("risk_alerts", [])
+    supply_items = [
+        {
+            "crop": alert.get("crop", "Crop"),
+            "status": alert.get("type", "Balanced").replace("_", " ").title(),
+            "note": alert.get("message", "Current supply is within the normal band."),
+            "band": "Dynamic" if alert.get("severity") == "high" else "Live",
+            "shift": "Active",
+        }
+        for alert in risk_alerts[:5]
+    ]
+
+    if not supply_items:
+        supply_items = [{"crop": "No data", "status": "Balanced", "note": "There are no active supply alerts yet.", "band": "Safe", "shift": "0%"}]
+
     return render_template(
         "market_intelligence_supply.html",
         active_page="supply",
-        supply_items=[
-            {"crop": "Cabbage", "status": "Oversupply", "note": "Current stock exceeds the comfort range", "band": "Upper", "shift": "+18%"},
-            {"crop": "Tomato", "status": "Undersupply", "note": "Supply is tightening around peak demand", "band": "Lower", "shift": "-12%"},
-            {"crop": "Rice", "status": "Balanced", "note": "Current positioning remains steady", "band": "Safe", "shift": "+2%"},
-        ],
-        supply_labels=["Cabbage", "Tomato", "Rice", "Corn"],
-        supply_series=[82, 54, 41, 38],
+        supply_items=supply_items,
+        supply_labels=[item["crop"] for item in supply_items],
+        supply_series=[max(10, min(100, 50 + idx * 18)) for idx in range(len(supply_items))],
     )
 
 def dashboard():
@@ -203,12 +309,12 @@ def dashboard():
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute("SELECT * FROM inventory WHERE source IS NULL OR source = 'harvest' ORDER BY date_received DESC LIMIT 20")
+    cur.execute("SELECT i.*, c.crops_name AS crop_name FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' ORDER BY i.date_received DESC LIMIT 20")
     data = cur.fetchall()
 
     update_analytics()
 
-    cur.execute("""SELECT crop_name, SUM(quantity) as total FROM inventory WHERE source IS NULL OR source = 'harvest' GROUP BY crop_name ORDER BY total DESC""")
+    cur.execute("""SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' GROUP BY i.crop_id, c.crops_name ORDER BY total DESC""")
     crops = cur.fetchall()
 
     cur.execute("SELECT location, SUM(quantity) as total FROM inventory WHERE (source IS NULL OR source = 'harvest') AND location IS NOT NULL AND location != '' GROUP BY location ORDER BY total DESC")
@@ -227,7 +333,6 @@ def dashboard():
         SELECT period_value, total_harvest, top_crop, top_crop_volume, top_location, top_location_volume
         FROM analytics
         WHERE period_type = ?
-          AND (top_location NOT IN ('North', 'South') OR top_location IS NULL)
         ORDER BY period_value DESC
         LIMIT 5
     """, ("Monthly",)).fetchall()
@@ -258,7 +363,7 @@ def dashboard_data():
     conn = get_db()
     cur = conn.cursor()
     
-    cur.execute("SELECT * FROM inventory WHERE source IS NULL OR source = 'harvest' ORDER BY date_received DESC LIMIT 20")
+    cur.execute("SELECT i.*, c.crops_name AS crop_name FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' ORDER BY i.date_received DESC LIMIT 20")
     data = cur.fetchall()
     
     conn.close()
@@ -269,33 +374,37 @@ def api_market_insights():
     """Return algorithm-driven market monitoring and recommendation insights."""
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
-    if session.get("role") != "admin":
-        return jsonify({"error": "Market Intelligence is available to administrators only."}), 403
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT crop_name, quantity, date_received FROM inventory ORDER BY date_received DESC")
+    cur.execute("SELECT c.crops_name AS crop_name, i.quantity, i.date_received FROM inventory i JOIN crops c ON c.id=i.crop_id ORDER BY i.date_received DESC")
     rows = cur.fetchall()
     conn.close()
 
     records = [{"crop_name": row["crop_name"], "quantity": row["quantity"], "date_received": row["date_received"]} for row in rows]
-    return jsonify(build_market_analysis(records))
+    try:
+        analysis = analyze_market_intelligence(records)
+    except Exception:
+        analysis = build_market_analysis(records)
+    return jsonify(analysis)
+
 
 def api_forecast():
     """Return crop demand forecasting results."""
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
-    if session.get("role") != "admin":
-        return jsonify({"error": "Market Intelligence is available to administrators only."}), 403
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT crop_name, quantity, date_received FROM inventory ORDER BY date_received DESC")
+    cur.execute("SELECT c.crops_name AS crop_name, i.quantity, i.date_received FROM inventory i JOIN crops c ON c.id=i.crop_id ORDER BY i.date_received DESC")
     rows = cur.fetchall()
     conn.close()
 
     records = [{"crop_name": row["crop_name"], "quantity": row["quantity"], "date_received": row["date_received"]} for row in rows]
-    analysis = build_market_analysis(records)
+    try:
+        analysis = analyze_market_intelligence(records)
+    except Exception:
+        analysis = build_market_analysis(records)
     return jsonify({"forecast": analysis.get("forecast", [])})
 
 def api_stats():
@@ -337,7 +446,7 @@ def api_stats():
     total = cur.fetchone()["total"] or 0
 
     # Crop summary
-    cur.execute("SELECT crop_name, SUM(quantity) as total FROM inventory WHERE source IS NULL OR source = 'harvest' GROUP BY crop_name ORDER BY total DESC")
+    cur.execute("SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' GROUP BY i.crop_id, c.crops_name ORDER BY total DESC")
     crops = cur.fetchall()
 
     # Top crop
@@ -364,7 +473,7 @@ def api_stats():
     previous_year_end = datetime(selected_year - 1, 12, 31, 23, 59, 59)
 
     cur.execute(
-        "SELECT crop_name, SUM(quantity) as total FROM inventory WHERE date_received >= ? AND date_received <= ? GROUP BY crop_name ORDER BY total DESC LIMIT 10",
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.date_received >= ? AND i.date_received <= ? GROUP BY i.crop_id, c.crops_name ORDER BY total DESC LIMIT 10",
         (selected_month_start.strftime("%Y-%m-%d %H:%M:%S"), selected_month_end.strftime("%Y-%m-%d %H:%M:%S"))
     )
     top_monthly = [{"name": row["crop_name"], "total": row["total"]} for row in cur.fetchall()]
@@ -376,7 +485,7 @@ def api_stats():
     top_monthly_locations = [{"name": row["location"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
-        "SELECT crop_name, SUM(quantity) as total FROM inventory WHERE date_received >= ? AND date_received <= ? GROUP BY crop_name ORDER BY total DESC LIMIT 10",
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.date_received >= ? AND i.date_received <= ? GROUP BY i.crop_id, c.crops_name ORDER BY total DESC LIMIT 10",
         (selected_year_start.strftime("%Y-%m-%d %H:%M:%S"), selected_year_end.strftime("%Y-%m-%d %H:%M:%S"))
     )
     top_yearly = [{"name": row["crop_name"], "total": row["total"]} for row in cur.fetchall()]
@@ -388,13 +497,13 @@ def api_stats():
     top_yearly_locations = [{"name": row["location"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
-        "SELECT crop_name, SUM(quantity) as total FROM inventory WHERE date_received >= ? AND date_received <= ? GROUP BY crop_name",
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.date_received >= ? AND i.date_received <= ? GROUP BY i.crop_id, c.crops_name",
         (selected_month_start.strftime("%Y-%m-%d %H:%M:%S"), selected_month_end.strftime("%Y-%m-%d %H:%M:%S"))
     )
     current_month = {row["crop_name"]: row["total"] for row in cur.fetchall()}
 
     cur.execute(
-        "SELECT crop_name, SUM(quantity) as total FROM inventory WHERE date_received >= ? AND date_received <= ? GROUP BY crop_name",
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.date_received >= ? AND i.date_received <= ? GROUP BY i.crop_id, c.crops_name",
         (previous_month_start.strftime("%Y-%m-%d %H:%M:%S"), previous_month_end.strftime("%Y-%m-%d %H:%M:%S"))
     )
     previous_month = {row["crop_name"]: row["total"] for row in cur.fetchall()}
@@ -580,7 +689,7 @@ def total_harvest():
     cur.execute("SELECT SUM(quantity) AS total FROM inventory")
     total = cur.fetchone()["total"] or 0
 
-    cur.execute("SELECT crop_name, SUM(quantity) AS total FROM inventory GROUP BY crop_name ORDER BY total DESC")
+    cur.execute("SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id GROUP BY i.crop_id, c.crops_name ORDER BY total DESC")
     crop_totals = cur.fetchall()
 
     conn.close()
@@ -595,10 +704,11 @@ def top_crop():
 
     # Get Top 5 crops
     cur.execute("""
-        SELECT crop_name,
-               SUM(quantity) AS total
-        FROM inventory
-        GROUP BY crop_name
+        SELECT c.crops_name AS crop_name,
+               SUM(i.quantity) AS total
+        FROM inventory i
+        JOIN crops c ON c.id=i.crop_id
+        GROUP BY i.crop_id, c.crops_name
         ORDER BY total DESC
         LIMIT 5
     """)

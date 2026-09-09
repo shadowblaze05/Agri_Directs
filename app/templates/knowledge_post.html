@@ -12,7 +12,7 @@
             <a href="/knowledge" class="btn btn-outline-secondary btn-sm">← Back to Knowledge Hub</a>
         </div>
         <h2>{{ post['title'] }}</h2>
-        <p class="text-muted">{{ post['category_name'] or 'General' }} • {{ post['author'] or 'Admin' }} • {{ post['created_at'][:19] }} • {{ post['views'] }} views</p>
+        <p class="text-muted">{{ post['category_name'] or 'General' }} • {{ post['author'] or 'Admin' }} • {{ post['created_at']|datetime_format }} • {{ post['views'] }} views</p>
 
         {% if post['image'] %}
         <img src="{{ post['image'] }}" class="img-fluid rounded mb-3" alt="{{ post['title'] }}">
@@ -43,7 +43,7 @@
             <div class="card-body">
                 <strong>{{ comment['username'] }}</strong>
                 <p class="mb-2">{{ comment['comment'] }}</p>
-                <small class="text-muted">{{ comment['created_at'][:19] }}</small>
+                <small class="text-muted">{{ comment['created_at']|datetime_format }}</small>
                 {% if session.get('role') == 'admin' %}
                 <form method="post" action="/knowledge/reply/{{ comment['comment_id'] }}" class="mt-2">
                     <textarea class="form-control mb-2" name="reply" rows="2" placeholder="Reply to this comment..."></textarea>

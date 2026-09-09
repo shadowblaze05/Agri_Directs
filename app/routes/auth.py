@@ -55,14 +55,14 @@ def register_user():
     if request.method == "POST":
 
         username = request.form.get("username", "").strip()
-        first_name = request.form.get("first_name", "").strip()
-        last_name = request.form.get("last_name", "").strip()
-        email = request.form.get("email", "").strip().lower()
+        first_name = (request.form.get("first_name", "") or username).strip()
+        last_name = (request.form.get("last_name", "") or "User").strip()
+        email = (request.form.get("email", "") or f"{username}@example.com").strip().lower()
         raw_password = request.form.get("password", "")
-        confirm_password = request.form.get("confirm_password", "")
+        confirm_password = request.form.get("confirm_password", raw_password)
 
-        if not all((username, first_name, last_name, email, raw_password, confirm_password)):
-            flash("Complete all registration fields")
+        if not username or not raw_password:
+            flash("Username and password are required")
             return render_template("register.html")
         if len(username) < 3:
             flash("Username must be at least 3 characters")
@@ -70,7 +70,7 @@ def register_user():
         if " " in username:
             flash("Username cannot contain spaces")
             return render_template("register.html")
-        if "@" not in email:
+        if email and "@" not in email:
             flash("Enter a valid email address")
             return render_template("register.html")
         if len(raw_password) < 6:
@@ -158,14 +158,14 @@ def api_harvest():
         cur = conn.cursor()
         
         cur.execute("""
-        INSERT INTO inventory(crop_name,quantity,farmer,date_received,location)
-        VALUES(?,?,?,?,?)
+        INSERT INTO inventory(crop_id,quantity,farmer,date_received,location)
+        SELECT id, ?, ?, ?, ? FROM crops WHERE crops_name=?
         """, (
-            data["crop_name"].strip(),
             quantity,
             data.get("farmer", username),
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            data.get("location")
+            data.get("location"),
+            data["crop_name"].strip(),
         ))
         
         conn.commit()

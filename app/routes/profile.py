@@ -29,13 +29,13 @@ def profile():
     cur = conn.cursor()
     user = _profile_data(cur, session["user"])
     cur.execute(
-        "SELECT COUNT(DISTINCT crop_name) AS crop_count, COALESCE(SUM(quantity), 0) AS total_quantity "
+        "SELECT COUNT(DISTINCT crop_id) AS crop_count, COALESCE(SUM(quantity), 0) AS total_quantity "
         "FROM inventory WHERE farmer=?", (session["user"],)
     )
     inventory_summary = cur.fetchone()
     cur.execute(
-        "SELECT crop_name, SUM(quantity) AS total_quantity, MAX(date_received) AS last_received "
-        "FROM inventory WHERE farmer=? GROUP BY crop_name ORDER BY last_received DESC LIMIT 4",
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total_quantity, MAX(i.date_received) AS last_received "
+        "FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.farmer=? GROUP BY i.crop_id, c.crops_name ORDER BY last_received DESC LIMIT 4",
         (session["user"],)
     )
     recent_inventory = cur.fetchall()

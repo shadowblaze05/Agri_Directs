@@ -407,7 +407,7 @@
                 >
                   <span class="feed-meta"
                     ><i class="far fa-calendar"></i> {{
-                    update['created_at'][:10] if update['created_at'] else
+                    update['created_at']|datetime_format('%Y-%m-%d') if update['created_at'] else
                     'Recently published' }}{% if update['author'] %} | {{
                     update['author'] }}{% endif %}</span
                   ><a

@@ -5,11 +5,13 @@ older imports without forcing a circular dependency during package import.
 """
 
 from pathlib import Path
+from datetime import datetime
 
 from flask import Flask
 
 from .config import Config
 from .extensions import bcrypt, db, login_manager, migrate
+from .models.database import update_analytics
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "database.db"
@@ -25,6 +27,15 @@ def create_app():
     app.config.from_object(Config)
     app.config.setdefault("UPLOAD_FOLDER", str(BASE_DIR / "uploads"))
     app.secret_key = app.config.get("SECRET_KEY", "agridirect_secret")
+
+    @app.template_filter("datetime_format")
+    def datetime_format(value, format_string="%Y-%m-%d %H:%M"):
+        """Format database datetimes consistently across SQLite and PostgreSQL."""
+        if not value:
+            return ""
+        if isinstance(value, datetime):
+            return value.strftime(format_string)
+        return str(value)[:10] if format_string == "%Y-%m-%d" else str(value)[:16]
 
     db.init_app(app)
     migrate.init_app(app, db)
@@ -65,6 +76,7 @@ __all__ = [
     "create_app",
     "get_db",
     "init_db",
+    "update_analytics",
     "db",
     "migrate",
     "bcrypt",

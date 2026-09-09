@@ -62,6 +62,19 @@ Current package structure:
     - email_service.py
     - upload_service.py
     - notification_service.py
+    - market_service.py
+    - market_intelligence/
+      - __init__.py
+      - criteria_builder.py
+      - supply_analysis.py
+      - demand_forecasting.py
+      - demand_baseline.py
+      - crop_recommendation.py
+      - data_sources/
+        - __init__.py
+        - transaction_data.py
+        - supply_data.py
+        - price_data.py
   - forms/
   - algorithms/
   - utils/
@@ -103,6 +116,13 @@ Services:
 - app/services/upload_service.py
 - app/services/notification_service.py
 - app/services/email_service.py
+- app/services/market_service.py
+- app/services/market_intelligence/__init__.py
+- app/services/market_intelligence/criteria_builder.py
+- app/services/market_intelligence/supply_analysis.py
+- app/services/market_intelligence/demand_forecasting.py
+- app/services/market_intelligence/demand_baseline.py
+- app/services/market_intelligence/crop_recommendation.py
 
 Algorithms:
 - app/algorithms/market_analysis.py
@@ -111,6 +131,31 @@ Algorithms:
 - app/algorithms/demand_forecasting.py
 - app/algorithms/reliability_score.py
 - app/algorithms/supply_detection.py
+
+MARKET INTELLIGENCE SERVICE LAYER
+--------------------------------
+The project now includes a dedicated market intelligence service package in
+app/services/market_intelligence. It follows the real project data model instead
+of creating a greenfield schema and works against the current inventory, crop,
+and marketplace tables.
+
+Core service modules:
+- criteria_builder.py: builds the AHP comparison matrix and derives stable
+  criterion weights using pyDecision's ahp_method.
+- supply_analysis.py: calculates dynamic thresholds and classifies each crop as
+  balanced, undersupplied or oversupplied.
+- demand_forecasting.py: builds short-horizon ARIMA demand forecasts and falls
+  back to linear estimation when the dataset is too short for a robust model.
+- demand_baseline.py: computes an OLS baseline for side-by-side comparison with
+  the forecast and exposes the regression statistics.
+- crop_recommendation.py: uses the weighted criteria and TOPSIS ranking to
+  generate a crop recommendation score.
+- data_sources/*.py: abstract the live data access for inventory, supply, and
+  price monitoring so future data sources can slot in without changing route code.
+
+The HTTP endpoints in app/routes/home.py now call analyze_market_intelligence() as
+primary logic while keeping the existing build_market_analysis() response shape
+for compatibility with legacy tests and dashboard consumers.
 
 Templates:
 - app/templates/
@@ -177,6 +222,34 @@ Database backend:
 - PostgreSQL is the target database backend.
 - SQLite compatibility code is preserved only as a legacy transition layer.
 - The current project does not replace PostgreSQL with SQLite.
+
+Adding another admin user:
+- This project does not use Django's built-in `createsuperuser` feature.
+- In Flask, an administrator is simply a user row with `role = 'admin'`.
+- The default admin is created during app initialization in app/models/database.py.
+- The relevant behavior is:
+  - check whether the username `admin` exists in the `users` table
+  - if it does not exist, insert a new row with username `admin`, password = `generate_password_hash('admin')`, and role = `admin`
+- This means the admin login is stored in the database, not in a special Flask superuser system.
+
+To add another admin using the app:
+1. Register a normal user via the registration page.
+2. Update that user's role in the database:
+   UPDATE users SET role = 'admin' WHERE username = 'your_username';
+
+To add another admin manually in PostgreSQL:
+1. Generate a Werkzeug-compatible password hash from the project virtual environment:
+   .\.venv\Scripts\python.exe -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('MyStrongPassword123'))"
+2. Copy the hash output.
+3. Run a SQL insert like this:
+   INSERT INTO users(username, password, role) VALUES ('newadmin', 'PASTE_HASH_HERE', 'admin');
+4. If you already created the user and only need to promote them, use:
+   UPDATE users SET role = 'admin' WHERE username = 'newadmin';
+
+Important:
+- Do not store a plain-text password in the `password` column for this app.
+- The login flow checks `check_password_hash(user['password'], password)`, so the value must be a Werkzeug hash, not raw text.
+- If the user is created through the normal registration route, the app already hashes the password automatically in app/routes/auth.py.
 
 Migration behavior:
 - Flask-Migrate remains configured and active through app/extensions.py.

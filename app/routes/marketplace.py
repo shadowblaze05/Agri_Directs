@@ -29,10 +29,10 @@ def marketplace():
     
     # Get user's inventory for selling
     cur.execute("""
-        SELECT crop_name, SUM(quantity) AS total_quantity
-        FROM inventory
-        WHERE farmer = ?
-        GROUP BY crop_name
+        SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total_quantity
+        FROM inventory i JOIN crops c ON c.id=i.crop_id
+        WHERE i.farmer = ?
+        GROUP BY i.crop_id, c.crops_name
         HAVING SUM(quantity) > 0
     """, (session["user"],))
     user_inventory = cur.fetchall()
@@ -126,8 +126,8 @@ def add_marketplace_listing():
         cur.execute("""
             SELECT SUM(quantity) as total
             FROM inventory
-            WHERE farmer = ? AND crop_name = ?
-        """, (session["user"], crop_name))
+            WHERE farmer = ? AND crop_id = ?
+        """, (session["user"], crop_id))
         inventory = cur.fetchone()
         
         if not inventory or inventory["total"] < amount:
@@ -242,39 +242,37 @@ def add_marketplace_listing():
     cur = conn.cursor()
     
     cur.execute("""
-        SELECT DISTINCT crop_name
-        FROM inventory
-        WHERE farmer = ?
-        GROUP BY crop_name
+        SELECT c.crops_name AS crop_name, i.crop_id
+        FROM inventory i JOIN crops c ON c.id=i.crop_id
+        WHERE i.farmer = ?
+        GROUP BY i.crop_id, c.crops_name
         HAVING SUM(quantity) > 0
-        ORDER BY crop_name
+        ORDER BY c.crops_name
     """, (session["user"],))
     user_crops = cur.fetchall()
     
     user_crops_with_ids = []
     for crop in user_crops:
-        cur.execute("SELECT id FROM crops WHERE crops_name = ?", (crop["crop_name"],))
-        crop_id = cur.fetchone()
-        if crop_id:
+        if crop["crop_id"]:
             cur.execute("""
                 SELECT SUM(quantity) as total_quantity
                 FROM inventory
-                WHERE farmer = ? AND crop_name = ?
-            """, (session["user"], crop["crop_name"]))
+                WHERE farmer = ? AND crop_id = ?
+            """, (session["user"], crop["crop_id"]))
             total = cur.fetchone()
             user_crops_with_ids.append({
-                "id": crop_id["id"],
+                "id": crop["crop_id"],
                 "crops_name": crop["crop_name"],
                 "total_quantity": total["total_quantity"] if total else 0
             })
     
     cur.execute("""
-        SELECT crop_name, SUM(quantity) as total_quantity
-        FROM inventory
-        WHERE farmer = ?
-        GROUP BY crop_name
+        SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total_quantity
+        FROM inventory i JOIN crops c ON c.id=i.crop_id
+        WHERE i.farmer = ?
+        GROUP BY i.crop_id, c.crops_name
         HAVING SUM(quantity) > 0
-        ORDER BY crop_name
+        ORDER BY c.crops_name
     """, (session["user"],))
     user_inventory = cur.fetchall()
     
@@ -394,10 +392,10 @@ def buy_marketplace_item(listing_id):
     
     # Add to buyer's inventory (purchase source does not appear on harvest dashboard)
     cur.execute("""
-        INSERT INTO inventory(crop_name, quantity, farmer, date_received, location, source)
+        INSERT INTO inventory(crop_id, quantity, farmer, date_received, location, source)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (
-        listing["crop_name"],
+        listing["crop_id"],
         quantity,
         session["user"],
         order_timestamp,
@@ -408,9 +406,9 @@ def buy_marketplace_item(listing_id):
     # Remove from seller's inventory
     cur.execute("""
         SELECT id, quantity FROM inventory 
-        WHERE farmer = ? AND crop_name = ? 
+        WHERE farmer = ? AND crop_id = ? 
         ORDER BY date_received ASC
-    """, (seller_username, listing["crop_name"]))
+    """, (seller_username, listing["crop_id"]))
     seller_inventory = cur.fetchall()
     
     remaining = quantity
@@ -791,7 +789,7 @@ def trade_marketplace_item(listing_id):
         cur.execute("""
             SELECT SUM(quantity) as total
             FROM inventory
-            WHERE farmer = ? AND crop_name = ?
+            WHERE farmer = ? AND crop_id = (SELECT id FROM crops WHERE crops_name = ?)
         """, (session["user"], trade_crop))
         inventory = cur.fetchone()
         
@@ -803,7 +801,7 @@ def trade_marketplace_item(listing_id):
         # Process trade - Remove from buyer's inventory
         cur.execute("""
             SELECT id, quantity FROM inventory
-            WHERE farmer = ? AND crop_name = ?
+            WHERE farmer = ? AND crop_id = (SELECT id FROM crops WHERE crops_name = ?)
             ORDER BY date_received ASC
         """, (session["user"], trade_crop))
         buyer_items = cur.fetchall()
@@ -834,23 +832,23 @@ def trade_marketplace_item(listing_id):
                 seller_username = rr["username"] if rr else None
 
         cur.execute("""
-            INSERT INTO inventory(crop_name, quantity, farmer, date_received, location, source)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO inventory(crop_id, quantity, farmer, date_received, location, source)
+            SELECT id, ?, ?, ?, ?, ? FROM crops WHERE crops_name = ?
         """, (
-            trade_crop,
             trade_amount,
             seller_username,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             listing["location"],
-            "trade"
+            "trade",
+            trade_crop
         ))
         
         # Add seller's crop to buyer's inventory
         cur.execute("""
-            INSERT INTO inventory(crop_name, quantity, farmer, date_received, location, source)
+            INSERT INTO inventory(crop_id, quantity, farmer, date_received, location, source)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
-            listing["crop_name"],
+            listing["crop_id"],
             listing["amount"],
             session["user"],
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -888,10 +886,10 @@ def trade_marketplace_item(listing_id):
     
     # GET request - show trade form
     cur.execute("""
-        SELECT crop_name, SUM(quantity) AS total_quantity
-        FROM inventory
-        WHERE farmer = ?
-        GROUP BY crop_name
+        SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total_quantity
+        FROM inventory i JOIN crops c ON c.id=i.crop_id
+        WHERE i.farmer = ?
+        GROUP BY i.crop_id, c.crops_name
         HAVING SUM(quantity) > 0
     """, (session["user"],))
     user_inventory = cur.fetchall()
@@ -1269,10 +1267,10 @@ def checkout_cart():
         
         # Add to buyer's inventory
         cur.execute("""
-            INSERT INTO inventory(crop_name, quantity, farmer, date_received, location, source)
+            INSERT INTO inventory(crop_id, quantity, farmer, date_received, location, source)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
-            item["crop_name"],
+            item["crop_id"],
             item["quantity"],
             session["user"],
             order_timestamp,
@@ -1283,9 +1281,9 @@ def checkout_cart():
         # Remove from seller's inventory
         cur.execute("""
             SELECT id, quantity FROM inventory 
-            WHERE farmer = ? AND crop_name = ? 
+            WHERE farmer = ? AND crop_id = ? 
             ORDER BY date_received ASC
-        """, (item["seller_name"], item["crop_name"]))
+        """, (item["seller_name"], item["crop_id"]))
         seller_inventory = cur.fetchall()
         
         remaining = item["quantity"]
@@ -1391,10 +1389,10 @@ def marketplace_with_cart():
     
     # Get user's inventory for selling
     cur.execute("""
-        SELECT crop_name, SUM(quantity) AS total_quantity
-        FROM inventory
-        WHERE farmer = ?
-        GROUP BY crop_name
+        SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total_quantity
+        FROM inventory i JOIN crops c ON c.id=i.crop_id
+        WHERE i.farmer = ?
+        GROUP BY i.crop_id, c.crops_name
         HAVING SUM(quantity) > 0
     """, (session["user"],))
     user_inventory = cur.fetchall()
