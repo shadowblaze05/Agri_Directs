@@ -186,23 +186,31 @@
     <!-- Sidebar -->
     <div class="sidebar">
         <nav class="nav flex-column">
+            <a class="nav-link" href="/home">
+                <i class="fas fa-home"></i> Home
+            </a>
             <a class="nav-link" href="/dashboard">
                 <i class="fas fa-chart-line"></i> Dashboard
             </a>
             <a class="nav-link" href="/upload">
                 <i class="fas fa-upload"></i> Upload Harvest
             </a>
+            {% if session.get('role') == 'admin' %}
             <a class="nav-link" href="/market-intelligence">
                 <i class="fas fa-brain"></i> Market Intelligence
             </a>
+            {% endif %}
             <a class="nav-link active" href="/marketplace">
                 <i class="fas fa-store"></i> Marketplace
+            </a>
+            <a class="nav-link" href="/knowledge">
+                <i class="fas fa-book-open"></i> Knowledge Hub
             </a>
             <a class="nav-link" href="/messages">
                 <i class="fas fa-comments"></i> Messages
             </a>
-            <a class="nav-link" href="/knowledge">
-                <i class="fas fa-book-open"></i> Digital Knowledge Hub
+            <a class="nav-link" href="/notifications-center">
+                <i class="fas fa-bell"></i> Notifications
             </a>
             <a class="nav-link" href="/profile">
                 <i class="fas fa-user-circle"></i> Profile
@@ -213,6 +221,8 @@
                 <span class="cart-badge">{{ cart_count }}</span>
                 {% endif %}
             </a>
+            <a class="nav-link" href="/marketplace/my-preorders"><i class="fas fa-clock"></i> My Pre-orders</a>
+            <a class="nav-link" href="/marketplace/my-preorder-requests"><i class="fas fa-inbox"></i> Pre-order Requests</a>
             <a class="nav-link" href="/logout">
                 <i class="fas fa-sign-out-alt"></i> Logout
             </a>
@@ -351,12 +361,31 @@
                                 <input type="number" class="form-control" id="quantity" value="1" min="1" max="{{ listing.amount }}">
                             </div>
                             <div class="col-8 d-flex align-items-end">
-                                <button class="btn btn-success w-100 me-2" onclick="addToCart({{ listing.id }})">
-                                    <i class="fas fa-cart-plus"></i> Add to Cart
-                                </button>
-                                <button class="btn btn-primary w-100" onclick="buyNow({{ listing.id }})">
-                                    <i class="fas fa-bolt"></i> Buy Now
-                                </button>
+                                {% if listing.listing_type == 'preorder' %}
+                                    <div class="alert alert-warning mb-3">
+                                        <i class="far fa-clock"></i>
+                                        <strong>Pre-order item.</strong> This crop will be ready on
+                                        <strong>{{ listing.available_date[:16] }}</strong>.
+                                        Reserve now and coordinate with the seller via messages.
+                                    </div>
+                                    <div class="col-8 d-flex align-items-end">
+                                        <button class="btn btn-warning w-100 me-2" onclick="preorderItem({{ listing.id }})">
+                                            <i class="fas fa-clock"></i> Pre-order
+                                        </button>
+                                        <a href="/messages?recipient={{ listing.seller_name }}" class="btn btn-outline-success w-100">
+                                            <i class="fas fa-comments"></i> Contact Seller
+                                        </a>
+                                    </div>
+                                {% else %}
+                                    <div class="col-8 d-flex align-items-end">
+                                        <button class="btn btn-success w-100 me-2" onclick="addToCart({{ listing.id }})">
+                                            <i class="fas fa-cart-plus"></i> Add to Cart
+                                        </button>
+                                        <button class="btn btn-primary w-100" onclick="buyNow({{ listing.id }})">
+                                            <i class="fas fa-bolt"></i> Buy Now
+                                        </button>
+                                    </div>
+                                {% endif %}
                             </div>
                         </div>
 
@@ -485,6 +514,34 @@
                 });
             }
         }
+
+        function preorderItem(listingId) {
+            const quantity = document.getElementById('quantity').value;
+            if (!quantity || quantity < 1) { alert('Please enter a valid quantity'); return; }
+            if (!confirm('Pre-order ' + quantity + ' units? The seller will confirm your reservation.')) return;
+            
+            fetch('/marketplace/preorder/' + listingId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quantity: parseInt(quantity) })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert(data.message);
+                    window.location.href = '/marketplace/my-preorders';
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(err => alert('Error: ' + err));
+        }
+
+        function contactSeller(listingId) {
+            // Placeholder — will redirect to messages later
+            alert('Contact Seller is coming soon. You can message the seller from the Messages page.');
+        }
+
     </script>
 </body>
 </html>

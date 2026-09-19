@@ -207,6 +207,23 @@
             const btn = document.getElementById('notificationDropdown');
             if(btn){ btn.addEventListener('click', markNotificationsRead); }
         });
+        // Auto-open a conversation if ?recipient=<username> is in the URL
+        document.addEventListener('DOMContentLoaded', function() {
+            const params = new URLSearchParams(window.location.search);
+            const recipient = params.get('recipient');
+            if (!recipient) return;
+
+            // Wait for messages.js to finish its initial loadConversations()
+            let attempts = 0;
+            const tryOpen = setInterval(() => {
+                attempts++;
+                if (typeof openConversation === 'function' && typeof allConversations !== 'undefined') {
+                    clearInterval(tryOpen);
+                    openConversation(recipient);
+                }
+                if (attempts > 40) clearInterval(tryOpen); // give up after ~4s
+            }, 100);
+        });
     </script>
 </body>
 </html>
