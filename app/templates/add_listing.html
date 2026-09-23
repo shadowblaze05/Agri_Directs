@@ -3,22 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Add Listing - Agri-Direct</title>
+    <title>{% if listing %}Edit Listing{% else %}Add Listing{% endif %} - Agri-Direct</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
-        body {
-            background: #f5f5f5;
-        }
+        body { background: #f5f5f5; }
         .navbar-custom {
             background: linear-gradient(135deg, #1a3408 0%, #0f1f03 100%);
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             padding: 0 0px;
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
+            top: 0; left: 0; right: 0;
             height: 70px;
             z-index: 1030;
         }
@@ -27,8 +23,7 @@
             color: white;
             min-height: 100vh;
             position: fixed;
-            top: 0;
-            left: 0;
+            top: 0; left: 0;
             width: 250px;
             padding-top: 80px;
             z-index: 1000;
@@ -48,6 +43,14 @@
             background: #4caf50;
             color: white;
         }
+        .sidebar .nav-link .cart-badge {
+            background: #ff6b6b;
+            color: white;
+            border-radius: 50%;
+            padding: 2px 8px;
+            font-size: 0.75rem;
+            margin-left: 5px;
+        }
         .main-content {
             margin-left: 250px;
             margin-top: 45px;
@@ -63,19 +66,14 @@
             background: #2d5016;
             border: none;
         }
-        .btn-success:hover {
-            background: #1a3408;
-        }
+        .btn-success:hover { background: #1a3408; }
         .btn-secondary {
             background: #6c757d;
             border: none;
         }
-        .btn-secondary:hover {
-            background: #5a6268;
-        }
         .upload-area {
             border: 2px dashed #ddd;
-            padding: 30px;
+            padding: 20px;
             border-radius: 8px;
             text-align: center;
             cursor: pointer;
@@ -92,6 +90,7 @@
         .image-preview-wrapper {
             position: relative;
             display: inline-block;
+            margin: 5px;
         }
         .image-preview-wrapper img {
             width: 100px;
@@ -102,25 +101,94 @@
         }
         .image-preview-wrapper .remove-image {
             position: absolute;
-            top: -8px;
-            right: -8px;
+            top: -8px; right: -8px;
             background: #dc3545;
             color: white;
             border: none;
             border-radius: 50%;
-            width: 24px;
-            height: 24px;
+            width: 24px; height: 24px;
             cursor: pointer;
             font-size: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
         }
-        .image-preview-wrapper .remove-image:hover {
-            background: #c82333;
+        .existing-image {
+            position: relative;
+            display: inline-block;
+            margin: 5px;
+        }
+        .existing-image img {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 2px solid #2d5016;
+        }
+        .existing-image .remove-image {
+            position: absolute;
+            top: -8px; right: -8px;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 24px; height: 24px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .cart-icon-link {
+            position: relative;
+            color: white;
+            text-decoration: none;
+        }
+        .cart-badge-nav {
+            position: absolute;
+            top: -8px; right: -8px;
+            background: #ff6b6b;
+            color: white;
+            border-radius: 50%;
+            padding: 2px 8px;
+            font-size: 0.7rem;
+            min-width: 20px;
+            text-align: center;
         }
         .inventory-warning {
             border-left: 4px solid #ffc107;
+        }
+        .thumbnail-label {
+            display: block;
+            text-align: center;
+            background: #2d5016;
+            color: white;
+            font-size: 0.7rem;
+            padding: 3px 0;
+            border-radius: 0 0 6px 6px;
+            margin-top: -4px;
+            font-weight: 600;
+        }
+        .set-thumbnail-btn {
+            display: block;
+            width: 100%;
+            background: #f0f0f0;
+            color: #333;
+            border: 1px solid #ccc;
+            border-radius: 0 0 6px 6px;
+            padding: 4px 0;
+            font-size: 0.7rem;
+            cursor: pointer;
+            margin-top: -4px;
+            transition: all 0.2s;
+        }
+        .set-thumbnail-btn:hover {
+            background: #2d5016;
+            color: white;
+            border-color: #2d5016;
+        }
+        .existing-image.thumbnail-active img {
+            border: 3px solid #2d5016;
         }
     </style>
 </head>
@@ -128,53 +196,35 @@
     <!-- Sidebar -->
     <div class="sidebar">
         <nav class="nav flex-column">
-            <a class="nav-link" href="/dashboard">
-                <i class="fas fa-chart-line"></i> Dashboard
-            </a>
-            <a class="nav-link" href="/upload">
-                <i class="fas fa-upload"></i> Upload Harvest
-            </a>
-            <a class="nav-link" href="/market-intelligence">
-                <i class="fas fa-brain"></i> Market Intelligence
-            </a>
-            <a class="nav-link active" href="/marketplace">
-                <i class="fas fa-store"></i> Marketplace
-            </a>
-            <a class="nav-link" href="/messages">
-                <i class="fas fa-comments"></i> Messages
-            </a>
-            <a class="nav-link" href="/knowledge">
-                <i class="fas fa-book-open"></i> Digital Knowledge Hub
-            </a>
-            <a class="nav-link" href="/profile">
-                <i class="fas fa-user-circle"></i> Profile
-            </a>
+            <a class="nav-link" href="/home"><i class="fas fa-home"></i> Home</a>
+            <a class="nav-link" href="/dashboard"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a class="nav-link" href="/upload"><i class="fas fa-upload"></i> Upload Harvest</a>
+            {% if session.get('role') == 'admin' %}
+            <a class="nav-link" href="/market-intelligence"><i class="fas fa-brain"></i> Market Intelligence</a>
+            {% endif %}
+            <a class="nav-link active" href="/marketplace"><i class="fas fa-store"></i> Marketplace</a>
+            <a class="nav-link" href="/knowledge"><i class="fas fa-book-open"></i> Knowledge Hub</a>
+            <a class="nav-link" href="/messages"><i class="fas fa-comments"></i> Messages</a>
+            <a class="nav-link" href="/notifications-center"><i class="fas fa-bell"></i> Notifications</a>
+            <a class="nav-link" href="/profile"><i class="fas fa-user-circle"></i> Profile</a>
             <a class="nav-link" href="/marketplace/cart">
                 <i class="fas fa-shopping-cart"></i> Cart
-                {% if cart_count > 0 %}
-                <span class="cart-badge">{{ cart_count }}</span>
-                {% endif %}
+                {% if cart_count > 0 %}<span class="cart-badge">{{ cart_count }}</span>{% endif %}
             </a>
-            <a class="nav-link" href="/logout">
-                <i class="fas fa-sign-out-alt"></i> Logout
-            </a>
+            <a class="nav-link" href="/marketplace/my-preorders"><i class="fas fa-clock"></i> My Pre-orders</a>
+            <a class="nav-link" href="/marketplace/my-preorder-requests"><i class="fas fa-inbox"></i> Pre-order Requests</a>
+            <a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
         </nav>
     </div>
 
     <!-- Navigation -->
     <nav class="navbar navbar-dark navbar-custom fixed-top">
         <div class="container-fluid">
-            <span class="navbar-brand mb-0 h1 ms-5">
-                <i class="fas fa-leaf"></i> Agri-Direct 
-            </span>
+            <span class="navbar-brand mb-0 h1 ms-5"><i class="fas fa-leaf"></i> Agri-Direct</span>
             <div class="d-flex align-items-center gap-3">
-                <a href="/cart" class="text-white text-decoration-none position-relative">
+                <a href="/marketplace/cart" class="cart-icon-link">
                     <i class="fas fa-shopping-cart fa-lg"></i>
-                    {% if cart_count > 0 %}
-                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem;">
-                        {{ cart_count }}
-                    </span>
-                    {% endif %}
+                    {% if cart_count > 0 %}<span class="cart-badge-nav">{{ cart_count }}</span>{% endif %}
                 </a>
                 <div class="dropdown">
                     <button class="btn btn-outline-light dropdown-toggle" type="button" id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
@@ -184,6 +234,7 @@
                         <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge"></i> Profile</a></li>
                         <li><a class="dropdown-item" href="/about"><i class="fas fa-info-circle"></i> About</a></li>
                         <li><a class="dropdown-item" href="/marketplace/my-listings"><i class="fas fa-list"></i> My Listings</a></li>
+                        <li><a class="dropdown-item" href="/marketplace/my-purchases"><i class="fas fa-shopping-bag"></i> My Purchases</a></li>
                         {% if session.get('role') == 'admin' %}
                         <li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt"></i> Admin Console</a></li>
                         {% endif %}
@@ -201,81 +252,185 @@
             <div class="row justify-content-center">
                 <div class="col-lg-8">
                     <div class="form-container">
-                        <h3 class="mb-4"><i class="fas fa-plus-circle"></i> Add New Marketplace Listing</h3>
-                        <p class="text-muted mb-4">List your crops for sale. Buyers can purchase directly from the marketplace.</p>
-                        
-                        {% if not crops %}
-                        <div class="alert alert-warning inventory-warning mb-4">
-                            <h5><i class="fas fa-exclamation-triangle"></i> No Crops in Inventory</h5>
-                            <p class="mb-0">You don't have any crops in your inventory. Please <a href="/upload" class="alert-link">upload harvest data</a> first before creating a listing.</p>
+                        {% with messages = get_flashed_messages(with_categories=true) %}
+                            {% if messages %}
+                                {% for category, message in messages %}
+                                <div class="alert alert-{{ category if category != 'message' else 'info' }} alert-dismissible fade show">
+                                    {{ message }}
+                                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                                </div>
+                                {% endfor %}
+                            {% endif %}
+                        {% endwith %}
+
+                        <div class="d-flex justify-content-between align-items-center mb-4">
+                            <h3>
+                                <i class="fas fa-{% if listing %}edit{% else %}plus-circle{% endif %}"></i>
+                                {% if listing %}Edit Listing{% else %}Add New Marketplace Listing{% endif %}
+                            </h3>
+                            {% if listing %}
+                            <a href="/marketplace/my-listings" class="btn btn-secondary btn-sm">
+                                <i class="fas fa-arrow-left"></i> Back
+                            </a>
+                            {% endif %}
                         </div>
-                        {% endif %}
-                        
+
+                        <p class="text-muted mb-4">
+                            {% if listing %}
+                                Update your listing details below.
+                            {% else %}
+                                Post a listing to sell, pre-order, or look for crops.
+                            {% endif %}
+                        </p>
+
                         <form method="POST" enctype="multipart/form-data">
+                            <!-- Crop Selection -->
                             <div class="row">
                                 <div class="col-md-6 mb-3">
-                                    <label for="crop_id" class="form-label">Select Your Crop *</label>
-                                    <select class="form-select" id="crop_id" name="crop_id" required {% if not crops %}disabled{% endif %}>
+                                    <label for="crop_id" class="form-label">Crop *</label>
+                                    {% if listing %}
+                                    <input type="text" class="form-control" value="{{ listing.crop_name }}" disabled>
+                                    <input type="hidden" name="crop_id" value="{{ listing.crop_id }}">
+                                    <small class="text-muted">Crop cannot be changed after listing</small>
+                                    {% else %}
+                                    <select class="form-select" id="crop_id_standard" name="crop_id">
                                         <option value="">Choose a crop from your inventory...</option>
-                                        {% if crops %}
-                                            {% for crop in crops %}
-                                            <option value="{{ crop['id'] }}" data-available="{{ crop['total_quantity'] }}">
-                                                {{ crop['crops_name'] }} ({{ crop['total_quantity'] }} available)
-                                            </option>
-                                            {% endfor %}
-                                        {% else %}
-                                            <option value="" disabled>No crops found in your inventory</option>
-                                        {% endif %}
+                                        {% for crop in crops %}
+                                        <option value="{{ crop['id'] }}" data-available="{{ crop['total_quantity'] }}">
+                                            {{ crop['crops_name'] }} ({{ crop['total_quantity'] }} available)
+                                        </option>
+                                        {% endfor %}
                                     </select>
-                                    <small class="text-muted">Only crops you have in your inventory are shown</small>
+
+                                    <select class="form-select" id="crop_id_preorder" name="crop_id" disabled style="display:none;">
+                                        <option value="">Choose any crop...</option>
+                                        {% for crop in all_crops %}
+                                        <option value="{{ crop['id'] }}">{{ crop['crops_name'] }}</option>
+                                        {% endfor %}
+                                    </select>
+
+                                    <small class="text-muted" id="cropHint">Only crops you have in your inventory are shown</small>
+                                    {% endif %}
                                 </div>
                                 <div class="col-md-6 mb-3">
-                                    <label for="amount" class="form-label">Amount to Sell *</label>
-                                    <input type="number" class="form-control" id="amount" name="amount" min="1" required {% if not crops %}disabled{% endif %}>
-                                    <small class="text-muted">Available in your inventory: 
-                                        <span id="availableDisplay">0</span>
-                                    </small>
+                                    <label for="amount" id="amountLabel" class="form-label">Amount *</label>
+                                    <input type="number" class="form-control" id="amount" name="amount"
+                                           value="{{ listing.amount if listing else '' }}"
+                                           min="1" required>
+                                    <small class="text-muted">Available: <span id="availableDisplay">{{ listing.amount if listing else 0 }}</span></small>
                                 </div>
                             </div>
-                            
+
                             <div class="row">
                                 <div class="col-md-6 mb-3">
-                                    <label for="price" class="form-label">Price per Unit (₱) *</label>
-                                    <input type="number" class="form-control" id="price" name="price" min="0.01" step="0.01" required>
+                                    <label for="price" id="priceLabel" class="form-label">Price per Unit (₱) *</label>
+                                    <input type="number" class="form-control" id="price" name="price"
+                                           value="{{ listing.price if listing else '' }}"
+                                           min="0.01" step="0.01" required>
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label for="unit" class="form-label">Unit</label>
                                     <select class="form-select" id="unit" name="unit">
-                                        <option value="kg">kg</option>
-                                        <option value="g">g</option>
-                                        <option value="lb">lb</option>
-                                        <option value="oz">oz</option>
-                                        <option value="piece">piece</option>
-                                        <option value="bundle">bundle</option>
+                                        {% set current_unit = listing.unit if listing else 'kg' %}
+                                        <option value="kg" {% if current_unit == 'kg' %}selected{% endif %}>kg</option>
+                                        <option value="g" {% if current_unit == 'g' %}selected{% endif %}>g</option>
+                                        <option value="lb" {% if current_unit == 'lb' %}selected{% endif %}>lb</option>
+                                        <option value="oz" {% if current_unit == 'oz' %}selected{% endif %}>oz</option>
+                                        <option value="piece" {% if current_unit == 'piece' %}selected{% endif %}>piece</option>
+                                        <option value="bundle" {% if current_unit == 'bundle' %}selected{% endif %}>bundle</option>
                                     </select>
                                 </div>
                             </div>
-                            
-                            <!-- Multiple Image Upload Section -->
+
+                            <!-- Listing Type -->
                             <div class="mb-3">
-                                <label class="form-label">Product Images (Max 5) *</label>
+                                <label class="form-label">Listing Type</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="listing_type" id="type_standard" value="standard"
+                                        {% if not listing or listing.listing_type == 'standard' %}checked{% endif %}>
+                                    <label class="form-check-label" for="type_standard">
+                                        <strong>Standard</strong> — Sell a crop you have in inventory
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="listing_type" id="type_preorder" value="preorder"
+                                        {% if listing and listing.listing_type == 'preorder' %}checked{% endif %}>
+                                    <label class="form-check-label" for="type_preorder">
+                                        <strong>Pre-order</strong> — Sell a crop that isn't ready yet
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="listing_type" id="type_looking_for" value="looking_for"
+                                        {% if listing and listing.listing_type == 'looking_for' %}checked{% endif %}>
+                                    <label class="form-check-label" for="type_looking_for">
+                                        <strong>Looking For</strong> — Post that you're looking to buy a crop
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Pre-order date/time -->
+                            <div class="mb-3" id="availableDateGroup" style="display: none;">
+                                <label for="available_date" class="form-label">
+                                    Crop Will Be Ready On * <span class="text-muted">(date and time)</span>
+                                </label>
+                                <input type="datetime-local" class="form-control" id="available_date" name="available_date" step="60">
+                                <small class="text-muted">Buyers will see this date as the expected delivery time.</small>
+                            </div>
+
+                            <!-- Existing Images (Edit mode only) -->
+                            {% if listing and images %}
+                            <div class="mb-3">
+                                <label class="form-label">Current Images</label>
+                                <div id="existingImages">
+                                    {% for img in images %}
+                                    <div class="existing-image {% if listing['main_image'] == img['image_filename'] %}thumbnail-active{% endif %}"
+                                        id="image-{{ img['id'] }}">
+                                        <img src="{{ url_for('static', filename='uploads/marketplace/' + img['image_filename']) }}" alt="Listing image">
+                                        <button type="button" class="remove-image" onclick="deleteImage({{ img['id'] }})">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                        {% if listing['main_image'] == img['image_filename'] %}
+                                        <span class="thumbnail-label">Thumbnail</span>
+                                        {% else %}
+                                        <button type="button" class="set-thumbnail-btn" onclick="setThumbnail({{ img['id'] }})">
+                                            Set as Thumbnail
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                <small class="text-muted">The image labeled "Thumbnail" is shown in the marketplace grid.</small>
+                            </div>
+                            {% endif %}
+
+                            <!-- Upload New Images (hidden for looking_for) -->
+                            <div class="mb-3" id="imageUploadGroup">
+                                <label class="form-label">
+                                    {% if listing %}Add New Images{% else %}Product Images (Max 5) *{% endif %}
+                                </label>
                                 <div class="upload-area" id="uploadArea" onclick="document.getElementById('imageInput').click()">
                                     <i class="fas fa-cloud-upload-alt fa-3x text-muted"></i>
-                                    <p class="mb-0">Click or drag to upload up to 5 images</p>
+                                    <p class="mb-0">
+                                        {% if listing %}Click or drag to add more images{% else %}Click or drag to upload up to 5 images{% endif %}
+                                    </p>
                                     <small class="text-muted">PNG, JPG, JPEG, GIF, WebP (Max 5MB each)</small>
                                     <input type="file" class="d-none" id="imageInput" name="images" accept="image/*" multiple onchange="previewImages(this)">
                                 </div>
-                                <div id="imagePreviewContainer" class="row mt-3 g-2">
-                                    <!-- Image previews will appear here -->
-                                </div>
-                                <small class="text-muted" id="imageCount">0 of 5 images selected</small>
+                                <div id="imagePreviewContainer" class="mt-3"></div>
+                                <small class="text-muted" id="imageCount">0 of 5 new images selected</small>
+                                <input type="hidden" name="thumbnail_index" id="thumbnailIndex" value="0">
+                                <small class="text-muted d-block mt-1">
+                                    Click "Set as Thumbnail" on any image to choose which one appears in the marketplace grid.
+                                </small>
                             </div>
-                            
+
                             <div class="mb-3">
                                 <label for="description" class="form-label">Description (Optional)</label>
-                                <textarea class="form-control" id="description" name="description" rows="3" placeholder="Describe your crop quality, variety, harvest date, etc."></textarea>
+                                <textarea class="form-control" id="description" name="description" rows="3"
+                                          placeholder="Describe your crop quality, variety, or anything else.">{{ listing.description if listing else '' }}</textarea>
                             </div>
-                            
+
+                            {% if not listing %}
                             <div class="mb-3">
                                 <label for="expiry_days" class="form-label">Listing Expiry</label>
                                 <select class="form-select" id="expiry_days" name="expiry_days">
@@ -286,12 +441,14 @@
                                     <option value="90">90 days</option>
                                 </select>
                             </div>
-                            
+                            {% endif %}
+
                             <div class="d-flex gap-2">
-                                <button type="submit" class="btn btn-success" {% if not crops %}disabled{% endif %}>
-                                    <i class="fas fa-plus"></i> Add Listing
+                                <button type="submit" class="btn btn-success">
+                                    <i class="fas fa-{% if listing %}save{% else %}plus{% endif %}"></i>
+                                    {% if listing %}Save Changes{% else %}Add Listing{% endif %}
                                 </button>
-                                <a href="/marketplace" class="btn btn-secondary">
+                                <a href="{% if listing %}/marketplace/my-listings{% else %}/marketplace{% endif %}" class="btn btn-secondary">
                                     <i class="fas fa-times"></i> Cancel
                                 </a>
                             </div>
@@ -304,46 +461,67 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // ============ THUMBNAIL PICKER ============
         let selectedFiles = [];
+        let thumbnailIndex = 0;
+
+        function setThumbnail(imageId) {
+            fetch('/marketplace/set-thumbnail/' + imageId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') location.reload();
+                else alert('Error: ' + data.error);
+            })
+            .catch(error => alert('Error: ' + error));
+        }
+
+        function deleteImage(imageId) {
+            if (!confirm('Remove this image?')) return;
+            fetch('/marketplace/delete-image/' + imageId, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'success') location.reload();
+                else alert('Error: ' + data.error);
+            })
+            .catch(error => alert('Error: ' + error));
+        }
 
         function previewImages(input) {
-            const container = document.getElementById('imagePreviewContainer');
             const countDisplay = document.getElementById('imageCount');
-            
-            // Add new files to selectedFiles
             for (let i = 0; i < input.files.length; i++) {
                 if (selectedFiles.length >= 5) {
-                    alert('Maximum 5 images allowed');
+                    alert('Maximum 5 new images allowed');
                     break;
                 }
                 selectedFiles.push(input.files[i]);
             }
-            
-            // Update the input with all selected files
-            const dataTransfer = new DataTransfer();
-            selectedFiles.forEach(file => dataTransfer.items.add(file));
-            document.getElementById('imageInput').files = dataTransfer.files;
-            
-            // Render previews
+            const dt = new DataTransfer();
+            selectedFiles.forEach(f => dt.items.add(f));
+            document.getElementById('imageInput').files = dt.files;
             renderPreviews();
-            
-            countDisplay.textContent = `${selectedFiles.length} of 5 images selected`;
+            if (countDisplay) countDisplay.textContent = `${selectedFiles.length} of 5 new images selected`;
         }
 
         function renderPreviews() {
             const container = document.getElementById('imagePreviewContainer');
+            if (!container) return;
             container.innerHTML = '';
-            
             selectedFiles.forEach((file, index) => {
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const wrapper = document.createElement('div');
-                    wrapper.className = 'col-auto';
+                    wrapper.className = 'image-preview-wrapper' + (index === thumbnailIndex ? ' thumbnail-active' : '');
                     wrapper.innerHTML = `
-                        <div class="image-preview-wrapper">
-                            <img src="${e.target.result}" alt="Preview ${index + 1}">
-                            <button type="button" class="remove-image" onclick="removeImage(${index})">×</button>
-                        </div>
+                        <img src="${e.target.result}" alt="Preview ${index + 1}">
+                        <button type="button" class="remove-image" onclick="removePreview(${index})">
+                            <i class="fas fa-times"></i>
+                        </button>
+                        ${index === thumbnailIndex
+                            ? '<span class="thumbnail-label">Thumbnail</span>'
+                            : `<button type="button" class="set-thumbnail-btn" onclick="setPreviewThumbnail(${index})">Set as Thumbnail</button>`}
                     `;
                     container.appendChild(wrapper);
                 };
@@ -351,64 +529,104 @@
             });
         }
 
-        function removeImage(index) {
-            selectedFiles.splice(index, 1);
-            
-            // Update input
-            const dataTransfer = new DataTransfer();
-            selectedFiles.forEach(file => dataTransfer.items.add(file));
-            document.getElementById('imageInput').files = dataTransfer.files;
-            
+        function setPreviewThumbnail(index) {
+            thumbnailIndex = index;
+            document.getElementById('thumbnailIndex').value = index;
             renderPreviews();
-            document.getElementById('imageCount').textContent = `${selectedFiles.length} of 5 images selected`;
         }
 
-        // Drag and drop for multiple files
-        const uploadArea = document.getElementById('uploadArea');
-        uploadArea.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            this.classList.add('dragover');
-        });
-        uploadArea.addEventListener('dragleave', function(e) {
-            e.preventDefault();
-            this.classList.remove('dragover');
-        });
-        uploadArea.addEventListener('drop', function(e) {
-            e.preventDefault();
-            this.classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                const input = document.getElementById('imageInput');
-                input.files = files;
-                previewImages(input);
+        function removePreview(index) {
+            selectedFiles.splice(index, 1);
+            if (thumbnailIndex >= selectedFiles.length) {
+                thumbnailIndex = Math.max(0, selectedFiles.length - 1);
+            } else if (thumbnailIndex > index) {
+                thumbnailIndex--;
             }
-        });
+            const hidden = document.getElementById('thumbnailIndex');
+            if (hidden) hidden.value = thumbnailIndex;
+            const dt = new DataTransfer();
+            selectedFiles.forEach(f => dt.items.add(f));
+            document.getElementById('imageInput').files = dt.files;
+            renderPreviews();
+            const countDisplay = document.getElementById('imageCount');
+            if (countDisplay) countDisplay.textContent = `${selectedFiles.length} of 5 new images selected`;
+        }
 
-        // Show available inventory when crop is selected
-        document.getElementById('crop_id').addEventListener('change', function() {
-            const selected = this.options[this.selectedIndex];
-            const available = parseInt(selected.dataset.available) || 0;
-            const display = document.getElementById('availableDisplay');
-            const amountInput = document.getElementById('amount');
-            
-            display.textContent = available;
-            
-            amountInput.max = available;
-            
-            if (available === 0 || !selected.value) {
-                amountInput.disabled = true;
-                amountInput.placeholder = 'No inventory available';
-                amountInput.value = '';
-            } else {
-                amountInput.disabled = false;
-                amountInput.placeholder = 'Max: ' + available;
-                amountInput.min = 1;
+        // ============ LISTING TYPE TOGGLE ============
+        function updateListingTypeUI() {
+            const isPreorder = document.getElementById('type_preorder')?.checked || false;
+            const isLookingFor = document.getElementById('type_looking_for')?.checked || false;
+
+            // Date field: only preorder
+            const dateGroup = document.getElementById('availableDateGroup');
+            const dateInput = document.getElementById('available_date');
+            if (dateGroup) dateGroup.style.display = isPreorder ? 'block' : 'none';
+            if (dateInput) dateInput.required = isPreorder;
+
+            // Image upload: hidden for looking_for
+            const imgGroup = document.getElementById('imageUploadGroup');
+            if (imgGroup) imgGroup.style.display = isLookingFor ? 'none' : 'block';
+
+            // Crop dropdown: standard uses inventory, preorder/looking_for use all crops
+            const stdSel = document.getElementById('crop_id_standard');
+            const preSel = document.getElementById('crop_id_preorder');
+            const hint = document.getElementById('cropHint');
+            const useAllCrops = isPreorder || isLookingFor;
+
+            if (stdSel && preSel) {
+                stdSel.disabled = useAllCrops;
+                stdSel.style.display = useAllCrops ? 'none' : 'block';
+                preSel.disabled = !useAllCrops;
+                preSel.style.display = useAllCrops ? 'block' : 'none';
             }
-        });
-        
+            if (hint) {
+                hint.textContent = isPreorder
+                    ? 'You can pre-order any crop — no inventory required.'
+                    : isLookingFor
+                        ? 'Choose any crop you want to buy.'
+                        : 'Only crops you have in your inventory are shown';
+            }
+
+            // Labels change based on mode
+            const amountLabel = document.getElementById('amountLabel');
+            const priceLabel = document.getElementById('priceLabel');
+
+            if (amountLabel) {
+                amountLabel.textContent = isLookingFor ? 'Quantity Wanted *' : 'Amount *';
+            }
+            if (priceLabel) {
+                priceLabel.textContent = isLookingFor ? 'Price Range per Unit (₱) *' : 'Price per Unit (₱) *';
+            }
+
+            // Amount cap removal for pre-orders and looking_for
+            const amountInput = document.getElementById('amount');
+            if (amountInput && useAllCrops) {
+                amountInput.disabled = false;
+                amountInput.removeAttribute('max');
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
-            const event = new Event('change');
-            document.getElementById('crop_id').dispatchEvent(event);
+            document.getElementById('type_standard')?.addEventListener('change', updateListingTypeUI);
+            document.getElementById('type_preorder')?.addEventListener('change', updateListingTypeUI);
+            document.getElementById('type_looking_for')?.addEventListener('change', updateListingTypeUI);
+            updateListingTypeUI();
+
+            // Upload drag/drop
+            const uploadArea = document.getElementById('uploadArea');
+            if (uploadArea) {
+                uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+                uploadArea.addEventListener('dragleave', e => { e.preventDefault(); uploadArea.classList.remove('dragover'); });
+                uploadArea.addEventListener('drop', e => {
+                    e.preventDefault();
+                    uploadArea.classList.remove('dragover');
+                    if (e.dataTransfer.files.length > 0) {
+                        const input = document.getElementById('imageInput');
+                        input.files = e.dataTransfer.files;
+                        previewImages(input);
+                    }
+                });
+            }
         });
     </script>
 </body>

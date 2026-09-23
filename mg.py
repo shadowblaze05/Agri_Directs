@@ -1,35 +1,24 @@
-# reset_password_interactive.py
+"""Add looking_for support. Only new column needed: looking_for_notes."""
+
 from app import create_app
 from app.extensions import db
 from sqlalchemy import text
-from werkzeug.security import generate_password_hash
 
 app = create_app()
 
 with app.app_context():
-    # Show all users
-    users = db.session.execute(text("SELECT id, username FROM users ORDER BY id")).fetchall()
+    print("=" * 60)
+    print("LOOKING-FOR MIGRATION")
+    print("=" * 60)
     
-    print("\n📋 All Users:")
-    for user in users:
-        print(f"   {user[1]}")
+    inspector = db.inspect(db.engine)
+    existing = [col['name'] for col in inspector.get_columns('marketplace')]
     
-    print("\n" + "=" * 40)
-    username = input("Enter username to reset: ")
-    new_password = input("Enter new password: ")
-    
-    user = db.session.execute(
-        text("SELECT id FROM users WHERE username = :username"),
-        {"username": username}
-    ).fetchone()
-    
-    if user:
-        hashed = generate_password_hash(new_password)
-        db.session.execute(
-            text("UPDATE users SET password = :password WHERE username = :username"),
-            {"password": hashed, "username": username}
-        )
+    if 'looking_for_notes' not in existing:
+        db.session.execute(text("ALTER TABLE marketplace ADD COLUMN looking_for_notes TEXT"))
         db.session.commit()
-        print(f"\n✅ Password for '{username}' has been reset to: {new_password}")
+        print("✓ Added looking_for_notes")
     else:
-        print(f"\n❌ User '{username}' not found!")
+        print("- looking_for_notes already exists")
+    
+    print("\n✅ Migration complete. Restart Flask.")
