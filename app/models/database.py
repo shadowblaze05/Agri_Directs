@@ -384,6 +384,18 @@ def init_db():
         description TEXT,
         location TEXT,
         delivery_confirmed INTEGER DEFAULT 0,
+        buyer_confirmed INTEGER DEFAULT 0,
+        buyer_confirm_date TEXT,
+        buyer_rating INTEGER DEFAULT NULL,
+        buyer_rating_date TEXT,
+        main_image TEXT,
+        listing_type TEXT DEFAULT 'standard',
+        available_date TEXT,
+        preorder_status TEXT,
+        preorder_quantity INTEGER,
+        cancel_requested_by TEXT,
+        cancel_reason TEXT,
+        cancel_requested_date TEXT,
         FOREIGN KEY (user_id) REFERENCES users(id),
         FOREIGN KEY (crop_id) REFERENCES crops(id)
     )
@@ -410,6 +422,19 @@ def init_db():
         cur.execute("ALTER TABLE marketplace ADD COLUMN buyer_rating INTEGER DEFAULT NULL")
     if 'buyer_rating_date' not in marketplace_columns:
         cur.execute("ALTER TABLE marketplace ADD COLUMN buyer_rating_date TEXT")
+    marketplace_compatibility_columns = {
+        'main_image': 'TEXT',
+        'listing_type': "TEXT DEFAULT 'standard'",
+        'available_date': 'TEXT',
+        'preorder_status': 'TEXT',
+        'preorder_quantity': 'INTEGER',
+        'cancel_requested_by': 'TEXT',
+        'cancel_reason': 'TEXT',
+        'cancel_requested_date': 'TEXT',
+    }
+    for column, definition in marketplace_compatibility_columns.items():
+        if column not in marketplace_columns:
+            cur.execute(f"ALTER TABLE marketplace ADD COLUMN {column} {definition}")
 
     cur.execute("PRAGMA table_info(users)")
     users_columns = [row[1] for row in cur.fetchall()]
