@@ -135,9 +135,10 @@ def add_marketplace_listing():
             flash("Amount and price must be positive")
             return redirect(request.url)
 
-        if listing_type not in ("standard", "preorder"):
+        if listing_type not in ("standard", "preorder", "looking_for"):
             listing_type = "standard"
 
+        # Pre-order date validation
         if listing_type == "preorder":
             if not available_date:
                 flash("Please set the date/time when the crop will be ready.")
@@ -167,7 +168,8 @@ def add_marketplace_listing():
 
         crop_name = crop["crops_name"]
 
-        if listing_type != "preorder":
+        # Inventory check: only for standard listings
+        if listing_type == "standard":
             cur.execute("""
                 SELECT SUM(quantity) as total
                 FROM inventory
@@ -211,8 +213,9 @@ def add_marketplace_listing():
             flash("Failed to create listing")
             return redirect(request.url)
 
+        # Images: only for standard/preorder (looking_for doesn't need images)
         saved_images = []
-        if 'images' in request.files:
+        if listing_type != "looking_for" and 'images' in request.files:
             files = request.files.getlist('images')
             upload_folder = os.path.join('app', 'static', 'uploads', 'marketplace')
             os.makedirs(upload_folder, exist_ok=True)
@@ -248,13 +251,15 @@ def add_marketplace_listing():
         conn.commit()
         conn.close()
 
-        if not saved_images:
+        # Image requirement only for standard/preorder
+        if listing_type != "looking_for" and not saved_images:
             flash("Please upload at least one image")
             return redirect("/marketplace/add")
 
-        flash(f"Listing for {crop_name} added successfully with {len(saved_images)} images!")
+        flash(f"{listing_type.replace('_', ' ').title()} listing for {crop_name} created successfully!")
         return redirect("/marketplace")
 
+    # GET request
     conn = get_db()
     cur = conn.cursor()
 
@@ -297,18 +302,13 @@ def add_marketplace_listing():
     all_crops = cur.fetchall()
 
     cart_count = get_cart_count(session["user"])
-
     conn.close()
-
-    if not user_crops_with_ids:
-        flash("You don't have any crops in your inventory. Please upload harvest data first.", "warning")
 
     return render_template("add_listing.html",
                          crops=user_crops_with_ids,
                          all_crops=all_crops,
                          user_inventory=user_inventory,
                          cart_count=cart_count)
-
 
 def buy_marketplace_item(listing_id):
     if "user" not in session:
@@ -613,17 +613,11 @@ def rate_marketplace_seller(listing_id):
 
 
 def my_marketplace_listings():
-    """View user's own marketplace listings.
-    
-    Pre-orders are separated into their own group so that:
-    - Active listings = available + standard
-    - Pre-order requests = any listing with listing_type='preorder' and a pending/confirmed preorder_status
-    - Sold = actually sold/delivered/traded
-    """
     if "user" not in session:
         return redirect("/login")
 
     promote_due_preorders()
+    cart_count = get_cart_count(session["user"])
 
     conn = get_db()
     cur = conn.cursor()
@@ -646,16 +640,18 @@ def my_marketplace_listings():
 
     active_listings = []
     preorder_requests = []
+    looking_for_listings = []
     sold_listings = []
     traded_listings = []
 
     for listing in all_listings:
         status = listing['status']
-        preorder_status = listing['preorder_status'] if 'preorder_status' in listing.keys() else None
         listing_type = listing['listing_type'] if 'listing_type' in listing.keys() else 'standard'
+        preorder_status = listing['preorder_status'] if 'preorder_status' in listing.keys() else None
 
-        # Pre-order rows with a pending/confirmed/cancel_requested flow
-        if listing_type == 'preorder' and preorder_status in ('pending', 'confirmed', 'cancel_requested'):
+        if listing_type == 'looking_for':
+            looking_for_listings.append(listing)
+        elif listing_type == 'preorder' and preorder_status in ('pending', 'confirmed', 'cancel_requested'):
             preorder_requests.append(listing)
         elif status == 'available':
             active_listings.append(listing)
@@ -664,16 +660,13 @@ def my_marketplace_listings():
         elif status == 'traded':
             traded_listings.append(listing)
 
-    cart_count = get_cart_count(session["user"])
-
-    conn.close()
-
     return render_template("my_listings.html",
-                         active_listings=active_listings,
-                         preorder_requests=preorder_requests,
-                         sold_listings=sold_listings,
-                         traded_listings=traded_listings,
-                         cart_count=cart_count)
+                        active_listings=active_listings,
+                        preorder_requests=preorder_requests,
+                        looking_for_listings=looking_for_listings,
+                        sold_listings=sold_listings,
+                        traded_listings=traded_listings,
+                        cart_count=cart_count)
 
 
 def delete_marketplace_listing(listing_id):
@@ -1828,6 +1821,31 @@ def promote_due_preorders():
     conn.commit()
     conn.close()
 
+def looking_for_listings():
+    """View all looking-for listings posted by buyers."""
+    if "user" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT m.*, u.username as seller_name, u.location as seller_location
+        FROM marketplace m
+        JOIN users u ON m.user_id = u.id
+        WHERE m.listing_type = 'looking_for'
+          AND m.status = 'available'
+        ORDER BY m.listing_date DESC
+    """)
+    listings = cur.fetchall()
+
+    cart_count = get_cart_count(session["user"])
+    conn.close()
+
+    return render_template("looking_for.html",
+                         listings=listings,
+                         cart_count=cart_count)
+
 def register(application):
     application.add_url_rule('/marketplace', endpoint='marketplace', view_func=marketplace)
     application.add_url_rule('/marketplace/add', endpoint='add_marketplace_listing', view_func=add_marketplace_listing, methods=['GET', 'POST'])
@@ -1888,6 +1906,10 @@ def register(application):
     application.add_url_rule('/marketplace/my-preorder-requests',
                             endpoint='my_preorder_requests',
                             view_func=my_preorder_requests)
+
+    application.add_url_rule('/marketplace/looking-for',
+                            endpoint='looking_for_listings',
+                            view_func=looking_for_listings)
 
     for _name in __all__:
         try:

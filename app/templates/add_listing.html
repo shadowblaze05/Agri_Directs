@@ -279,16 +279,9 @@
                             {% if listing %}
                                 Update your listing details below.
                             {% else %}
-                                List your crops for sale. Buyers can purchase directly from the marketplace.
+                                Post a listing to sell, pre-order, or look for crops.
                             {% endif %}
                         </p>
-
-                        {% if not crops and not listing %}
-                        <div class="alert alert-warning inventory-warning mb-4">
-                            <h5><i class="fas fa-exclamation-triangle"></i> No Crops in Inventory</h5>
-                            <p class="mb-0">You don't have any crops in your inventory. Please <a href="/upload" class="alert-link">upload harvest data</a> first.</p>
-                        </div>
-                        {% endif %}
 
                         <form method="POST" enctype="multipart/form-data">
                             <!-- Crop Selection -->
@@ -310,7 +303,7 @@
                                     </select>
 
                                     <select class="form-select" id="crop_id_preorder" name="crop_id" disabled style="display:none;">
-                                        <option value="">Choose any crop to pre-order...</option>
+                                        <option value="">Choose any crop...</option>
                                         {% for crop in all_crops %}
                                         <option value="{{ crop['id'] }}">{{ crop['crops_name'] }}</option>
                                         {% endfor %}
@@ -320,7 +313,7 @@
                                     {% endif %}
                                 </div>
                                 <div class="col-md-6 mb-3">
-                                    <label for="amount" class="form-label">Amount *</label>
+                                    <label for="amount" id="amountLabel" class="form-label">Amount *</label>
                                     <input type="number" class="form-control" id="amount" name="amount"
                                            value="{{ listing.amount if listing else '' }}"
                                            min="1" required>
@@ -330,7 +323,7 @@
 
                             <div class="row">
                                 <div class="col-md-6 mb-3">
-                                    <label for="price" class="form-label">Price per Unit (₱) *</label>
+                                    <label for="price" id="priceLabel" class="form-label">Price per Unit (₱) *</label>
                                     <input type="number" class="form-control" id="price" name="price"
                                            value="{{ listing.price if listing else '' }}"
                                            min="0.01" step="0.01" required>
@@ -356,14 +349,21 @@
                                     <input class="form-check-input" type="radio" name="listing_type" id="type_standard" value="standard"
                                         {% if not listing or listing.listing_type == 'standard' %}checked{% endif %}>
                                     <label class="form-check-label" for="type_standard">
-                                        <strong>Standard</strong> — Available for purchase immediately
+                                        <strong>Standard</strong> — Sell a crop you have in inventory
                                     </label>
                                 </div>
                                 <div class="form-check">
                                     <input class="form-check-input" type="radio" name="listing_type" id="type_preorder" value="preorder"
                                         {% if listing and listing.listing_type == 'preorder' %}checked{% endif %}>
                                     <label class="form-check-label" for="type_preorder">
-                                        <strong>Pre-order</strong> — Crop isn't ready yet; buyers can reserve it now
+                                        <strong>Pre-order</strong> — Sell a crop that isn't ready yet
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="listing_type" id="type_looking_for" value="looking_for"
+                                        {% if listing and listing.listing_type == 'looking_for' %}checked{% endif %}>
+                                    <label class="form-check-label" for="type_looking_for">
+                                        <strong>Looking For</strong> — Post that you're looking to buy a crop
                                     </label>
                                 </div>
                             </div>
@@ -403,8 +403,8 @@
                             </div>
                             {% endif %}
 
-                            <!-- Upload New Images -->
-                            <div class="mb-3">
+                            <!-- Upload New Images (hidden for looking_for) -->
+                            <div class="mb-3" id="imageUploadGroup">
                                 <label class="form-label">
                                     {% if listing %}Add New Images{% else %}Product Images (Max 5) *{% endif %}
                                 </label>
@@ -422,6 +422,12 @@
                                 <small class="text-muted d-block mt-1">
                                     Click "Set as Thumbnail" on any image to choose which one appears in the marketplace grid.
                                 </small>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="description" class="form-label">Description (Optional)</label>
+                                <textarea class="form-control" id="description" name="description" rows="3"
+                                          placeholder="Describe your crop quality, variety, or anything else.">{{ listing.description if listing else '' }}</textarea>
                             </div>
 
                             {% if not listing %}
@@ -549,32 +555,52 @@
         // ============ LISTING TYPE TOGGLE ============
         function updateListingTypeUI() {
             const isPreorder = document.getElementById('type_preorder')?.checked || false;
+            const isLookingFor = document.getElementById('type_looking_for')?.checked || false;
 
-            // Date field
+            // Date field: only preorder
             const dateGroup = document.getElementById('availableDateGroup');
             const dateInput = document.getElementById('available_date');
             if (dateGroup) dateGroup.style.display = isPreorder ? 'block' : 'none';
             if (dateInput) dateInput.required = isPreorder;
 
-            // Crop dropdown swap
+            // Image upload: hidden for looking_for
+            const imgGroup = document.getElementById('imageUploadGroup');
+            if (imgGroup) imgGroup.style.display = isLookingFor ? 'none' : 'block';
+
+            // Crop dropdown: standard uses inventory, preorder/looking_for use all crops
             const stdSel = document.getElementById('crop_id_standard');
             const preSel = document.getElementById('crop_id_preorder');
             const hint = document.getElementById('cropHint');
+            const useAllCrops = isPreorder || isLookingFor;
+
             if (stdSel && preSel) {
-                stdSel.disabled = isPreorder;
-                stdSel.style.display = isPreorder ? 'none' : 'block';
-                preSel.disabled = !isPreorder;
-                preSel.style.display = isPreorder ? 'block' : 'none';
+                stdSel.disabled = useAllCrops;
+                stdSel.style.display = useAllCrops ? 'none' : 'block';
+                preSel.disabled = !useAllCrops;
+                preSel.style.display = useAllCrops ? 'block' : 'none';
             }
             if (hint) {
                 hint.textContent = isPreorder
                     ? 'You can pre-order any crop — no inventory required.'
-                    : 'Only crops you have in your inventory are shown';
+                    : isLookingFor
+                        ? 'Choose any crop you want to buy.'
+                        : 'Only crops you have in your inventory are shown';
             }
 
-            // Amount cap removal for pre-orders
+            // Labels change based on mode
+            const amountLabel = document.getElementById('amountLabel');
+            const priceLabel = document.getElementById('priceLabel');
+
+            if (amountLabel) {
+                amountLabel.textContent = isLookingFor ? 'Quantity Wanted *' : 'Amount *';
+            }
+            if (priceLabel) {
+                priceLabel.textContent = isLookingFor ? 'Max Offer per Unit (₱) *' : 'Price per Unit (₱) *';
+            }
+
+            // Amount cap removal for pre-orders and looking_for
             const amountInput = document.getElementById('amount');
-            if (amountInput && isPreorder) {
+            if (amountInput && useAllCrops) {
                 amountInput.disabled = false;
                 amountInput.removeAttribute('max');
             }
@@ -583,6 +609,7 @@
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('type_standard')?.addEventListener('change', updateListingTypeUI);
             document.getElementById('type_preorder')?.addEventListener('change', updateListingTypeUI);
+            document.getElementById('type_looking_for')?.addEventListener('change', updateListingTypeUI);
             updateListingTypeUI();
 
             // Upload drag/drop

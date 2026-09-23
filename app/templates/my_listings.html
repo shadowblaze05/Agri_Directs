@@ -108,6 +108,10 @@
             color: #856404;
         }
         .status-preorder {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .status-looking-for {
             background: #cce5ff;
             color: #004085;
         }
@@ -184,11 +188,6 @@
         }
         .card-footer {
             background: transparent;
-        }
-        .preorder-info {
-            font-size: 0.8rem;
-            color: #6c757d;
-            margin-top: 5px;
         }
     </style>
 </head>
@@ -341,6 +340,50 @@
             </div>
             {% endif %}
 
+            <!-- Looking For -->
+            <h4 class="section-title mt-5">Looking For</h4>
+            {% if looking_for_listings %}
+            <div class="listing-grid">
+                {% for listing in looking_for_listings %}
+                <div class="listing-card card" onclick="window.location.href='/marketplace/product/{{ listing['id'] }}'">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h5 class="card-title">{{ listing['crop_name'] }}</h5>
+                            <span class="status-badge status-looking-for">Looking For</span>
+                        </div>
+                        <div class="row mt-3">
+                            <div class="col-6">
+                                <small class="text-muted">Quantity Wanted</small>
+                                <h6>{{ listing['amount'] }} {{ listing['unit'] or 'kg' }}</h6>
+                            </div>
+                            <div class="col-6 text-end">
+                                <small class="text-muted">Max Price</small>
+                                <div class="price-tag">₱{{ "%.2f"|format(listing['price']) }}</div>
+                            </div>
+                        </div>
+                        {% if listing['description'] %}
+                        <p class="card-text small text-muted mt-2">{{ listing['description'][:100] }}{% if listing['description']|length > 100 %}...{% endif %}</p>
+                        {% endif %}
+                    </div>
+                    <div class="card-footer d-flex justify-content-between align-items-center">
+                        <small class="text-muted">
+                            <i class="far fa-calendar-alt"></i> {{ listing['listing_date'][:16] }}
+                        </small>
+                        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); deleteListing({{ listing['id'] }})">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <i class="fas fa-search"></i>
+                <h5 class="mt-3">No Looking For Listings</h5>
+                <p class="text-muted">You haven't posted any looking-for requests yet.</p>
+            </div>
+            {% endif %}
+
             <!-- Pre-order Requests -->
             <h4 class="section-title mt-5">Pre-order Requests</h4>
             {% if preorder_requests %}
@@ -385,11 +428,6 @@
                         {% if listing['buyer_username'] %}
                         <small class="text-muted d-block mt-2">
                             <i class="fas fa-user"></i> Buyer: {{ listing['buyer_username'] }}
-                        </small>
-                        {% endif %}
-                        {% if listing['available_date'] %}
-                        <small class="text-muted d-block mt-1">
-                            <i class="far fa-clock"></i> Ready on {{ listing['available_date'][:16] }}
                         </small>
                         {% endif %}
                     </div>

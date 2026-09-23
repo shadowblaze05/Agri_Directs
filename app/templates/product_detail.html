@@ -124,6 +124,19 @@
         .btn-primary:hover {
             background: #0b5ed7;
         }
+
+        .btn-preorder {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffe08a;
+            font-weight: 600;
+        }
+        .btn-preorder:hover {
+            background: #ffe08a;
+            color: #664d03;
+            border-color: #ffd24d;
+        }
+
         .seller-info {
             background: #f8f9fa;
             padding: 15px;
@@ -330,7 +343,13 @@
                     <div class="product-details">
                         <div class="d-flex justify-content-between align-items-start mb-3">
                             <h1>{{ listing.crop_name }}</h1>
+                            {% if listing.listing_type == 'preorder' %}
+                            <span class="status-badge" style="background:#fff3cd;color:#856404;">Pre-order</span>
+                            {% elif listing.listing_type == 'looking_for' %}
+                            <span class="status-badge" style="background:#cce5ff;color:#004085;">Looking For</span>
+                            {% else %}
                             <span class="status-badge status-available">Available</span>
+                            {% endif %}
                         </div>
 
                         <div class="price-large">₱{{ "%.2f"|format(listing.price) }}</div>
@@ -338,7 +357,9 @@
 
                         <div class="row mb-3">
                             <div class="col-6">
-                                <strong>Amount Available:</strong>
+                                <strong>
+                                    {% if listing.listing_type == 'looking_for' %}Quantity Wanted{% else %}Amount Available{% endif %}:
+                                </strong>
                                 <span>{{ listing.amount }} {{ listing.unit or 'kg' }}</span>
                             </div>
                             <div class="col-6">
@@ -354,44 +375,58 @@
                         </div>
                         {% endif %}
 
-                        <!-- Quantity and Add to Cart -->
+                        <!-- Quantity and Actions -->
                         <div class="row g-2 mb-3">
-                            <div class="col-4">
+                            <div class="col-4" {% if listing.listing_type == 'looking_for' %}style="display:none;"{% endif %}>
                                 <label for="quantity" class="form-label">Quantity</label>
                                 <input type="number" class="form-control" id="quantity" value="1" min="1" max="{{ listing.amount }}">
                             </div>
-                            <div class="col-8 d-flex align-items-end">
-                                {% if listing.listing_type == 'preorder' %}
-                                    <div class="alert alert-warning mb-3">
-                                        <i class="far fa-clock"></i>
-                                        <strong>Pre-order item.</strong> This crop will be ready on
-                                        <strong>{{ listing.available_date[:16] }}</strong>.
-                                        Reserve now and coordinate with the seller via messages.
-                                    </div>
-                                    <div class="col-8 d-flex align-items-end">
-                                        <button class="btn btn-warning w-100 me-2" onclick="preorderItem({{ listing.id }})">
-                                            <i class="fas fa-clock"></i> Pre-order
-                                        </button>
-                                        <a href="/messages?recipient={{ listing.seller_name }}" class="btn btn-outline-success w-100">
-                                            <i class="fas fa-comments"></i> Contact Seller
-                                        </a>
-                                    </div>
+                            <div class="{% if listing.listing_type == 'looking_for' %}col-12{% else %}col-8{% endif %} d-flex align-items-end">
+                                {% if listing.listing_type == 'looking_for' %}
+                                    <a href="/messages?recipient={{ listing.seller_name }}" class="btn btn-success w-100">
+                                        <i class="fas fa-comments"></i> Contact Buyer
+                                    </a>
+                                {% elif listing.listing_type == 'preorder' %}
+                                    <button class="btn btn-preorder w-100 me-2" onclick="preorderItem({{ listing.id }})">
+                                        <i class="fas fa-clock"></i> Pre-order
+                                    </button>
+                                    <a href="/messages?recipient={{ listing.seller_name }}" class="btn btn-outline-success w-100">
+                                        <i class="fas fa-comments"></i> Contact Seller
+                                    </a>
                                 {% else %}
-                                    <div class="col-8 d-flex align-items-end">
-                                        <button class="btn btn-success w-100 me-2" onclick="addToCart({{ listing.id }})">
-                                            <i class="fas fa-cart-plus"></i> Add to Cart
-                                        </button>
-                                        <button class="btn btn-primary w-100" onclick="buyNow({{ listing.id }})">
-                                            <i class="fas fa-bolt"></i> Buy Now
-                                        </button>
-                                    </div>
+                                    <button class="btn btn-success w-100 me-2" onclick="addToCart({{ listing.id }})">
+                                        <i class="fas fa-cart-plus"></i> Add to Cart
+                                    </button>
+                                    <button class="btn btn-success w-100" onclick="buyNow({{ listing.id }})">
+                                        <i class="fas fa-bolt"></i> Buy Now
+                                    </button>
                                 {% endif %}
                             </div>
                         </div>
 
-                        <!-- Seller Info -->
+                        {% if listing.listing_type == 'looking_for' %}
+                        <div class="alert alert-info small">
+                            <i class="fas fa-search"></i>
+                            <strong>Looking For:</strong> this user wants to buy
+                            <strong>{{ listing.amount }} {{ listing.unit or 'kg' }}</strong> of
+                            <strong>{{ listing.crop_name }}</strong> at up to
+                            <strong>₱{{ "%.2f"|format(listing.price) }}/{{ listing.unit or 'kg' }}</strong>.
+                            Message them if you have this crop.
+                        </div>
+                        {% elif listing.listing_type == 'preorder' %}
+                        <div class="alert alert-warning small">
+                            <i class="far fa-clock"></i>
+                            <strong>Pre-order:</strong> this crop will be ready on <strong>{{ listing.available_date[:16] }}</strong>.
+                            The seller will confirm your reservation first.
+                        </div>
+                        {% endif %}
+
+                        <!-- Seller / Buyer Info -->
                         <div class="seller-info">
-                            <h6><i class="fas fa-user"></i> Seller</h6>
+                            <h6>
+                                <i class="fas fa-user"></i>
+                                {% if listing.listing_type == 'looking_for' %}Buyer{% else %}Seller{% endif %}
+                            </h6>
                             <p class="mb-1"><strong>{{ listing.seller_name }}</strong></p>
                             {% if listing.location %}
                             <p class="text-muted small mb-0">

@@ -343,6 +343,8 @@
                                     <h5 class="card-title mb-0">{{ listing['crop_name'] }}</h5>
                                     {% if listing['listing_type'] == 'preorder' %}
                                     <span class="status-badge" style="background:#fff3cd;color:#856404;">Pre-order</span>
+                                    {% elif listing['listing_type'] == 'looking_for' %}
+                                    <span class="status-badge" style="background:#cce5ff;color:#004085;">Looking For</span>
                                     {% else %}
                                     <span class="status-badge status-available">Available</span>
                                     {% endif %}
@@ -355,20 +357,30 @@
                                     </span>
                                     {% endif %}
                                 </p>
-                                
+
                                 {% if listing['listing_type'] == 'preorder' and listing['available_date'] %}
                                 <p class="text-muted small mb-2">
                                     <i class="far fa-clock"></i> Ready on {{ listing['available_date'][:16] }}
                                 </p>
                                 {% endif %}
 
+                                {% if listing['listing_type'] == 'looking_for' %}
+                                <p class="text-muted small mb-2">
+                                    <i class="fas fa-search"></i> Wants {{ listing['amount'] }} {{ listing['unit'] or 'kg' }} — up to ₱{{ "%.2f"|format(listing['price']) }}
+                                </p>
+                                {% endif %}
+
                                 <div class="row mb-3">
                                     <div class="col-6">
-                                        <small class="text-muted">Amount</small>
+                                        <small class="text-muted">
+                                            {% if listing['listing_type'] == 'looking_for' %}Quantity{% else %}Amount{% endif %}
+                                        </small>
                                         <h6>{{ listing['amount'] }} {{ listing['unit'] or 'kg' }}</h6>
                                     </div>
                                     <div class="col-6 text-end">
-                                        <small class="text-muted">Price</small>
+                                        <small class="text-muted">
+                                            {% if listing['listing_type'] == 'looking_for' %}Max Price{% else %}Price{% endif %}
+                                        </small>
                                         <div class="price-tag">₱{{ "%.2f"|format(listing['price']) }}</div>
                                         <small>per {{ listing['unit'] or 'kg' }}</small>
                                     </div>
