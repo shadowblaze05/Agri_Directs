@@ -1,0 +1,1084 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agri-Direct | Connecting Farmers With Better Opportunities</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --agri-green-900: #1a3408;
+        --agri-green-800: #2d5016;
+        --agri-green-700: #3f6f1f;
+        --agri-green-600: #5a8c3d;
+        --agri-green-100: #edf4ea;
+        --agri-gold: #b98d42;
+        --agri-cream: #f7f5f0;
+        --agri-slate: #2d3748;
+        --agri-text: #2d2d2d;
+        --agri-border: rgba(26, 52, 8, 0.12);
+        --agri-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: #f3f3f0;
+        color: var(--agri-text);
+      }
+
+      a {
+        text-decoration: none;
+      }
+
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+        background: linear-gradient(135deg, #1a3408 0%, #0f1f03 100%);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+
+      .custom-nav {
+        min-height: 76px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.75rem;
+        color: #ffffff;
+        font-size: 1.4rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+
+      .brand-mark {
+        width: 42px;
+        height: 42px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 12px;
+        background: linear-gradient(135deg, rgba(213, 181, 109, 0.25), rgba(116, 169, 78, 0.2));
+        color: var(--agri-gold);
+        font-size: 1.2rem;
+      }
+
+      .navbar-nav {
+        align-items: center;
+        gap: 0.25rem;
+      }
+
+      .nav-link {
+        color: rgba(255, 255, 255, 0.82);
+        font-weight: 600;
+        padding: 0.7rem 0.9rem !important;
+        border-radius: 6px;
+        transition: all 0.2s ease;
+      }
+
+      .nav-link:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .nav-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-left: 0.75rem;
+      }
+
+      .btn-agri {
+        border-radius: 6px;
+        padding: 0.8rem 1.3rem;
+        font-weight: 700;
+        transition: all 0.2s ease;
+      }
+
+      .btn-ghost {
+        border: 1px solid rgba(255, 255, 255, 0.25);
+        color: #fff;
+        background: transparent;
+      }
+
+      .btn-ghost:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+      }
+
+      .btn-primary-agri {
+        background: #2d5016;
+        border: none;
+        color: #fff;
+        box-shadow: 0 2px 8px rgba(30, 72, 16, 0.2);
+      }
+
+      .btn-primary-agri:hover {
+        background: #1a3408;
+        color: #fff;
+      }
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+        background:
+          linear-gradient(135deg, rgba(26, 52, 8, 0.88) 0%, rgba(30, 59, 17, 0.8) 100%),
+          url("https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=1400&q=80") center/cover no-repeat;
+      }
+
+      .hero-inner {
+        padding: 6.5rem 0 5.5rem;
+        display: grid;
+        grid-template-columns: 1.25fr 0.95fr;
+        gap: 2.5rem;
+        align-items: center;
+      }
+
+      .hero-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        color: #edf8eb;
+        padding: 0.6rem 0.9rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .hero h1 {
+        margin: 1.3rem 0 1rem;
+        font-size: clamp(2.5rem, 4vw, 4rem);
+        line-height: 1.15;
+        font-weight: 800;
+        color: #ffffff;
+      }
+
+      .hero p {
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 1.05rem;
+        line-height: 1.8;
+        max-width: 660px;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-top: 2rem;
+      }
+
+      .hero-points {
+        list-style: none;
+        margin: 2rem 0 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+        gap: 0.9rem 1.6rem;
+      }
+
+      .hero-points li {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: 600;
+      }
+
+      .hero-points i {
+        color: var(--agri-gold);
+      }
+
+      .hero-panel {
+        position: relative;
+        min-height: 500px;
+      }
+
+      .hero-card {
+        position: absolute;
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        border-radius: 12px;
+        box-shadow: var(--agri-shadow);
+        overflow: hidden;
+      }
+
+      .hero-main-card {
+        right: 0;
+        bottom: 0;
+        width: min(100%, 440px);
+        padding: 1.4rem 1.4rem 1.1rem;
+      }
+
+      .hero-card-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid rgba(21, 58, 15, 0.08);
+      }
+
+      .micro-label {
+        color: var(--agri-green-700);
+        font-size: 0.75rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 800;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.45rem 0.7rem;
+        border-radius: 999px;
+        background: #ecf9ee;
+        color: var(--agri-green-800);
+        font-size: 0.7rem;
+        font-weight: 700;
+      }
+
+      .market-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 1.1rem;
+      }
+
+      .metric-box {
+        background: linear-gradient(135deg, #f5f8f2, #eff8ee);
+        border: 1px solid rgba(21, 58, 15, 0.08);
+        border-radius: 18px;
+        padding: 1rem;
+      }
+
+      .metric-box strong {
+        display: block;
+        font-size: 1.5rem;
+        color: var(--agri-green-900);
+      }
+
+      .metric-box span {
+        color: var(--agri-text);
+        font-size: 0.8rem;
+      }
+
+      .floating-list-card {
+        left: 0;
+        top: 30px;
+        width: min(100%, 280px);
+        padding: 1rem 1rem 0.8rem;
+      }
+
+      .pill-list {
+        margin: 0.8rem 0 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 0.7rem;
+      }
+
+      .pill-list li {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.7rem 0.8rem;
+        border-radius: 14px;
+        background: #f6f8f1;
+        border: 1px solid rgba(21, 58, 15, 0.08);
+        font-size: 0.82rem;
+        color: var(--agri-slate);
+      }
+
+      .section {
+        padding: 5.5rem 0;
+      }
+
+      .section-header {
+        margin-bottom: 2.1rem;
+      }
+
+      .eyebrow {
+        display: inline-block;
+        color: var(--agri-green-700);
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .section h2 {
+        margin: 0.65rem 0 0;
+        font-size: clamp(2rem, 3vw, 3rem);
+        color: var(--agri-green-900);
+        font-weight: 800;
+      }
+
+      .section-copy {
+        max-width: 680px;
+        color: #4b5563;
+        line-height: 1.8;
+        font-size: 1.05rem;
+      }
+
+      .about-grid {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 2rem;
+        align-items: center;
+      }
+
+      .about-box {
+        background: #fff;
+        border: 1px solid var(--agri-border);
+        border-radius: 28px;
+        box-shadow: 0 18px 35px rgba(28, 48, 32, 0.08);
+        padding: 2rem;
+      }
+
+      .mini-list {
+        list-style: none;
+        padding: 0;
+        margin: 1.5rem 0 0;
+        display: grid;
+        gap: 0.9rem;
+      }
+
+      .mini-list li {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.7rem;
+        color: var(--agri-slate);
+        font-weight: 600;
+      }
+
+      .mini-list li i {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: #edf6e9;
+        color: var(--agri-green-700);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 0.15rem;
+      }
+
+      .visual-card {
+        min-height: 440px;
+        background:
+          linear-gradient(160deg, rgba(25, 72, 25, 0.7), rgba(140, 182, 104, 0.42)),
+          url("https://images.unsplash.com/photo-1464226184884-fa52ac9f98b3?auto=format&fit=crop&w=1200&q=80") center/cover no-repeat;
+        border-radius: 28px;
+        box-shadow: var(--agri-shadow);
+        position: relative;
+      }
+
+      .visual-badge {
+        position: absolute;
+        right: 1.25rem;
+        bottom: 1.25rem;
+        background: rgba(255, 255, 255, 0.96);
+        border-radius: 18px;
+        padding: 1rem 1.1rem;
+        box-shadow: 0 18px 30px rgba(15, 28, 20, 0.15);
+      }
+
+      .visual-badge strong {
+        font-size: 1.7rem;
+        color: var(--agri-green-900);
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1.5rem;
+      }
+
+      .feature-card {
+        background: white;
+        border: 1px solid var(--agri-border);
+        border-radius: 10px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        height: 100%;
+      }
+
+      .feature-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 5px 12px rgba(0, 0, 0, 0.08);
+      }
+
+      .feature-icon {
+        width: 58px;
+        height: 58px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #eef8e9, #e6f5df);
+        color: var(--agri-green-700);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+      }
+
+      .feature-card h3 {
+        margin: 0 0 0.75rem;
+        color: var(--agri-green-900);
+        font-weight: 800;
+        font-size: 1.2rem;
+      }
+
+      .feature-card p {
+        margin: 0;
+        color: var(--agri-text);
+        line-height: 1.7;
+      }
+
+      .feed-wrap {
+        display: grid;
+        grid-template-columns: 1.3fr 0.7fr;
+        gap: 1.5rem;
+        align-items: start;
+      }
+
+      .feed-panel {
+        background: rgba(255, 255, 255, 0.75);
+        border: 1px solid var(--agri-border);
+        border-radius: 12px;
+        padding: 1.25rem;
+      }
+
+      .feed-card {
+        background: #fff;
+        border: 1px solid rgba(21, 58, 15, 0.08);
+        border-radius: 10px;
+        padding: 1.3rem;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+      }
+
+      .feed-card + .feed-card {
+        margin-top: 1rem;
+      }
+
+      .feed-top {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.8rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .feed-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #ebf7e9;
+        color: var(--agri-green-700);
+        font-size: 1.1rem;
+      }
+
+      .feed-label {
+        display: block;
+        color: var(--agri-green-700);
+        font-size: 0.74rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .feed-card h3 {
+        margin: 0.3rem 0 0;
+        color: var(--agri-green-900);
+        font-size: 1.25rem;
+        font-weight: 800;
+      }
+
+      .feed-card p {
+        margin: 0.9rem 0 1rem;
+        color: var(--agri-text);
+        line-height: 1.75;
+      }
+
+      .feed-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.85rem 1.2rem;
+        color: #64748b;
+        font-size: 0.82rem;
+        font-weight: 600;
+      }
+
+      .read-more {
+        color: var(--agri-green-700);
+        font-weight: 800;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        margin-top: 1rem;
+      }
+
+      .feed-summary {
+        background: linear-gradient(180deg, #173c12, #0f2e0e);
+        border-radius: 24px;
+        padding: 1.4rem;
+        color: #fff;
+        box-shadow: 0 18px 36px rgba(14, 34, 15, 0.18);
+      }
+
+      .feed-summary h3 {
+        font-size: 1.2rem;
+        font-weight: 800;
+        margin-bottom: 1rem;
+      }
+
+      .summary-box {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 18px;
+        padding: 1rem;
+        margin-bottom: 0.8rem;
+      }
+
+      .summary-box strong {
+        display: block;
+        font-size: 1.8rem;
+        color: #fff;
+      }
+
+      .summary-box span {
+        color: rgba(255, 255, 255, 0.72);
+      }
+
+      .steps {
+        background: linear-gradient(180deg, rgba(235, 245, 227, 0.7), rgba(247, 250, 243, 0.8));
+      }
+
+      .step-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 1.2rem;
+      }
+
+      .step-card {
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid var(--agri-border);
+        border-radius: 12px;
+        padding: 1.5rem;
+        position: relative;
+        box-shadow: 0 3px 12px rgba(21, 58, 15, 0.04);
+      }
+
+      .step-number {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 52px;
+        height: 52px;
+        border-radius: 16px;
+        font-weight: 900;
+        color: var(--agri-green-900);
+        background: linear-gradient(135deg, #eaf7e7, #e2f3db);
+        margin-bottom: 1rem;
+      }
+
+      .step-card h3 {
+        font-size: 1.2rem;
+        color: var(--agri-green-900);
+        margin: 0 0 0.7rem;
+        font-weight: 800;
+      }
+
+      .step-card p {
+        margin: 0;
+        color: var(--agri-text);
+        line-height: 1.7;
+      }
+
+      .cta {
+        padding: 0 0 5rem;
+      }
+
+      .cta-box {
+        background: linear-gradient(135deg, #2d5016 0%, #1a3408 100%);
+        border-radius: 10px;
+        padding: 2.2rem 2rem;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1.5rem;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.09);
+      }
+
+      .cta-box h2 {
+        margin: 0 0 0.5rem;
+        font-size: clamp(2rem, 3vw, 2.7rem);
+        font-weight: 900;
+      }
+
+      .cta-box p {
+        margin: 0;
+        color: rgba(255, 255, 255, 0.76);
+        font-size: 1.05rem;
+      }
+
+      .footer {
+        background: #0f1d0e;
+        color: rgba(255, 255, 255, 0.8);
+        padding: 3rem 0 1.5rem;
+      }
+
+      .footer-grid {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr 0.8fr 0.8fr;
+        gap: 1.5rem;
+      }
+
+      .footer-brand {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 1.3rem;
+        font-weight: 800;
+        color: #fff;
+      }
+
+      .footer p {
+        margin: 1rem 0 0;
+        color: rgba(255, 255, 255, 0.72);
+        line-height: 1.8;
+      }
+
+      .footer h4 {
+        color: #fff;
+        font-size: 0.9rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 1rem;
+      }
+
+      .footer-links {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.7rem;
+      }
+
+      .footer-links a {
+        color: rgba(255, 255, 255, 0.78);
+      }
+
+      .footer-base {
+        border-top: 1px solid rgba(255, 255, 255, 0.06);
+        margin-top: 2rem;
+        padding-top: 1rem;
+        text-align: center;
+        color: rgba(255, 255, 255, 0.7);
+      }
+
+      @media (max-width: 991px) {
+        .hero-inner,
+        .about-grid,
+        .feed-wrap,
+        .footer-grid,
+        .step-grid,
+        .feature-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-panel {
+          min-height: 400px;
+        }
+
+        .cta-box {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+
+      @media (max-width: 767px) {
+        .hero-inner {
+          padding-top: 4.5rem;
+        }
+
+        .hero h1 {
+          font-size: 2.5rem;
+        }
+
+        .hero-points {
+          grid-template-columns: 1fr;
+        }
+
+        .nav-actions {
+          width: 100%;
+          justify-content: flex-start;
+          margin-top: 1rem;
+        }
+
+        .site-header .navbar-collapse {
+          padding-bottom: 1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="navbar navbar-expand-lg custom-nav">
+        <div class="container">
+          <a class="brand" href="{{ url_for('home') }}">
+            <span class="brand-mark"><i class="fa-solid fa-seedling"></i></span>
+            Agri-Direct
+          </a>
+          <button
+            class="navbar-toggler"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#mainNav"
+            aria-controls="mainNav"
+            aria-expanded="false"
+            aria-label="Toggle navigation"
+          >
+            <span class="navbar-toggler-icon"></span>
+          </button>
+          <div class="collapse navbar-collapse" id="mainNav">
+            <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
+              <li class="nav-item"><a class="nav-link" href="{{ url_for('home') }}">Home</a></li>
+              <li class="nav-item"><a class="nav-link" href="#about">About</a></li>
+              <li class="nav-item"><a class="nav-link" href="#features">Features</a></li>
+              <li class="nav-item"><a class="nav-link" href="#updates">Updates</a></li>
+            </ul>
+            <div class="nav-actions">
+              <a class="btn btn-agri btn-ghost" href="{{ url_for('login') }}">Login</a>
+              <a class="btn btn-agri btn-primary-agri" href="{{ url_for('register') }}">Register</a>
+            </div>
+          </div>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-inner">
+          <div>
+            <span class="hero-badge"><i class="fa-solid fa-wheat-awn"></i> Digital agriculture ecosystem</span>
+            <h1>Connecting Farmers With Better Opportunities.</h1>
+            <p>
+              Agri-Direct is a digital agricultural platform that helps farmers and other
+              agricultural users connect with buyers, discover trusted information, manage
+              agricultural products, access market-related insights, communicate with other
+              users, and make better agricultural decisions.
+            </p>
+            <div class="hero-actions">
+              <a class="btn btn-agri btn-primary-agri btn-lg" href="{{ url_for('register') }}">Get Started</a>
+              <a class="btn btn-agri btn-ghost btn-lg" href="#about">Learn More</a>
+            </div>
+            <ul class="hero-points">
+              <li><i class="fa-solid fa-check"></i> Connect with buyers</li>
+              <li><i class="fa-solid fa-check"></i> Discover agri information</li>
+              <li><i class="fa-solid fa-check"></i> Manage products</li>
+              <li><i class="fa-solid fa-check"></i> Track market insights</li>
+            </ul>
+          </div>
+
+          <div class="hero-panel" aria-label="Agri-Direct overview card">
+            <div class="hero-card floating-list-card">
+              <div class="micro-label">Live network</div>
+              <ul class="pill-list">
+                <li><span>Buyers</span><strong>1.2K</strong></li>
+                <li><span>Farm profiles</span><strong>680</strong></li>
+                <li><span>Product listings</span><strong>420</strong></li>
+              </ul>
+            </div>
+
+            <div class="hero-card hero-main-card">
+              <div class="hero-card-top">
+                <div>
+                  <div class="micro-label">Agri-Direct</div>
+                </div>
+                <span class="chip"><i class="fa-solid fa-circle-dot"></i> Active</span>
+              </div>
+              <div class="market-grid">
+                <div class="metric-box">
+                  <strong>248</strong>
+                  <span>Market listings</span>
+                </div>
+                <div class="metric-box">
+                  <strong>15%</strong>
+                  <span>Growth this month</span>
+                </div>
+                <div class="metric-box">
+                  <strong>32</strong>
+                  <span>Knowledge posts</span>
+                </div>
+                <div class="metric-box">
+                  <strong>96%</strong>
+                  <span>Uptime</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="about">
+        <div class="container">
+          <div class="section-header">
+            <span class="eyebrow">About Agri-Direct</span>
+            <h2>What is Agri-Direct?</h2>
+          </div>
+
+          <div class="about-grid">
+            <div class="about-box">
+              <p class="section-copy">
+                Agri-Direct is designed to support agricultural users through digital tools for
+                agricultural trading, information sharing, communication, inventory/product
+                management, and market intelligence. It brings together the people, products,
+                and insights needed to make agricultural participation more efficient and
+                informed.
+              </p>
+
+              <ul class="mini-list">
+                <li><i class="fa-solid fa-arrow-right"></i> Discover and manage agricultural products with confidence.</li>
+                <li><i class="fa-solid fa-arrow-right"></i> Learn from agricultural knowledge, updates, and shared expertise.</li>
+                <li><i class="fa-solid fa-arrow-right"></i> Connect with buyers, sellers, and community members.</li>
+                <li><i class="fa-solid fa-arrow-right"></i> Use data-driven market intelligence to support smarter decisions.</li>
+              </ul>
+            </div>
+
+            <div class="visual-card" aria-label="Agricultural field illustration">
+              <div class="visual-badge">
+                <div>
+                  <div class="micro-label">Agricultural flow</div>
+                  <strong>Smarter</strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="features">
+        <div class="container">
+          <div class="section-header">
+            <span class="eyebrow">Platform features</span>
+            <h2>Built for modern agricultural communities</h2>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature-card">
+              <div class="feature-icon"><i class="fa-solid fa-store"></i></div>
+              <h3>Marketplace</h3>
+              <p>Allows users to discover agricultural products and interact with listings in a more connected trading environment.</p>
+            </article>
+
+            <article class="feature-card">
+              <div class="feature-icon"><i class="fa-solid fa-book-open-reader"></i></div>
+              <h3>Knowledge Hub</h3>
+              <p>Provides agricultural information, educational content, updates, and knowledge-sharing resources for the community.</p>
+            </article>
+
+            <article class="feature-card">
+              <div class="feature-icon"><i class="fa-solid fa-chart-line"></i></div>
+              <h3>Market Intelligence</h3>
+              <p>Provides agricultural market insights and analytical information to help users understand trends and patterns.</p>
+            </article>
+
+            <article class="feature-card">
+              <div class="feature-icon"><i class="fa-solid fa-boxes-stacked"></i></div>
+              <h3>Inventory Management</h3>
+              <p>Allows agricultural users to manage their agricultural inventory and product records with greater clarity.</p>
+            </article>
+
+            <article class="feature-card">
+              <div class="feature-icon"><i class="fa-solid fa-comments"></i></div>
+              <h3>Communication</h3>
+              <p>Allows users to communicate with other users through the messaging functionality to coordinate and connect.</p>
+            </article>
+
+            <article class="feature-card">
+              <div class="feature-icon"><i class="fa-solid fa-user"></i></div>
+              <h3>User Profile</h3>
+              <p>Allows users to manage and view their profile information as part of their Agri-Direct presence.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="updates">
+        <div class="container">
+          <div class="section-header">
+            <span class="eyebrow">Knowledge Hub</span>
+            <h2>What's Happening?</h2>
+          </div>
+
+          <div class="feed-wrap">
+            <div class="feed-panel">
+              {% if updates %}
+                {% for item in updates %}
+                  <article class="feed-card">
+                    <div class="feed-top">
+                      <div class="feed-icon"><i class="fa-solid fa-leaf"></i></div>
+                      <div>
+                        <span class="feed-label">{{ item.category_name or 'Knowledge Hub' }}</span>
+                        <h3>{{ item.title }}</h3>
+                      </div>
+                    </div>
+                    <p>{{ (item.content or '') | truncate(180, true, '...') }}</p>
+                    <div class="feed-meta">
+                      <span><i class="fa-solid fa-calendar-days"></i> {{ item.created_at|datetime_format('%Y-%m-%d') }}</span>
+                      {% if item.author %}
+                        <span><i class="fa-solid fa-user"></i> {{ item.author }}</span>
+                      {% endif %}
+                    </div>
+                    <a class="read-more" href="{{ url_for('login') }}">Read More <i class="fa-solid fa-arrow-right"></i></a>
+                  </article>
+                {% endfor %}
+              {% else %}
+                <article class="feed-card">
+                  <div class="feed-top">
+                    <div class="feed-icon"><i class="fa-solid fa-leaf"></i></div>
+                    <div>
+                      <span class="feed-label">Knowledge Hub</span>
+                      <h3>Latest agricultural updates</h3>
+                    </div>
+                  </div>
+                  <p>No published updates are available right now. Sign in or create an account to explore the full Agri-Direct knowledge experience.</p>
+                  <div class="feed-meta">
+                    <span><i class="fa-solid fa-circle-info"></i> Updates will appear here soon</span>
+                  </div>
+                  <a class="read-more" href="{{ url_for('login') }}">Login to view updates <i class="fa-solid fa-arrow-right"></i></a>
+                </article>
+              {% endif %}
+            </div>
+
+            <aside class="feed-summary">
+              <h3>Agri-Direct at a glance</h3>
+              <div class="summary-box">
+                <strong>Featured</strong>
+                <span>Knowledge Hub updates</span>
+              </div>
+              <div class="summary-box">
+                <strong>Community</strong>
+                <span>Buyers, farmers, and collaborators</span>
+              </div>
+              <div class="summary-box">
+                <strong>Insights</strong>
+                <span>Practical agricultural intelligence</span>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </section>
+
+      <section class="section steps">
+        <div class="container">
+          <div class="section-header">
+            <span class="eyebrow">How it works</span>
+            <h2>How Agri-Direct Works</h2>
+          </div>
+
+          <div class="step-grid">
+            <article class="step-card">
+              <div class="step-number">01</div>
+              <h3>Register</h3>
+              <p>Create an Agri-Direct account to join the agricultural community and unlock platform tools.</p>
+            </article>
+            <article class="step-card">
+              <div class="step-number">02</div>
+              <h3>Explore</h3>
+              <p>Explore agricultural products, information, and available platform features tailored to your needs.</p>
+            </article>
+            <article class="step-card">
+              <div class="step-number">03</div>
+              <h3>Connect</h3>
+              <p>Communicate and connect with other agricultural users to share opportunities and updates.</p>
+            </article>
+            <article class="step-card">
+              <div class="step-number">04</div>
+              <h3>Make Better Decisions</h3>
+              <p>Use available agricultural information and market insights to support improved decisions.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="cta">
+        <div class="container">
+          <div class="cta-box">
+            <div>
+              <h2>Ready to get started?</h2>
+              <p>Join Agri-Direct and explore a smarter way to connect, discover, and participate in agricultural trade.</p>
+            </div>
+            <a class="btn btn-agri btn-primary-agri btn-lg" href="{{ url_for('register') }}">Create Account</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div>
+            <div class="footer-brand">
+              <span class="brand-mark"><i class="fa-solid fa-seedling"></i></span>
+              Agri-Direct
+            </div>
+            <p>Connecting agricultural communities with digital tools for trade, information, insight, and better decision-making.</p>
+          </div>
+
+          <div>
+            <h4>Navigation</h4>
+            <ul class="footer-links">
+              <li><a href="{{ url_for('home') }}">Home</a></li>
+              <li><a href="#about">About</a></li>
+              <li><a href="#features">Features</a></li>
+              <li><a href="#updates">Updates</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <h4>Access</h4>
+            <ul class="footer-links">
+              <li><a href="{{ url_for('login') }}">Login</a></li>
+              <li><a href="{{ url_for('register') }}">Register</a></li>
+            </ul>
+          </div>
+
+          <div>
+            <h4>Contact</h4>
+            <ul class="footer-links">
+              <li><a href="#">Support</a></li>
+              <li><a href="#">Community</a></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="footer-base">© 2025 Agri-Direct. All rights reserved.</div>
+      </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>

@@ -40,7 +40,7 @@ def login():
                 session["user"] = user["username"]
                 session["role"] = user["role"] if user["role"] else 'buyer'
                 logger.info(f"User {user['username']} logged in")
-                return redirect("/home")
+                return redirect("/dashboard")
             else:
                 logger.warning(f"Invalid password for {identifier}")
         else:
@@ -98,7 +98,7 @@ def register_user():
             session["user"] = username
             session["role"] = role
             flash("Registration successful! Welcome to Agri-Direct.")
-            return redirect("/home")
+            return redirect("/dashboard")
         except IntegrityError:
             flash("That username or email address is already registered")
             logger.warning(f"Registration failed: username or email already exists for {username}")

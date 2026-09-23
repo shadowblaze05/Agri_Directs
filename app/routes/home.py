@@ -22,16 +22,8 @@ def _market_intelligence_access():
         return redirect(url_for("portal_home"))
     return None
 
-def home():
-    if "user" in session:
-        return redirect(url_for("portal_home"))
-    return redirect("/login")
-
-def portal_home():
-    """Signed-in landing page driven by published Knowledge Hub posts."""
-    if "user" not in session:
-        return redirect(url_for("login"))
-
+def _latest_updates(limit=3):
+    """Fetch recent published Knowledge Hub posts for public or signed-in views."""
     conn = get_db()
     cur = conn.cursor()
     updates = cur.execute("""
@@ -40,8 +32,26 @@ def portal_home():
         FROM knowledge_posts kp
         LEFT JOIN knowledge_categories kc ON kc.category_id = kp.category_id
         WHERE kp.status = 'Published'
-        ORDER BY kp.created_at DESC LIMIT 3
-    """).fetchall()
+        ORDER BY kp.created_at DESC LIMIT ?
+    """, (limit,)).fetchall()
+    conn.close()
+    return updates
+
+
+def home():
+    """Public landing page for visitors before they sign in or register."""
+    updates = _latest_updates(limit=3)
+    return render_template("public_home.html", updates=updates)
+
+
+def portal_home():
+    """Signed-in home/dashboard view that keeps the authenticated dashboard available."""
+    if "user" not in session:
+        return home()
+
+    conn = get_db()
+    cur = conn.cursor()
+    updates = _latest_updates(limit=3)
     featured_listings = cur.execute("""
         SELECT m.id, m.crop_name, m.amount, m.price, m.unit, m.location,
                u.username AS seller_name
