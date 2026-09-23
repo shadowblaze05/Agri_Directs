@@ -33,6 +33,16 @@ class MarketplaceListing(Model):
     buyer_rating_date = Column(String(32))
     main_image = Column(String(255), nullable=True)
 
+# ============ PRE-ORDER FIELDS ============
+    listing_type = Column(String(20), default="standard")   # 'standard' or 'preorder'
+    available_date = Column(String(32), nullable=True)      # when crop will be ready
+    preorder_status = Column(String(32), nullable=True)     # pending, confirmed, cancel_requested, cancelled, completed
+    preorder_quantity = Column(Integer, nullable=True)      # reserved amount
+    cancel_requested_by = Column(String(128), nullable=True)
+    cancel_reason = Column(Text, nullable=True)
+    cancel_requested_date = Column(String(32), nullable=True)
+# ==========================================
+
 # ============ NEW RELATIONSHIPS ============
     images = relationship("MarketplaceImage", backref="listing", cascade="all, delete-orphan")
     cart_items = relationship("Cart", backref="listing", cascade="all, delete-orphan")
