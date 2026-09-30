@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Profile - Agri-Direct</title>
+    <title>{{ (user.first_name ~ ' ' ~ user.last_name).strip() or user.username }} - Agri-Direct</title>
     <link
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
       rel="stylesheet"
@@ -244,15 +244,21 @@
         <div class="page-header">
           <div class="row align-items-center">
             <div class="col">
-              <h2><i class="fas fa-user-circle"></i> My Profile</h2>
+              <h2><i class="fas fa-user-circle"></i> {{ 'Seller Profile' if is_public_profile else 'My Profile' }}</h2>
               <p class="text-muted mb-0">
-                Manage your personal details and farm information.
+                    {{ 'Seller information and contact details.' if is_public_profile else 'Manage your personal details and farm information.' }}
               </p>
             </div>
             <div class="col-auto">
-              <a class="btn btn-success" href="{{ url_for('update_profile') }}"
-                ><i class="fas fa-pen"></i> Edit Profile</a
-              >
+                  {% if is_public_profile %}
+                  <a class="btn btn-outline-success" href="{{ url_for('marketplace') }}"
+                    ><i class="fas fa-arrow-left"></i> Back to Marketplace</a
+                  >
+                  {% else %}
+                  <a class="btn btn-success" href="{{ url_for('update_profile') }}"
+                    ><i class="fas fa-pen"></i> Edit Profile</a
+                  >
+                  {% endif %}
             </div>
           </div>
         </div>
@@ -277,8 +283,8 @@
               </h1>
               <p class="mb-0 text-muted">
                 <i class="fas fa-at me-1"></i>{{ user.username }}{% if
-                user.location %}<span class="mx-2">|</span
-                ><i class="fas fa-location-dot me-1"></i>{{ user.location }}{%
+                user.psgc_location %}<span class="mx-2">|</span
+                ><i class="fas fa-location-dot me-1"></i>{{ user.psgc_location }}{%
                 endif %}
               </p>
             </div>
@@ -293,17 +299,22 @@
               <div class="row g-4">
                 <div class="col-md-6">
                   <div class="detail-label">Email Address</div>
+                  {% if is_public_profile and user.email %}
+                  <a href="mailto:{{ user.email }}">{{ user.email }}</a>
+                  {% else %}
                   <div>{{ user.email or 'Not provided' }}</div>
+                  {% endif %}
                 </div>
                 <div class="col-md-6">
                   <div class="detail-label">Phone Number</div>
                   <div>{{ user.phone_number or 'Not provided' }}</div>
                 </div>
                 <div class="col-12">
-                  <div class="detail-label">Farm Location</div>
+                  <div class="detail-label">PSGC Location</div>
+                  <div>{{ user.psgc_location or 'No PSGC match yet.' }}</div>
+                  <div class="detail-label mt-3">GPS-derived Place</div>
                   <div>
-                    {{ user.location or 'Add your location to post harvest
-                    data.' }}
+                    {{ user.geotag_location or 'Capture a profile photo with GPS to save this place.' }}
                   </div>
                 </div>
                 <div class="col-12">
@@ -315,6 +326,7 @@
                 </div>
               </div>
             </section>
+            {% if not is_public_profile %}
             <section class="profile-card">
               <div
                 class="d-flex justify-content-between align-items-center mb-2"
@@ -352,8 +364,45 @@
               </p>
               {% endfor %}
             </section>
+            {% endif %}
           </div>
           <aside class="col-lg-4">
+            {% if is_public_profile %}
+            <section class="profile-card mb-4">
+              <h2 class="section-title mb-3">Contact {{ user.first_name or user.username }}</h2>
+              {% if user.email %}
+              <a class="btn btn-success w-100 mb-2" href="mailto:{{ user.email }}">
+                <i class="fas fa-envelope me-1"></i> Email seller
+              </a>
+              {% endif %}
+              {% if user.phone_number %}
+              <a class="btn btn-outline-success w-100 mb-2" href="tel:{{ user.phone_number }}">
+                <i class="fas fa-phone me-1"></i> {{ user.phone_number }}
+              </a>
+              {% endif %}
+              <a class="btn btn-outline-success w-100" href="/messages?recipient={{ user.username }}">
+                <i class="fas fa-comments me-1"></i> Message seller
+              </a>
+            </section>
+            {% else %}
+            <section class="profile-card mb-4" aria-labelledby="location-verification-heading">
+              <h2 id="location-verification-heading" class="section-title mb-2">
+                <i class="fas fa-location-dot me-2"></i>Camera-verified profile location
+              </h2>
+              <p class="mb-2">
+                {% if user.location_verified and user.profile_photo_captured_at and user.profile_picture %}
+                  <span class="badge text-bg-success">Profile photo and GPS captured</span>
+                  <span class="small text-muted">Last captured {{ user.profile_photo_captured_at|datetime_format }}</span>
+                {% else %}
+                  <span class="badge text-bg-secondary">Camera photo and GPS capture required</span>
+                {% endif %}
+              </p>
+              <a class="btn btn-outline-success btn-sm" href="{{ url_for('update_profile') }}">
+                <i class="fas fa-camera me-1"></i>{{ 'Update profile photo and location' if user.profile_picture else 'Capture profile photo and location' }}
+              </a>
+              <p class="small mt-3 mb-1"><strong>GPS-derived place:</strong> {{ user.geotag_location or 'Not captured yet' }}</p>
+              <p class="small mb-0"><strong>PSGC location:</strong> {{ user.psgc_location or 'No match found yet' }}</p>
+            </section>
             <section class="profile-card mb-4">
               <h2 class="section-title mb-3">Farm Activity</h2>
               <div class="row text-center">
@@ -374,9 +423,18 @@
             <section class="profile-card">
               <h2 class="section-title mb-3">Profile Status</h2>
               <p class="small text-muted mb-3">
-                Complete your account so buyers and the community can recognize
-                your farm.
+                Harvest submission requires your first and last name, email, and a camera-captured
+                profile photo with a GPS-derived farm location. Phone number and bio are optional.
               </p>
+              {% if missing_profile_requirements %}
+                <div class="alert alert-warning py-2 small">
+                  Complete your profile before uploading harvest:
+                  {{ missing_profile_requirements|join(', ') }}.
+                  <a href="{{ url_for('update_profile') }}" class="alert-link">Update profile</a>
+                </div>
+              {% else %}
+                <div class="alert alert-success py-2 small">Profile complete for harvest submissions.</div>
+              {% endif %}
               <div class="d-flex align-items-center gap-2">
                 <i
                   class="fas {{ 'fa-circle-check text-success' if user.is_verified else 'fa-circle-info text-warning' }}"
@@ -387,6 +445,7 @@
                 >
               </div>
             </section>
+            {% endif %}
           </aside>
         </div>
       </div>

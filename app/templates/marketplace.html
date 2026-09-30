@@ -95,6 +95,10 @@
             color: #adb5bd;
             font-size: 3rem;
         }
+        .seller-profile-link {
+            position: relative;
+            z-index: 1;
+        }
         .price-tag {
             font-size: 1.5rem;
             font-weight: bold;
@@ -317,7 +321,7 @@
                         <div class="card listing-card" onclick="window.location.href='/marketplace/product/{{ listing['id'] }}'">
                             <div class="card-img-wrapper">
                                 <!-- ============ STEP 4: IMAGE DISPLAY ============ -->
-                                {% if listing['main_image'] %}
+                                {% if listing['main_image'] and listing['thumbnail_verified'] %}
                                 <img src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}" 
                                      class="card-img-top" 
                                      alt="{{ listing['crop_name'] }}"
@@ -350,7 +354,8 @@
                                     {% endif %}
                                 </div>
                                 <p class="text-muted small mb-2">
-                                    <i class="fas fa-user"></i> {{ listing['seller_name'] }}
+                                    <i class="fas fa-user"></i>
+                                    <a class="seller-profile-link text-success" href="{{ url_for('seller_profile', username=listing['seller_name']) }}" onclick="event.stopPropagation()">{{ listing['seller_name'] }}</a>
                                     {% if listing.get('reliability_status') %}
                                     <span class="reliability-badge reliability-{{ listing['reliability_status']|lower|replace(' ', '-') }}">
                                         {{ listing['reliability_status'] }}

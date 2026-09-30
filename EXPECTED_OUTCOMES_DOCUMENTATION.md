@@ -8,11 +8,18 @@ Agri-Direct is a web platform for recording harvests, viewing agricultural suppl
 
 | Role | Expected access |
 |---|---|
-| Visitor | Can open Login and Register. The home page redirects visitors to Login. |
+| Visitor | Can open the public landing page, Login, and Register. |
 | Logged-in user | Can manage a profile and own inventory, upload harvest data, view analytics, use the marketplace, exchange messages, and read/interact with published knowledge articles. |
 | Admin | Has all logged-in-user access plus the Admin Console and Knowledge Hub administration. |
 
 Protected pages redirect an unauthenticated visitor to Login. Admin-only pages show an access message and return a non-admin user to the Dashboard.
+
+### Mobile and responsive behavior
+
+- Public landing, authentication, marketplace, profile, harvest, dashboard, messages, and admin pages use responsive layouts for phone-sized and tablet viewports.
+- On narrow phones, the signed-in sidebar becomes a fixed, horizontally swipeable bottom navigation bar so primary pages remain reachable instead of hiding navigation.
+- Main content uses the available phone width; tables can scroll horizontally within their table region, and chat panels and floating chat controls fit the viewport.
+- Camera and GPS profile capture still depend on browser permissions and an HTTPS or localhost context.
 
 ---
 
@@ -20,11 +27,23 @@ Protected pages redirect an unauthenticated visitor to Login. Admin-only pages s
 
 ### Home (`/`)
 
-**Expected outcome:** acts as a smart entry point. A signed-in user is sent to the Dashboard; a visitor is sent to Login. It does not display a separate landing screen.
+**Expected outcome:** renders the public Agri-Direct landing page, including the latest published Knowledge Hub updates and live database-backed platform metrics. The signed-in portal is available at `/home`; the analytics dashboard is at `/dashboard`.
+
+**Public landing metrics:**
+
+- **Buyers:** counts distinct buyer usernames from accounts whose role is `buyer` together with nonblank `marketplace.buyer_username` values. The `UNION` means a username present in both sources is counted once; purchase usernames without a corresponding user account are still counted.
+- **Farm profiles:** counts non-admin user accounts with first name, last name, email, profile picture, profile-photo capture timestamp, verified location, and a nonblank GPS-derived place.
+- **Product listings:** counts all marketplace rows except `looking_for` requests, regardless of listing status.
+- **Market listings:** counts marketplace rows whose status is `available`, excluding `looking_for` requests.
+- **Growth:** compares marketplace listing rows created from the start of the current month through now with rows in the previous month through the same elapsed calendar day and time. It displays the percentage change relative to the previous period; when that period has no listings, the display is `New` if the current period has listings, otherwise `0%`.
+- **Knowledge posts:** counts posts with `Published` status only.
+- **Process uptime:** elapsed time since this application process started, not a service-availability percentage or an uptime-monitoring result.
+
+The database-backed counts are queried when `/` is rendered. They are not a persisted historical snapshot. These public landing-page metrics are not shown on the signed-in portal at `/home`.
 
 ### Legacy landing template (`app/templates/index.html`)
 
-**Implementation note:** this template contains simple links to Upload Harvest Log and View Inventory, but the active `/` route currently redirects to Login or Dashboard instead of rendering it. It is therefore not an active user-facing page in the current build.
+**Implementation note:** this template contains simple links to Upload Harvest Log and View Inventory. The active `/` route renders `public_home.html`, so `index.html` is not the public landing page in the current build.
 
 ### Login (`/login`)
 
@@ -50,19 +69,31 @@ Protected pages redirect an unauthenticated visitor to Login. Admin-only pages s
 
 ### Profile (`/profile`)
 
-**Purpose:** maintain the current user’s location and review personal inventory.
+**Purpose:** maintain the current user’s profile and review personal inventory.
 
 **Features and expected results:**
 
-- Shows the current account information and location controls, including Philippine Standard Geographic Code (PSGC) location selection in the interface.
-- Saves the selected location to the user profile.
+- Shows account information and whether the user is ready to submit harvest.
+- Allows camera-only profile photo capture. Browser GPS is requested separately at capture time; the reverse-geocoded GPS place and the corresponding official PSGC hierarchy are stored separately and both are displayed. Coordinates remain private.
+- Requires first name, last name, email, camera-captured profile photo, photo/GPS capture timestamp, and a valid GPS-derived farm location before harvest submission. Phone and bio are optional.
 - Displays the user’s inventory grouped by crop, showing the total quantity and most recent receipt date.
 - Lets the owner adjust a crop’s total quantity; increases create inventory and reductions remove the newest inventory records first.
 - Lets the owner delete all of their inventory for one selected crop after confirmation.
 - Rejects invalid quantities and prevents a user from changing another user’s inventory.
 - Links to About and Logout.
 
-**Important expected condition:** a user must save a profile location before the system accepts harvest uploads.
+**Important:** browser geolocation requires user permission and a secure browser context. GPS proximity is not proof of identity, land ownership, crop authenticity, or ownership.
+
+### Camera-captured profile geotag (`/profile/location`)
+
+**Purpose:** update the signed-in user's profile photo and farm reference location from one camera/GPS capture.
+
+- The Profile editor has no file picker: the user starts the browser camera, takes a photo, and grants browser location permission.
+- The server validates image content, file size, coordinate ranges, and capture timestamp. It resolves a human-readable place name from GPS coordinates, then matches the place against official PSGC city/municipality, province, and region records. The raw GPS-derived place and PSGC-formatted location are stored separately with the photo and private coordinates.
+- If permission is denied, the camera/location services are unavailable, or reverse geocoding fails, the capture is not saved and the user receives an error. If PSGC matching is unavailable, the GPS-derived place is still saved and the user is told there is no PSGC match.
+- OpenStreetMap Nominatim receives the submitted coordinates to resolve the approximate place name; this is disclosed in the UI.
+- A profile picture's historical file upload or a standalone GPS reading does not satisfy the capture requirement.
+- The location reading is a geographic reference only; it does not verify identity or land ownership.
 
 ### About (`/about`)
 
@@ -86,12 +117,18 @@ Protected pages redirect an unauthenticated visitor to Login. Admin-only pages s
 
 - Supports either a CSV upload or one manual harvest entry in the same form.
 - Manual entry provides crop selection/autocomplete, quantity, and optional date; a blank date uses the current date.
+- Both CSV and manual harvest submissions are blocked until the account has first/last name, email, a camera-captured profile photo, its GPS capture timestamp, and a valid GPS-derived farm location. Phone and bio remain optional.
+- Manual entry accepts a crop/harvest photo (PNG, JPG, or WEBP, up to 5 MB) and requests browser GPS coordinates when available.
+- The server validates coordinate ranges and calculates Haversine distance from the user's separately captured profile reference point. The configured maximum is 15 km (15,000 meters); distance at or below the maximum is `within_range`, and greater distance is `outside_range`.
+- Missing photo, capture timestamp, harvest coordinates, or verified profile coordinates results in `manual_review`; CSV rows are also marked for manual review because they contain no browser GPS/photo evidence.
 - CSV processing accepts `.csv` files and reads `crop_name`, `quantity`, and optional `date_received` fields.
 - Each valid record is stored with the signed-in user and their saved profile location.
 - Only existing crop names and positive whole-number quantities are added. Invalid rows are skipped and reported without stopping valid rows from being processed.
 - A CSV with no valid records reports that nothing was added; a successful import reports success.
 - Every successful addition refreshes analytics used by the Dashboard and statistics pages.
-- The page prevents uploads until the user has set a profile location.
+- The saved profile address remains the inventory location label; the GPS reference is separate. Records can still be submitted without the reference, but are marked for manual review.
+- Crop evidence photos are stored outside the public static directory and are served only to their owner or an administrator.
+- JWT `/api/harvest` submissions may include validated GPS coordinates and a capture timestamp; without photo evidence they remain in `manual_review`, while any proximity status and distance are returned separately.
 
 ### Dashboard (`/dashboard`)
 
@@ -346,6 +383,7 @@ Protected pages redirect an unauthenticated visitor to Login. Admin-only pages s
 
 - Shows all inventory records in date order and supports browser-side search by crop, farmer, or location.
 - Lets an admin edit or delete any inventory record.
+- Shows crop evidence, proximity status, distance, GPS capture time, and review notes; administrators can approve or reject submissions.
 - Shows users with role and marketplace reliability/transaction information.
 - Provides links to Dashboard, Knowledge Hub Admin, and Logout.
 
@@ -369,6 +407,9 @@ These endpoints support the pages above and are expected to return structured JS
 
 | Feature | Endpoint(s) | Expected outcome |
 |---|---|---|
+| Profile geotag | `POST /profile/location` | Validates and saves the authenticated user's camera photo, browser GPS coordinates, capture timestamp, GPS-derived place, and separately matched PSGC location. |
+| Private harvest evidence | `GET /harvest-evidence/<filename>` | Serves the photo only to its submitting farmer or an administrator. |
+| Geotag review | `POST /admin/geotag/<item_id>/review` | Admin-only approve/reject action, recording the reviewer and timestamp. |
 | JWT access | `POST /token` | Valid credentials receive a token with a 24-hour expiry value. |
 | Programmatic harvest entry | `POST /api/harvest` | A valid JWT and positive crop, quantity, and location create a harvest record and refresh analytics. |
 | Live inventory table | `GET /dashboard-data` | Returns the rendered recent-inventory table used by Dashboard refreshes. |
@@ -385,6 +426,16 @@ These endpoints support the pages above and are expected to return structured JS
 - The app uses PostgreSQL for users, inventory, crops, analytics, marketplace activity, knowledge content, messages, and notifications.
 - Server-side validation enforces required fields, positive quantities/prices, ownership rules, and role restrictions for the main operations.
 - Uploaded knowledge media is stored beneath the configured upload area; harvest CSV files are saved before being processed.
+- Crop evidence images are content-validated, size-limited, stored outside the static web directory, and access-controlled by owner/admin checks.
+
+### Geotag verification limits
+
+- The distance rule is a geographic proximity check only; it does not establish crop authenticity, farmer identity, or ownership of land or produce.
+- Browser GPS may be inaccurate or spoofed, and browser access requires permission. Server-side validation checks coordinate ranges but cannot prove that client coordinates came from an unmodified GPS receiver.
+- The camera UI removes the file picker, but a browser-submitted image/GPS pair cannot cryptographically prove that a physical camera or genuine GPS sensor produced it.
+- Reverse geocoding depends on internet access and OpenStreetMap Nominatim availability; exact coordinates are sent to that service for place-name resolution.
+- EXIF is not used as the source of coordinates because it can be removed or changed; the crop photo is supporting evidence only.
+- Missing or incomplete location/photo evidence is routed to manual review.
 
 ## 10. End-to-end expected user journey
 

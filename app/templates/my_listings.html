@@ -271,7 +271,7 @@
                 {% for listing in active_listings %}
                 <div class="listing-card card" onclick="window.location.href='/marketplace/product/{{ listing['id'] }}'">
                     <div class="card-img-wrapper">
-                        {% if listing['main_image'] %}
+                        {% if listing['main_image'] and listing['thumbnail_verified'] %}
                         <img src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}"
                              class="card-img-top"
                              alt="{{ listing['crop_name'] }}"
@@ -391,7 +391,7 @@
                 {% for listing in preorder_requests %}
                 <div class="listing-card card" onclick="window.location.href='/marketplace/my-preorder-requests'">
                     <div class="card-img-wrapper">
-                        {% if listing['main_image'] %}
+                        {% if listing['main_image'] and listing['thumbnail_verified'] %}
                         <img src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}"
                              class="card-img-top"
                              alt="{{ listing['crop_name'] }}"
@@ -454,7 +454,7 @@
                 {% for listing in sold_listings %}
                 <div class="listing-card card" onclick="window.location.href='/marketplace/product/{{ listing['id'] }}'">
                     <div class="card-img-wrapper">
-                        {% if listing['main_image'] %}
+                        {% if listing['main_image'] and listing['thumbnail_verified'] %}
                         <img src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}"
                              class="card-img-top"
                              alt="{{ listing['crop_name'] }}"
@@ -514,7 +514,7 @@
                 {% for listing in traded_listings %}
                 <div class="listing-card card" onclick="window.location.href='/marketplace/product/{{ listing['id'] }}'">
                     <div class="card-img-wrapper">
-                        {% if listing['main_image'] %}
+                        {% if listing['main_image'] and listing['thumbnail_verified'] %}
                         <img src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}"
                              class="card-img-top"
                              alt="{{ listing['crop_name'] }}"

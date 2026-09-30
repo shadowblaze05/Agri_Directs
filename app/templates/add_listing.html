@@ -386,42 +386,49 @@
                                     <div class="existing-image {% if listing['main_image'] == img['image_filename'] %}thumbnail-active{% endif %}"
                                         id="image-{{ img['id'] }}">
                                         <img src="{{ url_for('static', filename='uploads/marketplace/' + img['image_filename']) }}" alt="Listing image">
-                                        <button type="button" class="remove-image" onclick="deleteImage({{ img['id'] }})">
-                                            <i class="fas fa-times"></i>
-                                        </button>
                                         {% if listing['main_image'] == img['image_filename'] %}
-                                        <span class="thumbnail-label">Thumbnail</span>
+                                        <span class="thumbnail-label">Camera-verified thumbnail</span>
                                         {% else %}
-                                        <button type="button" class="set-thumbnail-btn" onclick="setThumbnail({{ img['id'] }})">
-                                            Set as Thumbnail
+                                        <button type="button" class="remove-image" onclick="deleteImage({{ img['id'] }})" aria-label="Remove additional photo">
+                                            <i class="fas fa-times"></i>
                                         </button>
                                         {% endif %}
                                     </div>
                                     {% endfor %}
                                 </div>
-                                <small class="text-muted">The image labeled "Thumbnail" is shown in the marketplace grid.</small>
+                                <small class="text-muted">The camera-verified thumbnail cannot be removed or replaced with an uploaded image. The other photos are gallery images.</small>
                             </div>
                             {% endif %}
 
-                            <!-- Upload New Images (hidden for looking_for) -->
+                            <!-- Camera-verified thumbnail and optional gallery images -->
                             <div class="mb-3" id="imageUploadGroup">
-                                <label class="form-label">
-                                    {% if listing %}Add New Images{% else %}Product Images (Max 5) *{% endif %}
-                                </label>
+                                <label class="form-label" for="startListingCamera">{% if listing %}Camera thumbnail replacement (optional){% else %}Camera thumbnail *{% endif %}</label>
+                                <p class="small text-muted">Take the cover photo live from your camera. We use browser GPS at capture time and check that it is within 10 km of your verified profile location.</p>
+                                {% if not profile_location_verified %}
+                                <div class="alert alert-warning py-2">Verify your profile photo and GPS location before {% if listing %}capturing a replacement thumbnail{% else %}creating a listing thumbnail{% endif %}. <a href="{{ url_for('update_profile') }}" class="alert-link">Update your profile</a>.</div>
+                                {% endif %}
+                                <video id="listingCameraPreview" class="camera-preview rounded d-none mb-2" autoplay muted playsinline aria-label="Live listing thumbnail camera preview" style="display:block;width:min(100%,480px);min-height:240px;background:#111;object-fit:contain"></video>
+                                <div class="d-flex flex-wrap gap-2 mb-2">
+                                    <button type="button" id="startListingCamera" class="btn btn-outline-success"><i class="fas fa-video me-1"></i>Start camera</button>
+                                    <button type="button" id="captureListingThumbnail" class="btn btn-success" disabled><i class="fas fa-camera me-1"></i>Take thumbnail photo</button>
+                                </div>
+                                <input type="file" class="d-none" id="thumbnailInput" name="thumbnail" accept="image/jpeg,image/png,image/webp">
+                                <input type="hidden" name="thumbnail_latitude" id="thumbnailLatitude">
+                                <input type="hidden" name="thumbnail_longitude" id="thumbnailLongitude">
+                                <input type="hidden" name="thumbnail_captured_at" id="thumbnailCapturedAt">
+                                <div id="thumbnailPreviewContainer" class="mb-2"></div>
+                                <div id="thumbnailCaptureMessage" class="small mb-3" role="status" aria-live="polite"></div>
+                                <label class="form-label" for="imageInput">{% if listing %}Add Gallery Photos{% else %}Additional Gallery Photos (Optional, up to 5){% endif %}</label>
                                 <div class="upload-area" id="uploadArea" onclick="document.getElementById('imageInput').click()">
                                     <i class="fas fa-cloud-upload-alt fa-3x text-muted"></i>
                                     <p class="mb-0">
-                                        {% if listing %}Click or drag to add more images{% else %}Click or drag to upload up to 5 images{% endif %}
+                                        {% if listing %}Click or drag to add more gallery photos{% else %}Click or drag to upload up to 5 additional gallery photos{% endif %}
                                     </p>
                                     <small class="text-muted">PNG, JPG, JPEG, GIF, WebP (Max 5MB each)</small>
                                     <input type="file" class="d-none" id="imageInput" name="images" accept="image/*" multiple onchange="previewImages(this)">
                                 </div>
                                 <div id="imagePreviewContainer" class="mt-3"></div>
                                 <small class="text-muted" id="imageCount">0 of 5 new images selected</small>
-                                <input type="hidden" name="thumbnail_index" id="thumbnailIndex" value="0">
-                                <small class="text-muted d-block mt-1">
-                                    Click "Set as Thumbnail" on any image to choose which one appears in the marketplace grid.
-                                </small>
                             </div>
 
                             <div class="mb-3">
@@ -463,20 +470,137 @@
     <script>
         // ============ THUMBNAIL PICKER ============
         let selectedFiles = [];
-        let thumbnailIndex = 0;
+        let listingCameraStream = null;
 
-        function setThumbnail(imageId) {
-            fetch('/marketplace/set-thumbnail/' + imageId, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'success') location.reload();
-                else alert('Error: ' + data.error);
-            })
-            .catch(error => alert('Error: ' + error));
+        function stopListingCamera() {
+            if (listingCameraStream) listingCameraStream.getTracks().forEach(track => track.stop());
+            listingCameraStream = null;
+            const preview = document.getElementById('listingCameraPreview');
+            if (preview) {
+                preview.srcObject = null;
+                preview.classList.add('d-none');
+            }
+            const captureButton = document.getElementById('captureListingThumbnail');
+            if (captureButton) captureButton.disabled = true;
         }
+
+        async function waitForListingGps() {
+            if (!navigator.geolocation) throw new Error('Location access is unavailable in this browser.');
+            return new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(
+                    resolve,
+                    error => reject(new Error(
+                        error.code === 1
+                            ? 'Location permission was denied. Allow location access and try again.'
+                            : error.code === 3
+                                ? 'Location capture timed out. Try again.'
+                                : 'Your browser could not determine the camera location.'
+                    )),
+                    { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+                );
+            });
+        }
+
+        document.getElementById('startListingCamera')?.addEventListener('click', async () => {
+            const message = document.getElementById('thumbnailCaptureMessage');
+            const startButton = document.getElementById('startListingCamera');
+            const captureButton = document.getElementById('captureListingThumbnail');
+            const preview = document.getElementById('listingCameraPreview');
+            if (!navigator.mediaDevices?.getUserMedia) {
+                message.textContent = 'Camera capture requires a supported browser over HTTPS or localhost.';
+                return;
+            }
+            startButton.disabled = true;
+            message.textContent = 'Waiting for camera permission...';
+            let timedOut = false;
+            try {
+                stopListingCamera();
+                const cameraRequest = navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: 'environment' } },
+                    audio: false
+                }).then(stream => {
+                    if (timedOut) stream.getTracks().forEach(track => track.stop());
+                    return stream;
+                });
+                let timeoutId;
+                try {
+                    listingCameraStream = await Promise.race([
+                        cameraRequest,
+                        new Promise((_, reject) => {
+                            timeoutId = setTimeout(() => {
+                                timedOut = true;
+                                reject(new Error('Camera permission timed out. Check browser permissions and try again.'));
+                            }, 15000);
+                        })
+                    ]);
+                } finally {
+                    clearTimeout(timeoutId);
+                }
+                preview.srcObject = listingCameraStream;
+                preview.classList.remove('d-none');
+                await preview.play();
+                if (!preview.videoWidth || !preview.videoHeight) {
+                    await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(
+                            () => reject(new Error('The camera did not send video frames. Try another camera.')),
+                            10000
+                        );
+                        preview.addEventListener('loadeddata', () => {
+                            clearTimeout(timeout);
+                            resolve();
+                        }, { once: true });
+                    });
+                }
+                captureButton.disabled = false;
+                message.textContent = 'Camera ready. Take the thumbnail photo to capture its GPS location.';
+            } catch (error) {
+                stopListingCamera();
+                message.textContent = error.message || 'Could not start the camera.';
+            } finally {
+                startButton.disabled = false;
+            }
+        });
+
+        document.getElementById('captureListingThumbnail')?.addEventListener('click', async () => {
+            const preview = document.getElementById('listingCameraPreview');
+            const message = document.getElementById('thumbnailCaptureMessage');
+            const captureButton = document.getElementById('captureListingThumbnail');
+            const canvas = document.createElement('canvas');
+            const width = preview.videoWidth;
+            const height = preview.videoHeight;
+            if (!listingCameraStream || !width || !height) {
+                message.textContent = 'Wait for the camera preview, then try again.';
+                return;
+            }
+            captureButton.disabled = true;
+            message.textContent = 'Capturing photo and requesting GPS permission...';
+            try {
+                const scale = Math.min(1, 1600 / width, 1200 / height);
+                canvas.width = Math.round(width * scale);
+                canvas.height = Math.round(height * scale);
+                const context = canvas.getContext('2d');
+                if (!context) throw new Error('Could not create the camera photo in this browser.');
+                context.drawImage(preview, 0, 0, canvas.width, canvas.height);
+                const photoBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+                if (!photoBlob) throw new Error('Could not create the camera photo. Try again.');
+                const position = await waitForListingGps();
+                const photo = new File([photoBlob], 'listing-thumbnail.jpg', { type: 'image/jpeg' });
+                const transfer = new DataTransfer();
+                transfer.items.add(photo);
+                document.getElementById('thumbnailInput').files = transfer.files;
+                document.getElementById('thumbnailLatitude').value = String(position.coords.latitude);
+                document.getElementById('thumbnailLongitude').value = String(position.coords.longitude);
+                document.getElementById('thumbnailCapturedAt').value = new Date(position.timestamp).toISOString();
+                document.getElementById('thumbnailPreviewContainer').innerHTML =
+                    '<img src="' + URL.createObjectURL(photoBlob) + '" alt="Camera thumbnail preview" style="width:160px;height:120px;object-fit:cover;border-radius:8px;border:3px solid #2d5016"><span class="thumbnail-label" style="width:160px">Camera thumbnail</span>';
+                message.textContent = 'Photo and GPS captured. The server will verify it is within 10 km of your profile location.';
+            } catch (error) {
+                message.textContent = error.message || 'Could not capture the camera thumbnail.';
+                captureButton.disabled = false;
+            }
+        });
+
+        window.addEventListener('beforeunload', stopListingCamera);
 
         function deleteImage(imageId) {
             if (!confirm('Remove this image?')) return;
@@ -513,15 +637,12 @@
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     const wrapper = document.createElement('div');
-                    wrapper.className = 'image-preview-wrapper' + (index === thumbnailIndex ? ' thumbnail-active' : '');
+                    wrapper.className = 'image-preview-wrapper';
                     wrapper.innerHTML = `
                         <img src="${e.target.result}" alt="Preview ${index + 1}">
                         <button type="button" class="remove-image" onclick="removePreview(${index})">
                             <i class="fas fa-times"></i>
                         </button>
-                        ${index === thumbnailIndex
-                            ? '<span class="thumbnail-label">Thumbnail</span>'
-                            : `<button type="button" class="set-thumbnail-btn" onclick="setPreviewThumbnail(${index})">Set as Thumbnail</button>`}
                     `;
                     container.appendChild(wrapper);
                 };
@@ -529,21 +650,8 @@
             });
         }
 
-        function setPreviewThumbnail(index) {
-            thumbnailIndex = index;
-            document.getElementById('thumbnailIndex').value = index;
-            renderPreviews();
-        }
-
         function removePreview(index) {
             selectedFiles.splice(index, 1);
-            if (thumbnailIndex >= selectedFiles.length) {
-                thumbnailIndex = Math.max(0, selectedFiles.length - 1);
-            } else if (thumbnailIndex > index) {
-                thumbnailIndex--;
-            }
-            const hidden = document.getElementById('thumbnailIndex');
-            if (hidden) hidden.value = thumbnailIndex;
             const dt = new DataTransfer();
             selectedFiles.forEach(f => dt.items.add(f));
             document.getElementById('imageInput').files = dt.files;

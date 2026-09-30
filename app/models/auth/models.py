@@ -61,6 +61,14 @@ class User(Model):
         nullable=True
     )
 
+    location_latitude = Column(Float, nullable=True)
+    location_longitude = Column(Float, nullable=True)
+    location_verified = Column(Boolean, default=False, nullable=False)
+    location_verified_at = Column(DateTime(timezone=True), nullable=True)
+    profile_photo_captured_at = Column(DateTime(timezone=True), nullable=True)
+    psgc_location = Column(String(255), nullable=True)
+    geotag_location = Column(String(255), nullable=True)
+
     bio = Column(
         Text,
         nullable=True

@@ -5,16 +5,88 @@ Handlers retain the legacy SQL and template behavior while living in a domain mo
 
 import csv
 import os
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
 
-from flask import flash, jsonify, redirect, render_template, request, session
+from flask import current_app, flash, jsonify, redirect, render_template, request, send_from_directory, session
+from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
 from .. import legacy as core
 from ..legacy import app, get_db, logger, update_analytics
+from ..services.geotag_service import validate_coordinates, verify_crop_location
+from ..services.profile_service import missing_harvest_profile_requirements
 
 # Route implementations use the shared compatibility context.
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
+
+
+ALLOWED_CROP_PHOTO_FORMATS = {
+    "png": "PNG",
+    "jpg": "JPEG",
+    "jpeg": "JPEG",
+    "webp": "WEBP",
+}
+
+
+def _save_crop_photo(uploaded_file):
+    """Validate and privately store one crop evidence image."""
+    extension = (
+        uploaded_file.filename.rsplit(".", 1)[-1].lower()
+        if uploaded_file.filename and "." in uploaded_file.filename
+        else ""
+    )
+    expected_format = ALLOWED_CROP_PHOTO_FORMATS.get(extension)
+    if not expected_format:
+        raise ValueError("Choose a PNG, JPG, JPEG, or WEBP crop photo.")
+
+    uploaded_file.stream.seek(0, os.SEEK_END)
+    file_size = uploaded_file.stream.tell()
+    uploaded_file.stream.seek(0)
+    if file_size > current_app.config["MAX_CROP_PHOTO_SIZE_BYTES"]:
+        maximum_size_mb = current_app.config["MAX_CROP_PHOTO_SIZE_BYTES"] / (1024 * 1024)
+        raise ValueError(f"Crop photos must be {maximum_size_mb:g} MB or smaller.")
+    if file_size == 0:
+        raise ValueError("The selected crop photo is empty.")
+
+    try:
+        with Image.open(uploaded_file.stream) as image:
+            if image.format != expected_format:
+                raise ValueError("The selected file content does not match its image type.")
+            image.verify()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+        raise ValueError("The selected file is not a valid supported image.") from error
+    finally:
+        uploaded_file.stream.seek(0)
+
+    filename = f"{uuid.uuid4().hex}.{extension}"
+    evidence_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], "crop_evidence")
+    os.makedirs(evidence_dir, exist_ok=True)
+    uploaded_file.save(os.path.join(evidence_dir, filename))
+    return filename
+
+
+def _parse_gps_capture(form):
+    latitude_text = form.get("latitude", "").strip()
+    longitude_text = form.get("longitude", "").strip()
+    captured_at_text = form.get("gps_captured_at", "").strip()
+
+    if not latitude_text and not longitude_text:
+        return None, None, None
+    if not latitude_text or not longitude_text:
+        raise ValueError("Both latitude and longitude are required for a GPS capture.")
+
+    latitude, longitude = validate_coordinates(latitude_text, longitude_text)
+    if not captured_at_text:
+        return latitude, longitude, None
+    try:
+        captured_at = datetime.fromisoformat(captured_at_text.replace("Z", "+00:00"))
+    except ValueError:
+        raise ValueError("The GPS capture timestamp is invalid.") from None
+    if captured_at.tzinfo is None:
+        captured_at = captured_at.replace(tzinfo=timezone.utc)
+    return latitude, longitude, captured_at.isoformat()
+
 
 def inventory():
     """Display the signed-in user's harvest inventory as a dedicated workspace."""
@@ -242,10 +314,24 @@ def upload():
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT role, location FROM users WHERE username=?", (session["user"],))
+    cur.execute(
+        "SELECT first_name, last_name, email, profile_picture, profile_photo_captured_at, "
+        "location, psgc_location, geotag_location, location_latitude, location_longitude, location_verified "
+        "FROM users WHERE username=?",
+        (session["user"],),
+    )
     user = cur.fetchone()
-    role = user[0] if user else 'user'
-    location = user[1] if user else None
+    missing_requirements = missing_harvest_profile_requirements(user)
+    if missing_requirements:
+        conn.close()
+        flash(
+            "Complete your profile before uploading harvest: "
+            + ", ".join(missing_requirements)
+            + ".",
+            "warning",
+        )
+        return redirect("/profile/update")
+    location = user["location"] if user else None
 
     if request.method == "POST":
         file = request.files.get("file")
@@ -319,15 +405,19 @@ def upload():
                                 quantity,
                                 farmer,
                                 date_received,
-                                location
+                                location,
+                                verification_status,
+                                verification_notes
                             )
-                            VALUES(?,?,?,?,?)
+                            VALUES(?,?,?,?,?,?,?)
                             """, (
                                 crop_id,
                                 quantity,
                                 session["user"],
                                 date_received,
-                                location
+                                location,
+                                "manual_review",
+                                "CSV import does not include browser GPS capture or crop photo evidence.",
                             ))
                             processed_any = True
 
@@ -377,26 +467,73 @@ def upload():
                 conn.close()
                 return redirect(request.url)
 
+            try:
+                latitude, longitude, capture_time = _parse_gps_capture(request.form)
+            except ValueError as error:
+                flash(str(error))
+                conn.close()
+                return redirect(request.url)
+
+            photo_path = None
+            profile_is_verified = bool(user and user["location_verified"])
+            verification_status, distance = verify_crop_location(
+                user["location_latitude"] if profile_is_verified else None,
+                user["location_longitude"] if profile_is_verified else None,
+                latitude,
+                longitude,
+                current_app.config["MAX_CROP_DISTANCE_METERS"],
+            )
+            notes = []
+            if not profile_is_verified:
+                notes.append("Farmer has no captured reference location.")
+            if latitude is None or capture_time is None:
+                notes.append("Harvest GPS capture is missing or incomplete.")
+            if notes:
+                verification_status = "manual_review"
+
             cur.execute("""
             INSERT INTO inventory(
                 crop_id,
                 quantity,
                 farmer,
                 date_received,
-                location
+                location,
+                photo_path,
+                latitude,
+                longitude,
+                capture_time,
+                distance_from_user,
+                verification_status,
+                verification_notes
             )
-            VALUES(?,?,?,?,?)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
                 crop_id,
                 quantity,
                 session["user"],
                 date_received,
-                location
+                location,
+                photo_path,
+                latitude,
+                longitude,
+                capture_time,
+                distance,
+                verification_status,
+                " ".join(notes) or None,
             ))
             conn.commit()
             update_analytics()
             processed_any = True
-            flash("Manual harvest entry added successfully!")
+            distance_message = (
+                f" Distance from your captured reference location: {distance / 1000:.2f} km."
+                if distance is not None else ""
+            )
+            flash(
+                f"Harvest entry added. Location status: {verification_status.replace('_', ' ')}."
+                f"{distance_message} Allowed distance: "
+                f"{current_app.config['MAX_CROP_DISTANCE_KM']:g} km. "
+                "Geographic proximity is not proof of crop ownership."
+            )
             logger.info(f"User {session['user']} manually posted crop {crop_id} x{quantity}")
 
         else:
@@ -404,13 +541,42 @@ def upload():
             conn.close()
             return redirect(request.url)
 
-        ##return redirect("/dashboard")
+        if processed_any:
+            return redirect("/upload")
     
     cur.execute("SELECT id, crops_name FROM crops ORDER BY crops_name")
     crops = cur.fetchall()
 
     conn.close()
-    return render_template("upload.html", crops=crops)
+    return render_template(
+        "upload.html",
+        crops=crops,
+        max_distance_km=current_app.config["MAX_CROP_DISTANCE_KM"],
+    )
+
+
+def crop_evidence(filename):
+    """Serve an evidence photo only to its owner or an administrator."""
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db()
+    row = conn.cursor().execute(
+        "SELECT farmer FROM inventory WHERE photo_path=?",
+        (filename,),
+    ).fetchone()
+    conn.close()
+    if not row or (
+        row["farmer"] != session["user"] and session.get("role") != "admin"
+    ):
+        return jsonify({"error": "Evidence photo not found"}), 404
+
+    return send_from_directory(
+        os.path.join(current_app.config["UPLOAD_FOLDER"], "crop_evidence"),
+        filename,
+        as_attachment=False,
+    )
+
 
 def register(application):
     """Register this domain's routes on the existing Flask app."""
@@ -421,8 +587,9 @@ def register(application):
     application.add_url_rule('/inventory/edit/<int:item_id>', endpoint='edit_inventory', view_func=edit_inventory, methods=['GET', 'POST'])
     application.add_url_rule('/inventory/delete/<int:item_id>', endpoint='delete_inventory', view_func=delete_inventory)
     application.add_url_rule('/upload', endpoint='upload', view_func=upload, methods=['GET', 'POST'])
+    application.add_url_rule('/harvest-evidence/<filename>', endpoint='crop_evidence', view_func=crop_evidence)
     for _name in __all__:
         setattr(core, _name, globals()[_name])
 
 
-__all__ = ['inventory', 'inventory_buy', 'inventory_edit_crop', 'inventory_delete_crop', 'edit_inventory', 'delete_inventory', 'upload']
+__all__ = ['inventory', 'inventory_buy', 'inventory_edit_crop', 'inventory_delete_crop', 'edit_inventory', 'delete_inventory', 'upload', 'crop_evidence']

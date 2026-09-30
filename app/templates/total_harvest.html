@@ -7,18 +7,22 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/analytics-pages.css') }}">
     <style>
         .chart-card { min-height: 320px; }
     </style>
 </head>
-<body>
-    <div class="container py-5">
-        <div class="d-flex justify-content-between align-items-center mb-4">
+<body class="analytics-page">
+    {% set analytics_page_title = 'Total Harvest' %}
+    {% include '_analytics_navigation.html' %}
+    <main class="analytics-content">
+        <div class="analytics-page-header">
             <div>
+                <div class="analytics-eyebrow">Harvest overview</div>
                 <h1><i class="fas fa-seedling"></i> Total Harvest</h1>
-                <p class="text-muted">View the full harvest volume and crop totals.</p>
+                <p>Review recorded harvest volume and compare crop contributions.</p>
             </div>
-            <a href="/dashboard" class="btn btn-success"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+            <a href="/dashboard" class="btn btn-outline-success"><i class="fas fa-arrow-left me-1"></i> Back to Dashboard</a>
         </div>
 
         <div class="row g-4 mb-4">
@@ -76,7 +80,7 @@
                 </div>
             </div>
         </div>
-    </div>
+    </main>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
@@ -91,16 +95,19 @@
                 datasets: [{
                     label: 'Total Harvest',
                     data: harvestValues,
-                    backgroundColor: 'rgba(75, 192, 192, 0.7)',
-                    borderColor: 'rgba(54, 162, 235, 1)',
-                    borderWidth: 1
+                    backgroundColor: 'rgba(76, 175, 80, 0.72)',
+                    hoverBackgroundColor: 'rgba(45, 106, 46, 0.88)',
+                    borderRadius: 7,
+                    borderSkipped: false
                 }]
             },
             options: {
                 responsive: true,
                 scales: {
-                    y: { beginAtZero: true }
-                }
+                    y: { beginAtZero: true, grid: { color: '#edf1eb' }, ticks: { color: '#738073' } },
+                    x: { grid: { display: false }, ticks: { color: '#536253' } }
+                },
+                plugins: { legend: { display: false } }
             }
         });
         {% endif %}

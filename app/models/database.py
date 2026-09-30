@@ -340,6 +340,20 @@ def init_db():
         cur.execute("ALTER TABLE inventory ADD COLUMN crop_name TEXT")
     if 'crop_id' not in inventory_columns:
         cur.execute("ALTER TABLE inventory ADD COLUMN crop_id INTEGER")
+    inventory_geotag_columns = {
+        "photo_path": "TEXT",
+        "latitude": "REAL",
+        "longitude": "REAL",
+        "capture_time": "DATETIME",
+        "distance_from_user": "REAL",
+        "verification_status": "TEXT NOT NULL DEFAULT 'pending'",
+        "verification_notes": "TEXT",
+        "reviewed_by": "TEXT",
+        "reviewed_at": "DATETIME",
+    }
+    for column, definition in inventory_geotag_columns.items():
+        if column not in inventory_columns:
+            cur.execute(f"ALTER TABLE inventory ADD COLUMN {column} {definition}")
 
     cur.execute("""
         UPDATE inventory
@@ -424,6 +438,11 @@ def init_db():
         cur.execute("ALTER TABLE marketplace ADD COLUMN buyer_rating_date TEXT")
     marketplace_compatibility_columns = {
         'main_image': 'TEXT',
+        'thumbnail_verified': 'INTEGER NOT NULL DEFAULT 0',
+        'thumbnail_latitude': 'REAL',
+        'thumbnail_longitude': 'REAL',
+        'thumbnail_distance_meters': 'REAL',
+        'thumbnail_captured_at': 'TEXT',
         'listing_type': "TEXT DEFAULT 'standard'",
         'available_date': 'TEXT',
         'preorder_status': 'TEXT',
@@ -435,6 +454,7 @@ def init_db():
     for column, definition in marketplace_compatibility_columns.items():
         if column not in marketplace_columns:
             cur.execute(f"ALTER TABLE marketplace ADD COLUMN {column} {definition}")
+    cur.execute("UPDATE marketplace SET main_image=NULL WHERE thumbnail_verified=0")
 
     cur.execute("PRAGMA table_info(users)")
     users_columns = [row[1] for row in cur.fetchall()]
@@ -448,6 +468,13 @@ def init_db():
         'profile_picture': 'TEXT',
         'bio': 'TEXT',
         'is_verified': 'INTEGER DEFAULT 0',
+        'location_latitude': 'REAL',
+        'location_longitude': 'REAL',
+        'location_verified': 'INTEGER NOT NULL DEFAULT 0',
+        'location_verified_at': 'DATETIME',
+        'profile_photo_captured_at': 'DATETIME',
+        'psgc_location': 'TEXT',
+        'geotag_location': 'TEXT',
         'created_at': 'TEXT',
         'updated_at': 'TEXT',
     }

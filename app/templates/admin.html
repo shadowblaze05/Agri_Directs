@@ -17,7 +17,8 @@
       ('Users & roles', 'Manage accounts, roles, passwords, and access.', stats.users, 'users', 'admin_users'),
       ('Crop catalog', 'Manage crops and crop categories.', stats.crops, 'seedling', 'admin_catalog'),
       ('Knowledge', 'Manage articles, drafts, and knowledge categories.', stats.articles, 'book-open', 'admin_knowledge'),
-      ('Inventory', 'Review and moderate farmer inventory records.', 'View records', 'boxes-stacked', 'admin_inventory')
+      ('Inventory', 'Review and moderate farmer inventory records.', 'View records', 'boxes-stacked', 'admin_inventory'),
+      ('Marketplace', 'Create, edit, and remove marketplace listings.', stats.marketplace, 'store', 'admin_marketplace')
     ] %}
     <div class="col-md-6 col-xl-3"><div class="card h-100 shadow-sm border-0"><div class="card-body"><i class="fas fa-{{ icon }} text-success fs-2 mb-3"></i><h2 class="h5">{{ title }}</h2><p class="text-muted small">{{ description }}</p><div class="fs-4 fw-bold mb-3">{{ count }}</div><a href="{{ url_for(endpoint) }}" class="btn btn-outline-success btn-sm">Open workspace <i class="fas fa-arrow-right ms-1"></i></a></div></div></div>
     {% endfor %}

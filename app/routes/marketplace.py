@@ -1,17 +1,113 @@
-from datetime import datetime, timedelta
-from flask import flash, jsonify, redirect, render_template, request, session, url_for
+from datetime import datetime, timedelta, timezone
+from flask import current_app, flash, jsonify, redirect, render_template, request, session, url_for
+from PIL import Image, UnidentifiedImageError
 from .. import legacy as core
 from ..legacy import logger
-from ..models.database import _save_upload_file, get_db
+from ..models.database import get_db
+from ..services.geotag_service import (
+    calculate_distance_meters,
+    validate_coordinates,
+    verify_crop_location,
+)
 
 import os
 import uuid
-from werkzeug.utils import secure_filename
 
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_IMAGES = 5
+MAX_LISTING_PHOTO_DISTANCE_METERS = 10_000
+MARKETPLACE_IMAGE_FORMATS = {'png': 'PNG', 'jpg': 'JPEG', 'jpeg': 'JPEG', 'gif': 'GIF', 'webp': 'WEBP'}
+
+
+def _validate_marketplace_image(uploaded_file):
+    extension = (
+        uploaded_file.filename.rsplit('.', 1)[1].lower()
+        if uploaded_file.filename and '.' in uploaded_file.filename
+        else ''
+    )
+    expected_format = MARKETPLACE_IMAGE_FORMATS.get(extension)
+    if not expected_format:
+        raise ValueError("Choose a PNG, JPG, JPEG, GIF, or WEBP image.")
+    uploaded_file.stream.seek(0, os.SEEK_END)
+    file_size = uploaded_file.stream.tell()
+    uploaded_file.stream.seek(0)
+    maximum_size = current_app.config['MAX_CROP_PHOTO_SIZE_BYTES']
+    if not file_size or file_size > maximum_size:
+        raise ValueError(f"Marketplace photos must be non-empty and no larger than {maximum_size // (1024 * 1024)} MB.")
+    try:
+        with Image.open(uploaded_file.stream) as image:
+            if image.format != expected_format:
+                raise ValueError("The selected image content does not match its file type.")
+            image.verify()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as error:
+        raise ValueError("The selected file is not a valid supported image.") from error
+    finally:
+        uploaded_file.stream.seek(0)
+    return extension
+
+
+def _save_marketplace_image(uploaded_file, extension):
+    filename = f"{uuid.uuid4().hex}.{extension}"
+    upload_folder = os.path.join(current_app.root_path, 'static', 'uploads', 'marketplace')
+    os.makedirs(upload_folder, exist_ok=True)
+    uploaded_file.save(os.path.join(upload_folder, filename))
+    return filename
+
+
+def _validate_listing_thumbnail_capture(form, user, thumbnail):
+    if not thumbnail or not thumbnail.filename:
+        raise ValueError("Capture a camera photo for the listing thumbnail.")
+    if not user["location_verified"]:
+        raise ValueError("Verify your profile location with a camera photo and GPS before creating a listing.")
+    extension = _validate_marketplace_image(thumbnail)
+    if extension not in {'jpg', 'jpeg', 'png', 'webp'}:
+        raise ValueError("The camera thumbnail must be a PNG, JPG, JPEG, or WEBP image.")
+    try:
+        latitude, longitude = validate_coordinates(
+            form.get("thumbnail_latitude"),
+            form.get("thumbnail_longitude"),
+        )
+        captured_at = datetime.fromisoformat(form.get("thumbnail_captured_at", "").replace("Z", "+00:00"))
+    except (ValueError, AttributeError) as error:
+        raise ValueError("Capture a fresh GPS location with the listing thumbnail.") from error
+    if captured_at.tzinfo is None:
+        captured_at = captured_at.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    if (now - captured_at).total_seconds() > 600 or (captured_at - now).total_seconds() > 300:
+        raise ValueError("Capture a new camera photo and GPS location for the listing.")
+    if user["location_latitude"] is None or user["location_longitude"] is None:
+        raise ValueError("Your verified profile location has no saved GPS coordinates. Update your profile before creating a listing.")
+    try:
+        status, distance = verify_crop_location(
+            user["location_latitude"],
+            user["location_longitude"],
+            latitude,
+            longitude,
+            MAX_LISTING_PHOTO_DISTANCE_METERS,
+        )
+    except ValueError as error:
+        raise ValueError("Your verified profile location is invalid. Update it before creating a listing.") from error
+    if status != "within_range":
+        distance_km = f"{distance / 1000:.2f}" if distance is not None else "unknown"
+        raise ValueError(
+            f"The listing thumbnail must be within 10 km of your verified profile location "
+            f"(captured distance: {distance_km} km)."
+        )
+    distance = calculate_distance_meters(
+        user["location_latitude"],
+        user["location_longitude"],
+        latitude,
+        longitude,
+    )
+    return (
+        extension,
+        latitude,
+        longitude,
+        distance,
+        captured_at.astimezone(timezone.utc).isoformat(),
+    )
 
 
 def allowed_file(filename):
@@ -182,12 +278,36 @@ def add_marketplace_listing():
                 conn.close()
                 return redirect(request.url)
 
-        cur.execute("SELECT id, location FROM users WHERE username = ?", (session["user"],))
+        cur.execute(
+            "SELECT id, location, location_latitude, location_longitude, location_verified "
+            "FROM users WHERE username = ?",
+            (session["user"],),
+        )
         user = cur.fetchone()
         if not user:
             flash("User not found")
             conn.close()
             return redirect(request.url)
+
+        thumbnail = request.files.get("thumbnail")
+        thumbnail_capture = None
+        additional_images = []
+        if listing_type != "looking_for":
+            try:
+                thumbnail_capture = _validate_listing_thumbnail_capture(
+                    request.form, user, thumbnail
+                )
+                additional_images = [
+                    (image, _validate_marketplace_image(image))
+                    for image in request.files.getlist("images")
+                    if image and image.filename
+                ]
+                if len(additional_images) > MAX_IMAGES:
+                    raise ValueError(f"You can add up to {MAX_IMAGES} additional photos.")
+            except ValueError as error:
+                conn.close()
+                flash(str(error), "danger")
+                return redirect(request.url)
 
         expiry_date = (datetime.now() + timedelta(days=expiry_days)).strftime("%Y-%m-%d %H:%M:%S")
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -213,48 +333,29 @@ def add_marketplace_listing():
             flash("Failed to create listing")
             return redirect(request.url)
 
-        # Images: only for standard/preorder (looking_for doesn't need images)
-        saved_images = []
-        if listing_type != "looking_for" and 'images' in request.files:
-            files = request.files.getlist('images')
-            upload_folder = os.path.join('app', 'static', 'uploads', 'marketplace')
-            os.makedirs(upload_folder, exist_ok=True)
+        if listing_type != "looking_for":
+            extension, latitude, longitude, distance, captured_at = thumbnail_capture
+            main_image = _save_marketplace_image(thumbnail, extension)
+            cur.execute(
+                "UPDATE marketplace SET main_image=?, thumbnail_verified=1, "
+                "thumbnail_latitude=?, thumbnail_longitude=?, thumbnail_distance_meters=?, "
+                "thumbnail_captured_at=? WHERE id=?",
+                (main_image, latitude, longitude, distance, captured_at, listing_id),
+            )
+            cur.execute("""
+                INSERT INTO marketplace_images (listing_id, image_filename, display_order, created_at)
+                VALUES (?, ?, ?, ?)
+            """, (listing_id, main_image, 0, now))
 
-            for idx, file in enumerate(files):
-                if file and file.filename and allowed_file(file.filename):
-                    ext = file.filename.rsplit('.', 1)[1].lower()
-                    image_filename = f"{uuid.uuid4().hex}.{ext}"
-                    file_path = os.path.join(upload_folder, image_filename)
-                    file.save(file_path)
-
-                    cur.execute("""
-                        INSERT INTO marketplace_images (listing_id, image_filename, display_order, created_at)
-                        VALUES (?, ?, ?, ?)
-                    """, (listing_id, image_filename, idx, now))
-
-                    saved_images.append(image_filename)
-                elif file and file.filename:
-                    flash(f"Invalid file type for {file.filename}. Allowed: png, jpg, jpeg, gif, webp")
-                    conn.close()
-                    return redirect(request.url)
-
-        try:
-            thumbnail_index = int(request.form.get("thumbnail_index", 0))
-        except (TypeError, ValueError):
-            thumbnail_index = 0
-        if thumbnail_index < 0 or thumbnail_index >= len(saved_images):
-            thumbnail_index = 0
-        if saved_images:
-            main_image = saved_images[thumbnail_index]
-            cur.execute("UPDATE marketplace SET main_image = ? WHERE id = ?", (main_image, listing_id))
+            for idx, (image, extension) in enumerate(additional_images, start=1):
+                image_filename = _save_marketplace_image(image, extension)
+                cur.execute("""
+                    INSERT INTO marketplace_images (listing_id, image_filename, display_order, created_at)
+                    VALUES (?, ?, ?, ?)
+                """, (listing_id, image_filename, idx, now))
 
         conn.commit()
         conn.close()
-
-        # Image requirement only for standard/preorder
-        if listing_type != "looking_for" and not saved_images:
-            flash("Please upload at least one image")
-            return redirect("/marketplace/add")
 
         flash(f"{listing_type.replace('_', ' ').title()} listing for {crop_name} created successfully!")
         return redirect("/marketplace")
@@ -301,6 +402,11 @@ def add_marketplace_listing():
     cur.execute("SELECT id, crops_name FROM crops ORDER BY crops_name")
     all_crops = cur.fetchall()
 
+    cur.execute(
+        "SELECT location_verified FROM users WHERE username=?",
+        (session["user"],),
+    )
+    profile_location = cur.fetchone()
     cart_count = get_cart_count(session["user"])
     conn.close()
 
@@ -308,7 +414,10 @@ def add_marketplace_listing():
                          crops=user_crops_with_ids,
                          all_crops=all_crops,
                          user_inventory=user_inventory,
-                         cart_count=cart_count)
+                         cart_count=cart_count,
+                         profile_location_verified=bool(
+                             profile_location and profile_location["location_verified"]
+                         ))
 
 def buy_marketplace_item(listing_id):
     if "user" not in session:
@@ -908,7 +1017,7 @@ def delete_listing_image(image_id):
         return jsonify({"error": "User not found"}), 404
 
     cur.execute("""
-        SELECT mi.*, m.user_id, m.id as listing_id
+        SELECT mi.*, m.user_id, m.id as listing_id, m.main_image
         FROM marketplace_images mi
         JOIN marketplace m ON mi.listing_id = m.id
         WHERE mi.id = ?
@@ -918,6 +1027,10 @@ def delete_listing_image(image_id):
     if not image or image["user_id"] != user["id"]:
         conn.close()
         return jsonify({"error": "Image not found or no permission"}), 404
+
+    if image["image_filename"] == image["main_image"]:
+        conn.close()
+        return jsonify({"error": "The camera-verified thumbnail cannot be deleted."}), 400
 
     cur.execute("SELECT COUNT(*) as count FROM marketplace_images WHERE listing_id = ?", (image["listing_id"],))
     count = cur.fetchone()["count"]
@@ -932,14 +1045,6 @@ def delete_listing_image(image_id):
         os.remove(file_path)
 
     cur.execute("DELETE FROM marketplace_images WHERE id = ?", (image_id,))
-
-    cur.execute("SELECT main_image FROM marketplace WHERE id = ?", (image["listing_id"],))
-    listing = cur.fetchone()
-    if listing and listing["main_image"] == image["image_filename"]:
-        cur.execute("SELECT image_filename FROM marketplace_images WHERE listing_id = ? ORDER BY display_order ASC LIMIT 1", (image["listing_id"],))
-        new_main = cur.fetchone()
-        cur.execute("UPDATE marketplace SET main_image = ? WHERE id = ?",
-                   (new_main["image_filename"] if new_main else None, image["listing_id"]))
 
     conn.commit()
     conn.close()
@@ -972,14 +1077,8 @@ def set_listing_thumbnail(image_id):
         conn.close()
         return jsonify({"error": "Image not found or no permission"}), 404
 
-    cur.execute(
-        "UPDATE marketplace SET main_image = ? WHERE id = ?",
-        (image["image_filename"], image["listing_id"])
-    )
-    conn.commit()
     conn.close()
-
-    return jsonify({"status": "success", "message": "Thumbnail updated"})
+    return jsonify({"error": "Uploaded gallery images cannot be used as thumbnails. Capture a new camera thumbnail when creating a listing."}), 400
 
 
 def view_cart():
@@ -996,7 +1095,8 @@ def view_cart():
         return redirect("/login")
 
     cur.execute("""
-        SELECT c.*, m.crop_name, m.price, m.unit, m.main_image, m.username as seller_name,
+        SELECT c.*, m.crop_name, m.price, m.unit, m.main_image, m.thumbnail_verified,
+               m.username as seller_name,
                m.amount as available_amount, m.id as listing_id
         FROM cart c
         JOIN marketplace m ON c.listing_id = m.id
@@ -1302,7 +1402,11 @@ def edit_marketplace_listing(listing_id):
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute("SELECT id, location FROM users WHERE username = ?", (session["user"],))
+    cur.execute(
+        "SELECT id, location, location_latitude, location_longitude, location_verified "
+        "FROM users WHERE username = ?",
+        (session["user"],),
+    )
     user = cur.fetchone()
     if not user:
         flash("User not found")
@@ -1343,56 +1447,95 @@ def edit_marketplace_listing(listing_id):
             conn.close()
             return redirect(request.url)
 
+        thumbnail = request.files.get("thumbnail")
+        thumbnail_capture = None
+        if thumbnail and thumbnail.filename:
+            try:
+                thumbnail_capture = _validate_listing_thumbnail_capture(
+                    request.form, user, thumbnail
+                )
+            except ValueError as error:
+                conn.close()
+                flash(str(error), "danger")
+                return redirect(request.url)
+
+        new_images = [
+            image for image in request.files.getlist('images')
+            if image and image.filename
+        ]
+        if new_images:
+            try:
+                validated_images = [
+                    (image, _validate_marketplace_image(image))
+                    for image in new_images
+                ]
+            except ValueError as error:
+                conn.close()
+                flash(str(error), "danger")
+                return redirect(request.url)
+
+            cur.execute(
+                "SELECT COUNT(*) AS count FROM marketplace_images "
+                "WHERE listing_id=? AND image_filename<>?",
+                (listing_id, listing["main_image"] or ""),
+            )
+            existing_extra_count = cur.fetchone()["count"]
+            if existing_extra_count + len(validated_images) > MAX_IMAGES:
+                conn.close()
+                flash(f"You can have up to {MAX_IMAGES} additional photos.", "danger")
+                return redirect(request.url)
+
         cur.execute("""
             UPDATE marketplace
             SET amount = ?, price = ?, unit = ?, description = ?
             WHERE id = ?
         """, (amount, price, unit, description, listing_id))
 
-        if 'images' in request.files:
-            files = request.files.getlist('images')
-            new_images = [f for f in files if f and f.filename]
+        if new_images:
+            cur.execute(
+                "SELECT COALESCE(MAX(display_order), 0) AS max_order "
+                "FROM marketplace_images WHERE listing_id=?",
+                (listing_id,),
+            )
+            max_order = cur.fetchone()["max_order"]
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            for image, extension in validated_images:
+                filename = _save_marketplace_image(image, extension)
+                max_order += 1
+                cur.execute("""
+                    INSERT INTO marketplace_images (listing_id, image_filename, display_order, created_at)
+                    VALUES (?, ?, ?, ?)
+                """, (listing_id, filename, max_order, now))
 
-            if new_images:
-                cur.execute("SELECT COUNT(*) as count FROM marketplace_images WHERE listing_id = ?", (listing_id,))
-                existing_count = cur.fetchone()["count"]
-
-                cur.execute("SELECT COALESCE(MAX(display_order), -1) as max_order FROM marketplace_images WHERE listing_id = ?", (listing_id,))
-                max_order = cur.fetchone()["max_order"]
-
-                from flask import current_app
-                upload_folder = os.path.join(current_app.root_path, 'static', 'uploads', 'marketplace')
-                os.makedirs(upload_folder, exist_ok=True)
-
-                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                for file in new_images:
-                    if existing_count >= 5:
-                        flash("Maximum 5 images per listing. Some images were not added.")
-                        break
-
-                    if allowed_file(file.filename):
-                        ext = file.filename.rsplit('.', 1)[1].lower()
-                        image_filename = f"{uuid.uuid4().hex}.{ext}"
-                        file_path = os.path.join(upload_folder, image_filename)
-                        file.save(file_path)
-
-                        max_order += 1
-                        cur.execute("""
-                            INSERT INTO marketplace_images (listing_id, image_filename, display_order, created_at)
-                            VALUES (?, ?, ?, ?)
-                        """, (listing_id, image_filename, max_order, now))
-
-                        existing_count += 1
-
-                if not listing["main_image"]:
-                    cur.execute("SELECT image_filename FROM marketplace_images WHERE listing_id = ? ORDER BY display_order ASC LIMIT 1", (listing_id,))
-                    first_image = cur.fetchone()
-                    if first_image:
-                        cur.execute("UPDATE marketplace SET main_image = ? WHERE id = ?", (first_image["image_filename"], listing_id))
+        replaced_thumbnail = None
+        if thumbnail_capture:
+            extension, latitude, longitude, distance, captured_at = thumbnail_capture
+            filename = _save_marketplace_image(thumbnail, extension)
+            replaced_thumbnail = listing["main_image"]
+            if replaced_thumbnail:
+                cur.execute(
+                    "DELETE FROM marketplace_images WHERE listing_id=? AND image_filename=?",
+                    (listing_id, replaced_thumbnail),
+                )
+            cur.execute(
+                "UPDATE marketplace SET main_image=?, thumbnail_verified=1, "
+                "thumbnail_latitude=?, thumbnail_longitude=?, thumbnail_distance_meters=?, "
+                "thumbnail_captured_at=? WHERE id=?",
+                (filename, latitude, longitude, distance, captured_at, listing_id),
+            )
+            cur.execute("""
+                INSERT INTO marketplace_images (listing_id, image_filename, display_order, created_at)
+                VALUES (?, ?, ?, ?)
+            """, (listing_id, filename, 0, datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")))
 
         conn.commit()
         conn.close()
+        if replaced_thumbnail:
+            replaced_path = os.path.join(
+                current_app.root_path, 'static', 'uploads', 'marketplace', replaced_thumbnail
+            )
+            if os.path.exists(replaced_path):
+                os.remove(replaced_path)
 
         flash("Listing updated successfully!")
         return redirect("/marketplace/my-listings")
@@ -1412,7 +1555,8 @@ def edit_marketplace_listing(listing_id):
     return render_template("add_listing.html",
                          listing=listing,
                          images=images,
-                         cart_count=cart_count)
+                         cart_count=cart_count,
+                         profile_location_verified=bool(user["location_verified"]))
 
 
 def create_preorder(listing_id):
@@ -1476,8 +1620,9 @@ def create_preorder(listing_id):
                 amount, price, unit, status, order_status,
                 listing_date, order_date, expiry_date, description, location,
                 listing_type, available_date, preorder_status, preorder_quantity,
-                main_image
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                main_image, thumbnail_verified, thumbnail_latitude, thumbnail_longitude,
+                thumbnail_distance_meters, thumbnail_captured_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             listing["user_id"], listing["username"], session["user"],
             listing["crop_id"], listing["crop_name"], quantity, listing["price"],
@@ -1485,7 +1630,9 @@ def create_preorder(listing_id):
             listing["listing_date"], now, listing["expiry_date"],
             listing["description"], listing["location"],
             "preorder", listing["available_date"], "pending", quantity,
-            listing["main_image"],
+            listing["main_image"], listing["thumbnail_verified"],
+            listing["thumbnail_latitude"], listing["thumbnail_longitude"],
+            listing["thumbnail_distance_meters"], listing["thumbnail_captured_at"],
         ))
 
     try:

@@ -22,6 +22,7 @@
         .form-control { padding: .68rem .8rem; border-color: #d9e4d5; }
         .form-control:focus { border-color: #4c9149; box-shadow: 0 0 0 .2rem rgba(76, 145, 73, .14); }
         .avatar-preview { display: flex; align-items: center; justify-content: center; width: 110px; height: 110px; color: #2d6a2e; font-size: 2.6rem; background: #e5f0df; border-radius: 50%; object-fit: cover; }
+        .camera-preview { display: block; width: min(100%, 480px); min-height: 240px; background: #111; object-fit: contain; }
         .btn-agri { color: #fff; background: #2d6a2e; border-color: #2d6a2e; }
         .btn-agri:hover { color: #fff; background: #1f5426; }
         @media (max-width: 991px) { .sidebar { width:70px; } .sidebar .nav-link { text-align:center; padding:14px 5px; font-size:0; } .sidebar .nav-link i { font-size:1.15rem; } .main-content { margin-left:70px; } }
@@ -45,10 +46,11 @@
             {% endif %}
         {% endwith %}
 
-        <form method="POST" enctype="multipart/form-data">
+        <form method="POST">
             <section class="card mb-4">
                 <div class="card-body p-4 p-md-5">
-                    <h2 class="h5 mb-4"><i class="fas fa-camera me-2 text-success"></i>Profile photo</h2>
+                    <h2 class="h5 mb-2"><i class="fas fa-camera me-2 text-success"></i>Camera-captured profile photo and location</h2>
+                    <p class="text-muted">Take a new profile photo and allow browser location access. GPS is saved separately from the photo. We show both the GPS-resolved place and its matching official PSGC location when available.</p>
                     <div class="d-flex align-items-center gap-4">
                         {% if user.profile_picture %}
                             <img id="preview" class="avatar-preview" src="{{ user.profile_picture }}" alt="Current profile photo">
@@ -56,11 +58,16 @@
                             <div id="previewIcon" class="avatar-preview" aria-hidden="true"><i class="fas fa-user"></i></div>
                             <img id="preview" class="avatar-preview d-none" alt="Profile preview">
                         {% endif %}
-                        <div>
-                            <label for="profile_picture" class="form-label">Choose a photo</label>
-                            <input id="profile_picture" name="profile_picture" class="form-control" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
-                            <div class="form-text">PNG, JPG, WEBP, or GIF. A square image works best.</div>
+                    </div>
+                    <div class="mt-4">
+                        <video id="cameraPreview" class="camera-preview rounded d-none" autoplay muted playsinline aria-label="Live camera preview"></video>
+                        <canvas id="photoCanvas" class="d-none"></canvas>
+                        <div class="d-flex flex-wrap gap-2 mt-3">
+                            <button type="button" id="startCamera" class="btn btn-outline-success"><i class="fas fa-video me-1"></i>Start camera</button>
+                            <button type="button" id="capturePhoto" class="btn btn-agri" disabled><i class="fas fa-camera me-1"></i>Take photo and save location</button>
                         </div>
+                        <div class="form-text mt-2">Camera access and location permission are required. Your camera image is sent only to Agri-Direct; GPS is captured separately and sent to OpenStreetMap Nominatim to resolve an approximate place name. Exact coordinates remain private. Location lookup requires an internet connection. Maximum photo size: 5 MB.</div>
+                        <div id="captureMessage" class="small mt-2" role="status" aria-live="polite"></div>
                     </div>
                 </div>
             </section>
@@ -74,15 +81,11 @@
                         <div class="col-md-6"><label class="form-label" for="email">Email address *</label><input type="email" class="form-control" id="email" name="email" required value="{{ user.email or '' }}"></div>
                         <div class="col-md-6"><label class="form-label" for="phone_number">Phone number</label><input type="tel" class="form-control" id="phone_number" name="phone_number" value="{{ user.phone_number or '' }}" placeholder="e.g. +63 912 345 6789"></div>
                         <div class="col-12">
-                            <label class="form-label" for="region">Farm location</label>
-                            <div class="row g-2">
-                                <div class="col-md-3"><select class="form-select location-select" id="region" name="region"><option value="">Select Region</option></select></div>
-                                <div class="col-md-3"><select class="form-select location-select" id="province" name="province" disabled><option value="">Select Province</option></select></div>
-                                <div class="col-md-3"><select class="form-select location-select" id="city" name="city" disabled><option value="">Select City/Municipality</option></select></div>
-                                <div class="col-md-3"><select class="form-select location-select" id="barangay" name="barangay" disabled><option value="">Select Barangay</option></select></div>
-                            </div>
-                            <input type="hidden" id="location" name="location" value="{{ user.location or '' }}">
-                            <div class="form-text">Select your farm location using Philippine Standard Geographic Code (PSGC) data.</div>
+                            <label class="form-label">GPS-derived place</label>
+                            <div id="geotagLocationValue" class="form-control bg-light">{{ user.geotag_location or 'Not captured yet' }}</div>
+                            <label class="form-label mt-3">PSGC location</label>
+                            <div id="psgcLocationValue" class="form-control bg-light">{{ user.psgc_location or 'No PSGC match yet' }}</div>
+                            <div class="form-text">The GPS-derived place is retained separately. The PSGC location is resolved from official Philippine Standard Geographic Code data when a match is available.</div>
                         </div>
                         <div class="col-12"><label class="form-label" for="bio">About your farm</label><textarea class="form-control" id="bio" name="bio" rows="4" maxlength="800" placeholder="Describe your farm, crops, or farming experience.">{{ user.bio or '' }}</textarea></div>
                     </div>
@@ -95,112 +98,142 @@
         </form>
     </div></main>
 
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script>
-        document.getElementById('profile_picture').addEventListener('change', function (event) {
-            const file = event.target.files[0];
-            const preview = document.getElementById('preview');
-            const icon = document.getElementById('previewIcon');
-            if (!file) return;
-            preview.src = URL.createObjectURL(file);
-            preview.classList.remove('d-none');
-            if (icon) icon.classList.add('d-none');
+        const startCamera = document.getElementById('startCamera');
+        const capturePhoto = document.getElementById('capturePhoto');
+        const cameraPreview = document.getElementById('cameraPreview');
+        const photoCanvas = document.getElementById('photoCanvas');
+        const captureMessage = document.getElementById('captureMessage');
+        const profilePreview = document.getElementById('preview');
+        const previewIcon = document.getElementById('previewIcon');
+        const farmLocationValue = document.getElementById('farmLocationValue');
+        let cameraStream = null;
+        function stopCamera() {
+            if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
+            cameraStream = null;
+            cameraPreview.srcObject = null;
+            cameraPreview.classList.add('d-none');
+        }
+
+        startCamera.addEventListener('click', async () => {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                captureMessage.textContent = 'Camera capture is unavailable. Use a supported browser over HTTPS or localhost, then allow camera access.';
+                return;
+            }
+            startCamera.disabled = true;
+            captureMessage.textContent = 'Waiting for camera permission and video...';
+            try {
+                stopCamera();
+                let cameraRequestTimedOut = false;
+                let cameraRequestTimeout;
+                const cameraRequest = navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { ideal: 'user' } },
+                    audio: false
+                }).then(stream => {
+                    if (cameraRequestTimedOut) stream.getTracks().forEach(track => track.stop());
+                    return stream;
+                });
+                try {
+                    cameraStream = await Promise.race([
+                        cameraRequest,
+                        new Promise((_, reject) => {
+                            cameraRequestTimeout = setTimeout(() => {
+                                cameraRequestTimedOut = true;
+                                reject(new Error('Camera permission timed out. Check browser permissions and try again.'));
+                            }, 15000);
+                        })
+                    ]);
+                } finally {
+                    clearTimeout(cameraRequestTimeout);
+                }
+                if (!cameraStream.getVideoTracks().length) throw new Error('No video camera was returned by the browser.');
+                cameraPreview.srcObject = cameraStream;
+                cameraPreview.classList.remove('d-none');
+                await cameraPreview.play();
+                if (!cameraPreview.videoWidth || !cameraPreview.videoHeight) {
+                    await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => reject(new Error('The camera did not send video frames. Try another camera or browser.')), 10000);
+                        cameraPreview.addEventListener('loadeddata', () => {
+                            clearTimeout(timeout);
+                            resolve();
+                        }, { once: true });
+                    });
+                }
+                capturePhoto.disabled = false;
+                captureMessage.textContent = 'Camera ready. Allow location permission when taking the photo.';
+            } catch (error) {
+                stopCamera();
+                captureMessage.textContent = error.name === 'NotAllowedError'
+                    ? 'Camera permission was denied. Allow camera access in browser settings and try again.'
+                    : error.message || 'Could not start the camera. Check that it is available and try again.';
+                capturePhoto.disabled = true;
+            } finally {
+                startCamera.disabled = false;
+            }
         });
 
-        $(function () {
-            const $region = $('#region');
-            const $province = $('#province');
-            const $city = $('#city');
-            const $barangay = $('#barangay');
-
-            $('.location-select').select2({ width: '100%' });
-            loadRegions();
-
-            $region.on('change', function () {
-                const code = $(this).val();
-                if (code) { $province.prop('disabled', false); loadProvinces(code); }
-                else resetDropdowns('province');
-                updateLocation();
-            });
-            $province.on('change', function () {
-                const code = $(this).val();
-                if (code) { $city.prop('disabled', false); loadCities(code); }
-                else resetDropdowns('city');
-                updateLocation();
-            });
-            $city.on('change', function () {
-                const code = $(this).val();
-                if (code) { $barangay.prop('disabled', false); loadBarangays(code); }
-                else resetDropdowns('barangay');
-                updateLocation();
-            });
-            $barangay.on('change', updateLocation);
-
-            function loadRegions() {
-                $.getJSON('https://psgc.gitlab.io/api/regions/')
-                    .done(function (data) {
-                        const easternVisayas = data.find(function (region) {
-                            return region.code === '080000000' || region.name.toLowerCase().includes('eastern visayas');
-                        });
-                        $region.empty();
-                        if (easternVisayas) {
-                            $region.append(new Option(easternVisayas.name, easternVisayas.code, true, true));
-                            $region.prop('disabled', true).trigger('change');
-                            $province.prop('disabled', false);
-                            loadProvinces(easternVisayas.code);
-                        } else {
-                            $region.append(new Option('No region available', ''));
-                        }
-                    })
-                    .fail(function () { $region.empty().append(new Option('Unable to load regions', '')); });
+        capturePhoto.addEventListener('click', async () => {
+            if (!cameraStream || !navigator.geolocation) {
+                captureMessage.textContent = 'Camera and browser location access are both required.';
+                return;
             }
-
-            function loadProvinces(regionCode) {
-                resetDropdowns('city');
-                $.getJSON(`https://psgc.gitlab.io/api/regions/${regionCode}/provinces/`)
-                    .done(function (data) {
-                        $province.empty().append(new Option('Select Province', ''));
-                        data.forEach(function (province) { $province.append(new Option(province.name, province.code)); });
-                        $province.trigger('change.select2');
-                    });
+            const width = cameraPreview.videoWidth;
+            const height = cameraPreview.videoHeight;
+            if (!width || !height) {
+                captureMessage.textContent = 'Wait for the camera preview, then take the photo again.';
+                return;
             }
-
-            function loadCities(provinceCode) {
-                resetDropdowns('barangay');
-                $.getJSON(`https://psgc.gitlab.io/api/provinces/${provinceCode}/cities-municipalities/`)
-                    .done(function (data) {
-                        $city.empty().append(new Option('Select City/Municipality', ''));
-                        data.forEach(function (city) { $city.append(new Option(city.name, city.code)); });
-                        $city.trigger('change.select2');
-                    });
+            photoCanvas.width = width;
+            photoCanvas.height = height;
+            const context = photoCanvas.getContext('2d');
+            if (!context) {
+                captureMessage.textContent = 'The camera photo could not be created in this browser.';
+                return;
             }
-
-            function loadBarangays(cityCode) {
-                $.getJSON(`https://psgc.gitlab.io/api/cities-municipalities/${cityCode}/barangays/`)
-                    .done(function (data) {
-                        $barangay.empty().append(new Option('Select Barangay', ''));
-                        data.forEach(function (barangay) { $barangay.append(new Option(barangay.name, barangay.code)); });
-                        $barangay.trigger('change.select2');
-                    });
+            context.drawImage(cameraPreview, 0, 0, width, height);
+            const photoBlob = await new Promise(resolve => photoCanvas.toBlob(resolve, 'image/jpeg', 0.9));
+            if (!photoBlob) {
+                captureMessage.textContent = 'The camera photo could not be created. Try again.';
+                return;
             }
-
-            function resetDropdowns(fromLevel) {
-                const levels = ['province', 'city', 'barangay'];
-                const start = levels.indexOf(fromLevel);
-                for (let index = start; index < levels.length; index += 1) {
-                    const level = levels[index];
-                    const label = level === 'city' ? 'City/Municipality' : level.charAt(0).toUpperCase() + level.slice(1);
-                    $('#' + level).empty().append(new Option('Select ' + label, '')).prop('disabled', true).trigger('change.select2');
+            const previewUrl = URL.createObjectURL(photoBlob);
+            profilePreview.src = previewUrl;
+            profilePreview.classList.remove('d-none');
+            if (previewIcon) previewIcon.classList.add('d-none');
+            captureMessage.textContent = 'Requesting GPS permission...';
+            capturePhoto.disabled = true;
+            navigator.geolocation.getCurrentPosition(async position => {
+                try {
+                    const body = new FormData();
+                    body.append('profile_photo', new File([photoBlob], 'profile-photo.jpg', { type: 'image/jpeg' }));
+                    body.append('latitude', String(position.coords.latitude));
+                    body.append('longitude', String(position.coords.longitude));
+                    body.append('captured_at', new Date(position.timestamp).toISOString());
+                    const response = await fetch('{{ url_for("capture_profile_location") }}', { method: 'POST', body });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error || 'Could not save profile photo and location.');
+                    document.getElementById('geotagLocationValue').textContent = result.geotag_location;
+                    document.getElementById('psgcLocationValue').textContent = result.psgc_location || 'No PSGC match found';
+                    captureMessage.textContent = result.message;
+                } catch (error) {
+                    captureMessage.textContent = error.message;
+                    capturePhoto.disabled = false;
+                } finally {
+                    stopCamera();
                 }
-            }
+            }, error => {
+                const messages = {
+                    1: 'Location permission was denied. Allow location access and try again.',
+                    2: 'Location services are unavailable. Enable them and try again.',
+                    3: 'Location capture timed out. Try again.'
+                };
+                captureMessage.textContent = messages[error.code] || 'Could not capture your location.';
+                capturePhoto.disabled = false;
+            }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+        });
 
-            function updateLocation() {
-                const names = [$region, $province, $city, $barangay]
-                    .map(function ($select) { return $select.find('option:selected').text(); })
-                    .filter(function (name) { return name && !name.startsWith('Select ') && name !== 'No region available'; });
-                $('#location').val(names.join(', '));
-            }
+        window.addEventListener('beforeunload', () => {
+            stopCamera();
         });
     </script>
 </body>

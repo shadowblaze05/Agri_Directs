@@ -29,6 +29,10 @@ class Config:
 
     SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
     JWT_SECRET = os.environ.get("JWT_SECRET", "change-this-jwt-secret")
+    MAX_CROP_DISTANCE_METERS = int(os.environ.get("MAX_CROP_DISTANCE_METERS", "15000"))
+    MAX_CROP_DISTANCE_KM = MAX_CROP_DISTANCE_METERS / 1000
+    MAX_CROP_PHOTO_SIZE_BYTES = 5 * 1024 * 1024
+    MAX_PROFILE_PHOTO_SIZE_BYTES = 5 * 1024 * 1024
 
     MAIL_SERVER = os.environ.get("MAIL_SERVER", "localhost")
     MAIL_PORT = int(os.environ.get("MAIL_PORT", "587"))

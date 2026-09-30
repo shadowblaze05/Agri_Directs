@@ -1,4 +1,6 @@
+from datetime import datetime, timedelta, timezone
 from functools import wraps
+import math
 
 from flask import flash, redirect, render_template, request, session, url_for
 from sqlalchemy.exc import IntegrityError
@@ -9,6 +11,8 @@ from ..models.database import _save_upload_file, get_db
 
 # Route implementations use the shared compatibility context.
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
+
+ADMIN_EDITABLE_MARKETPLACE_STATUSES = {"available", "expired", "cancelled"}
 
 
 def _admin_required(view):
@@ -428,6 +432,7 @@ def admin():
         "admins": cur.execute("SELECT COUNT(*) AS count FROM users WHERE role='admin'").fetchone()["count"],
         "crops": cur.execute("SELECT COUNT(*) AS count FROM crops").fetchone()["count"],
         "articles": cur.execute("SELECT COUNT(*) AS count FROM knowledge_posts").fetchone()["count"],
+        "marketplace": cur.execute("SELECT COUNT(*) AS count FROM marketplace").fetchone()["count"],
     }
     conn.close()
     return render_template(
@@ -498,6 +503,254 @@ def admin_inventory():
 
 
 @_admin_required
+def admin_marketplace():
+    search = request.args.get("q", "").strip()
+    conn = get_db()
+    cur = conn.cursor()
+    listings = cur.execute(
+        """SELECT m.*, u.username AS seller_name
+           FROM marketplace m LEFT JOIN users u ON u.id=m.user_id
+           WHERE ? = '' OR m.crop_name LIKE ? OR COALESCE(u.username, m.username, '') LIKE ?
+             OR COALESCE(m.status, '') LIKE ?
+           ORDER BY m.listing_date DESC, m.id DESC""",
+        (search, f"%{search}%", f"%{search}%", f"%{search}%"),
+    ).fetchall()
+    users = cur.execute("SELECT id, username, location FROM users ORDER BY username").fetchall()
+    crops = cur.execute("SELECT id, crops_name FROM crops ORDER BY crops_name").fetchall()
+    conn.close()
+    return render_template(
+        "admin_marketplace.html",
+        listings=listings,
+        users=users,
+        crops=crops,
+        search=search,
+    )
+
+
+def _admin_marketplace_values():
+    username = _form_value("username")
+    crop_id_value = _form_value("crop_id")
+    unit = _form_value("unit") or "kg"
+    description = _form_value("description")[:2000]
+    listing_type = _form_value("listing_type")
+    status = _form_value("status") or "available"
+
+    if not username or not crop_id_value:
+        raise ValueError("Choose a seller and crop.")
+    if listing_type not in {"standard", "preorder", "looking_for"}:
+        raise ValueError("Choose a valid listing type.")
+    if status not in {"available", "expired", "cancelled"}:
+        raise ValueError("Choose a valid listing status.")
+    if not unit or len(unit) > 32:
+        raise ValueError("Enter a valid unit (up to 32 characters).")
+
+    try:
+        crop_id = int(crop_id_value)
+        amount = int(_form_value("amount"))
+        price = float(_form_value("price"))
+        expiry_days = int(_form_value("expiry_days") or "30")
+    except ValueError as error:
+        raise ValueError("Choose a valid crop and enter valid amount, price, and expiry numbers.") from error
+    if amount <= 0 or not math.isfinite(price) or price <= 0:
+        raise ValueError("Amount and price must be greater than zero.")
+    if expiry_days < 1 or expiry_days > 365:
+        raise ValueError("Expiry must be between 1 and 365 days.")
+
+    available_date = _form_value("available_date")
+    if listing_type == "preorder":
+        try:
+            datetime.strptime(available_date, "%Y-%m-%dT%H:%M")
+        except ValueError as error:
+            raise ValueError("Pre-orders require a valid ready date and time.") from error
+        available_date = available_date.replace("T", " ")
+    else:
+        available_date = None
+
+    return username, crop_id, amount, price, unit, description, listing_type, status, available_date, expiry_days
+
+
+@_admin_required
+def create_admin_marketplace_listing():
+    try:
+        values = _admin_marketplace_values()
+    except ValueError as error:
+        flash(str(error), "danger")
+        return _redirect_admin("admin_marketplace")
+
+    username, crop_id, amount, price, unit, description, listing_type, status, available_date, expiry_days = values
+    conn = get_db()
+    cur = conn.cursor()
+    user = cur.execute(
+        "SELECT id, username, location FROM users WHERE username=?",
+        (username,),
+    ).fetchone()
+    crop = cur.execute(
+        "SELECT id, crops_name FROM crops WHERE id=?",
+        (crop_id,),
+    ).fetchone()
+    if not user or not crop:
+        conn.close()
+        flash("Choose an existing seller and crop.", "danger")
+        return _redirect_admin("admin_marketplace")
+
+    now = datetime.now(timezone.utc)
+    cur.execute(
+        """INSERT INTO marketplace(
+               user_id, username, crop_id, crop_name, amount, price, unit, status,
+               listing_date, expiry_date, description, location, listing_type, available_date
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            user["id"], user["username"], crop["id"], crop["crops_name"], amount, price,
+            unit, status, now.strftime("%Y-%m-%d %H:%M:%S"),
+            (now + timedelta(days=expiry_days)).strftime("%Y-%m-%d %H:%M:%S"),
+            description, user["location"], listing_type, available_date,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    flash("Marketplace listing created.", "success")
+    return _redirect_admin("admin_marketplace")
+
+
+@_admin_required
+def edit_admin_marketplace_listing(listing_id):
+    try:
+        values = _admin_marketplace_values()
+    except ValueError as error:
+        flash(str(error), "danger")
+        return _redirect_admin("admin_marketplace")
+
+    username, crop_id, amount, price, unit, description, listing_type, status, available_date, _ = values
+    conn = get_db()
+    cur = conn.cursor()
+    listing = cur.execute(
+        "SELECT buyer_username, status, username FROM marketplace WHERE id=?",
+        (listing_id,),
+    ).fetchone()
+    if not listing:
+        conn.close()
+        flash("Marketplace listing not found.", "danger")
+        return _redirect_admin("admin_marketplace")
+    if listing["buyer_username"] or listing["status"] not in ADMIN_EDITABLE_MARKETPLACE_STATUSES:
+        conn.close()
+        flash("Listings with an order or completed transaction cannot be edited.", "danger")
+        return _redirect_admin("admin_marketplace")
+
+    user = cur.execute(
+        "SELECT id, username, location FROM users WHERE username=?",
+        (username,),
+    ).fetchone()
+    crop = cur.execute(
+        "SELECT id, crops_name FROM crops WHERE id=?",
+        (crop_id,),
+    ).fetchone()
+    if not user or not crop:
+        conn.close()
+        flash("Choose an existing seller and crop.", "danger")
+        return _redirect_admin("admin_marketplace")
+
+    seller_changed = username != listing["username"]
+    update_fields = (
+            user["id"], user["username"], crop["id"], crop["crops_name"], amount, price,
+            unit, status, description, user["location"], listing_type, available_date,
+        )
+    if seller_changed:
+        cur.execute(
+            """UPDATE marketplace
+               SET user_id=?, username=?, crop_id=?, crop_name=?, amount=?, price=?, unit=?,
+                   status=?, description=?, location=?, listing_type=?, available_date=?,
+                   main_image=NULL, thumbnail_verified=0, thumbnail_latitude=NULL,
+                   thumbnail_longitude=NULL, thumbnail_distance_meters=NULL,
+                   thumbnail_captured_at=NULL
+               WHERE id=?""",
+            update_fields + (listing_id,),
+        )
+    else:
+        cur.execute(
+            """UPDATE marketplace
+               SET user_id=?, username=?, crop_id=?, crop_name=?, amount=?, price=?, unit=?,
+                   status=?, description=?, location=?, listing_type=?, available_date=?
+               WHERE id=?""",
+            update_fields + (listing_id,),
+        )
+    conn.commit()
+    conn.close()
+    flash("Marketplace listing updated.", "success")
+    return _redirect_admin("admin_marketplace")
+
+
+@_admin_required
+def delete_admin_marketplace_listing(listing_id):
+    conn = get_db()
+    cur = conn.cursor()
+    listing = cur.execute(
+        "SELECT crop_name, buyer_username, status FROM marketplace WHERE id=?",
+        (listing_id,),
+    ).fetchone()
+    if not listing:
+        conn.close()
+        flash("Marketplace listing not found.", "danger")
+        return _redirect_admin("admin_marketplace")
+    if listing["buyer_username"] or listing["status"] not in ADMIN_EDITABLE_MARKETPLACE_STATUSES:
+        conn.close()
+        flash("Listings with an order or completed transaction cannot be deleted.", "danger")
+        return _redirect_admin("admin_marketplace")
+
+    cur.execute("DELETE FROM marketplace WHERE id=?", (listing_id,))
+    conn.commit()
+    conn.close()
+    flash(f"Marketplace listing for {listing['crop_name']} deleted.", "success")
+    return _redirect_admin("admin_marketplace")
+
+
+@_admin_required
+def admin_review_geotag(item_id):
+    decision = _form_value("decision")
+    if decision not in {"approved", "rejected"}:
+        flash("Choose approve or reject for this harvest review", "danger")
+        return redirect(url_for("admin_inventory"))
+
+    conn = get_db()
+    cur = conn.cursor()
+    record = cur.execute(
+        "SELECT verification_notes, source FROM inventory WHERE id=?",
+        (item_id,),
+    ).fetchone()
+    if not record:
+        conn.close()
+        flash("Harvest record not found", "danger")
+        return redirect(url_for("admin_inventory"))
+    if record["source"] not in (None, "harvest"):
+        conn.close()
+        flash("Only harvest submissions can receive a geotag decision", "danger")
+        return redirect(url_for("admin_inventory"))
+
+    reviewed_at = datetime.now(timezone.utc).isoformat()
+    review_note = _form_value("review_note")[:1000]
+    existing_note = record["verification_notes"] or ""
+    if review_note:
+        review_note = f"{existing_note} Admin review: {review_note}".strip()
+    else:
+        review_note = existing_note or None
+    cur.execute(
+        "UPDATE inventory SET verification_status=?, reviewed_by=?, reviewed_at=?, "
+        "verification_notes=? "
+        "WHERE id=?",
+        (
+            decision,
+            session["user"],
+            reviewed_at,
+            review_note,
+            item_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    flash(f"Harvest submission {decision}.", "success")
+    return redirect(url_for("admin_inventory"))
+
+
+@_admin_required
 def admin_knowledge_categories():
     search = request.args.get("q", "").strip()
     conn = get_db()
@@ -526,6 +779,11 @@ def register(application):
     application.add_url_rule('/admin/users', endpoint='admin_users', view_func=admin_users)
     application.add_url_rule('/admin/catalog', endpoint='admin_catalog', view_func=admin_catalog)
     application.add_url_rule('/admin/inventory', endpoint='admin_inventory', view_func=admin_inventory)
+    application.add_url_rule('/admin/marketplace', endpoint='admin_marketplace', view_func=admin_marketplace)
+    application.add_url_rule('/admin/marketplace/create', endpoint='create_admin_marketplace_listing', view_func=create_admin_marketplace_listing, methods=['POST'])
+    application.add_url_rule('/admin/marketplace/edit/<int:listing_id>', endpoint='edit_admin_marketplace_listing', view_func=edit_admin_marketplace_listing, methods=['POST'])
+    application.add_url_rule('/admin/marketplace/delete/<int:listing_id>', endpoint='delete_admin_marketplace_listing', view_func=delete_admin_marketplace_listing, methods=['POST'])
+    application.add_url_rule('/admin/geotag/<int:item_id>/review', endpoint='admin_review_geotag', view_func=admin_review_geotag, methods=['POST'])
     application.add_url_rule('/admin/knowledge-categories', endpoint='admin_knowledge_categories', view_func=admin_knowledge_categories)
     application.add_url_rule('/admin/users/create', endpoint='create_admin_user', view_func=create_admin_user, methods=['POST'])
     application.add_url_rule('/admin/users/edit/<int:user_id>', endpoint='edit_admin_user', view_func=edit_admin_user, methods=['POST'])
@@ -547,7 +805,9 @@ def register(application):
 
 __all__ = [
     'admin_knowledge', 'create_knowledge_post', 'edit_knowledge_post', 'delete_knowledge_post',
-    'admin', 'admin_users', 'admin_catalog', 'admin_inventory', 'admin_knowledge_categories',
+    'admin', 'admin_users', 'admin_catalog', 'admin_inventory', 'admin_marketplace',
+    'create_admin_marketplace_listing', 'edit_admin_marketplace_listing', 'delete_admin_marketplace_listing',
+    'admin_review_geotag', 'admin_knowledge_categories',
     'create_admin_user', 'edit_admin_user', 'delete_admin_user',
     'create_crop_category', 'edit_crop_category', 'delete_crop_category',
     'create_crop', 'edit_crop', 'delete_crop',

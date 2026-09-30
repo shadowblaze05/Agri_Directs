@@ -446,7 +446,7 @@
                     {% for item in seller_other_listings %}
                     <div class="col-md-3 col-sm-6 mb-3" onclick="window.location.href='/marketplace/product/{{ item.id }}'">
                         <div class="card h-100">
-                            {% if item.main_image %}
+                            {% if item.main_image and item.thumbnail_verified %}
                             <img src="{{ url_for('static', filename='uploads/marketplace/' + item.main_image) }}" 
                                  class="card-img-top" alt="{{ item.crop_name }}" style="height:150px; object-fit:cover;">
                             {% else %}

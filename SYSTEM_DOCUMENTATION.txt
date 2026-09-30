@@ -189,6 +189,7 @@ Environment variables used by the app include:
 - MAIL_PASSWORD
 - MAIL_USE_TLS
 - MAIL_USE_SSL
+- MAX_CROP_DISTANCE_METERS (default 15000; the maximum harvest/reference distance)
 
 Configuration behavior:
 - app/config.py loads values from .env through python-dotenv.
@@ -223,6 +224,66 @@ Database backend:
 - SQLite compatibility code is preserved only as a legacy transition layer.
 - The current project does not replace PostgreSQL with SQLite.
 
+Database names and connection selection:
+- app/config.py reads DATABASE_URL first. If it is unset, it builds a PostgreSQL
+  URL from POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT, and
+  POSTGRES_DB. The configured fallback database name is AgriDirect; the
+  checked-in .env.example also uses AgriDirect.
+- DATABASE_URL takes precedence over all POSTGRES_* components. Set it to the
+  intended database for each environment; the actual production database name
+  cannot be known from source code alone.
+- app/__init__.py defines a root-level database.db path for compatibility, but
+  this is not the configured default SQLAlchemy database. Do not assume that
+  this SQLite file is the active database.
+- There is one application database. Market intelligence reads inventory data
+  from it; it does not use a separate market-intelligence database.
+- Flask-Migrate/Alembic records the applied revision in alembic_version.
+  alembic_version is migration metadata, not a business-data table.
+
+Physical table catalog:
+The canonical application tables below are created/maintained by the migrations
+and compatibility initialization in app/models/database.py. Field names are
+listed as implemented; exact physical SQL types/defaults can vary with the
+applied migration history and database dialect. The ORM model files remain the
+source for model-level types and constraints.
+
+| Table | Columns and purpose |
+|---|---|
+| users | id (PK), username, email, password, first_name, last_name, phone_number, profile_picture, profile_photo_captured_at, bio, role, location, is_verified, location_latitude, location_longitude, location_verified, location_verified_at, psgc_location, geotag_location, reliability_score, reliability_status, completed_transactions, cancelled_transactions, total_transactions, created_at, updated_at. Account, profile, role, location verification, and reliability data. |
+| crops | id (PK), crops_name (unique), category_id (FK to crop_categories.id). Crop catalogue. |
+| crop_categories | id (PK), name (unique), description. Crop grouping/category lookup. |
+| harvest | id (PK), crop_id (FK to crops.id), quantity, farmer, date_received, location. Legacy harvest records; init_db migrates/backfills them into inventory. |
+| inventory | id (PK), crop_id (FK to crops.id), crop_name (legacy/denormalized compatibility field), quantity, farmer, date_received, location, source, photo_path, latitude, longitude, capture_time, distance_from_user, verification_status, verification_notes, reviewed_by, reviewed_at. Harvest stock and its evidence/review state. |
+| marketplace | id (PK), user_id (FK to users.id), username, buyer_username, crop_id (FK to crops.id), crop_name, amount, price, unit, status, order_status, listing_date, order_date, delivery_date, expiry_date, description, location, delivery_confirmed, buyer_confirmed, buyer_confirm_date, buyer_rating, buyer_rating_date, main_image, listing_type, available_date, preorder_status, preorder_quantity, cancel_requested_by, cancel_reason, cancel_requested_date. Listings, orders, ratings, preorders, and looking-for entries share this table. |
+| marketplace_images | id (PK), listing_id (FK to marketplace.id, cascade delete), image_filename, display_order, created_at. Listing image metadata. |
+| cart | id (PK), user_id (FK to users.id, cascade delete), listing_id (FK to marketplace.id, cascade delete), quantity, added_date. Shopping cart rows. |
+| analytics | id (PK), period_type, period_value, total_harvest, top_crop, top_crop_volume, top_crop_id, top_location, top_location_volume. Computed monthly/yearly dashboard summaries. |
+| messages | id (PK), sender, recipient, message, timestamp. User and AgriBot conversations. |
+| notifications | id (PK), username, title, message, type, created_at, is_read. Per-user notifications. |
+| knowledge_categories | category_id (PK), category_name (unique). Knowledge Hub categories. |
+| knowledge_posts | post_id (PK), title, content, category_id, author, image, video, status, views, created_at, updated_at. Knowledge articles and media references. |
+| knowledge_likes | id (PK), post_id, username. Knowledge article likes; the compatibility initializer enforces unique (post_id, username). |
+| knowledge_comments | comment_id (PK), post_id, username, comment, created_at. Article comments. |
+| knowledge_replies | reply_id (PK), comment_id, username, reply, created_at. Replies to comments. |
+| alembic_version | version_num. Alembic's migration revision tracking metadata; created and maintained by Flask-Migrate/Alembic. |
+
+Key data relationships and behavior:
+- inventory.crop_id and harvest.crop_id identify a row in crops. The inventory
+  table retains crop_name for legacy compatibility; current intelligence joins
+  inventory to crops for the crop name.
+- marketplace.user_id identifies the seller; marketplace.crop_id identifies
+  the crop when available. Marketplace cart/image rows reference listing IDs.
+- User/profile coordinates are reference data; inventory coordinates and photo
+  paths are harvest evidence. Exact GPS values must not be exposed publicly.
+- analytics rows are derived summaries refreshed by update_analytics(); they
+  are not the raw source of market-intelligence forecasts.
+- A knowledge category/post/comment relationship is represented by IDs in the
+  schema. Not all such references are declared as database foreign-key
+  constraints in the current model definitions.
+- No separate ORM tables/classes exist for orders, preorders, transactions,
+  reliability history, or market forecasts; order and preorder states are
+  stored in marketplace and computed analytics remain in analytics/in memory.
+
 Adding another admin user:
 - This project does not use Django's built-in `createsuperuser` feature.
 - In Flask, an administrator is simply a user row with `role = 'admin'`.
@@ -253,8 +314,8 @@ Important:
 
 Migration behavior:
 - Flask-Migrate remains configured and active through app/extensions.py.
-- The application must not run flask db migrate or flask db upgrade unless a real model change is intentionally made.
-- The project currently avoids schema modifications during reorganization.
+- Geotag verification adds nullable location/evidence fields and safe defaults for existing records in migration b72c946fa310.
+- Review the migration before applying it; do not reset or delete existing user or inventory data.
 
 Schema helpers and compatibility layer:
 - app/models/database.py contains legacy schema initialization and compatibility helpers.
@@ -264,6 +325,8 @@ Schema helpers and compatibility layer:
 ROUTES AND KEY FEATURES
 -----------------------
 Primary route modules:
+- / - public landing page with database-backed platform metrics
+- /home - signed-in portal home
 - /login, /register, /logout - authentication
 - /dashboard - central dashboard and analytics view
 - /upload - harvest inventory upload
@@ -276,16 +339,60 @@ Primary route modules:
 API endpoints:
 - /token - generate JWT token
 - /api/harvest - protected JWT endpoint for harvest submissions
+- /profile/location - authenticated browser-captured profile reference location
+- /harvest-evidence/<filename> - private owner/admin crop evidence access
+- /admin/geotag/<item_id>/review - admin-only approval/rejection
 - /api/stats - returns analytics summary data
 - /api/current-user - provides current user information
 - /api/messages - chat API
 - /api/users - user list for chat UI
 
+PUBLIC LANDING PAGE METRICS
+---------------------------
+The `/` route in app/routes/home.py renders app/templates/public_home.html with
+metrics queried from the database at request time. The figures are not hard-coded
+and are not persisted as historical snapshots:
+
+- Buyers: distinct usernames from users with role `buyer` UNION nonblank
+  marketplace `buyer_username` values. A username found in both sources counts
+  once; recorded buyer usernames without user accounts count as well.
+- Farm profiles: non-admin user accounts with first and last name, email, profile
+  picture, profile photo capture timestamp, verified location, and a nonblank
+  GPS-derived place.
+- Product listings: all marketplace rows except `listing_type = 'looking_for'`,
+  including rows that are no longer available.
+- Market listings: marketplace rows with `status = 'available'`, excluding
+  `looking_for` requests.
+- Growth: the percentage change in non-`looking_for` marketplace rows created
+  from the start of the current month through the current time versus the same
+  elapsed day/time period in the previous month. If the previous period is empty,
+  display `New` when the current period has rows, otherwise `0%`.
+- Knowledge posts: knowledge posts whose status is `Published`.
+- Process uptime: time elapsed since the current application process started.
+  This is not a 96% availability claim and is not measured by an uptime monitor.
+
+These public landing metrics are distinct from the signed-in `/home` portal and
+the analytics dashboard at `/dashboard`.
+
+RESPONSIVE AND MOBILE SUPPORT
+-----------------------------
+- Public landing, authentication, signed-in pages, and admin views are designed
+  to adapt to phone and tablet viewport widths using responsive layouts.
+- On screens up to 576px wide, signed-in sidebar navigation becomes a fixed,
+  horizontally swipeable bottom bar rather than disappearing.
+- Mobile styles constrain page content and media to the viewport, allow
+  horizontal scrolling inside wide tables, and resize the messenger/chat controls.
+- Camera and browser GPS features continue to require browser permission and
+  HTTPS (or localhost).
+
 AUTHENTICATION
 --------------
 The app uses:
 - Flask-Login for session-based UI auth support
-- Flask-Bcrypt for password hashing
+- Werkzeug security helpers (`generate_password_hash` and `check_password_hash`)
+  for account password storage and verification
+- Flask-Bcrypt is initialized as an application extension, but the active
+  registration/login handlers use Werkzeug password hashes
 - JWT for API protection via app/services/auth_service.py
 
 Main auth code:
@@ -299,6 +406,27 @@ SECURITY REMINDER
 - Do not print or expose database passwords or secret keys.
 - Default fallback secrets should never be committed to version control.
 - Use environment variables for all production credentials.
+
+GEOTAG-BASED CROP LOCATION VERIFICATION
+---------------------------------------
+Purpose and data flow:
+- Profile completion for harvest requires first name, last name, email, a profile photo captured through the in-browser camera, the photo/GPS capture timestamp, and a GPS-derived farm location. Phone number and bio are optional. Both web and JWT harvest submissions reject incomplete profiles.
+- The Profile editor provides camera capture only (no photo file picker). Browser Geolocation captures coordinates separately from the image, the server validates them, and OpenStreetMap Nominatim reverse-geocodes them. The GPS-derived place and its official PSGC hierarchy are saved as separate user location fields and displayed independently; coordinates remain private.
+- Users must allow browser camera and location access; production camera/geolocation require HTTPS. The UI explains why these permissions are needed and discloses the Nominatim lookup.
+- Manual harvest submission can include a crop/harvest photo and separately captured browser coordinates with a capture timestamp. CSV imports remain supported and are marked for manual review because they do not carry browser GPS/photo evidence.
+- The JWT-protected `/api/harvest` endpoint validates optional coordinates and capture time, binds the record to the token owner, and returns proximity/distance separately; because this JSON endpoint does not accept photo evidence, its records remain `manual_review`.
+- Uploaded crop evidence is limited to PNG/JPG/JPEG/WEBP image content and 5 MB. It is stored outside the public static directory and is served only to the record owner or an administrator.
+- A reusable Haversine service validates coordinate ranges and calculates distance in meters. The configured limit is 15 km / 15,000 meters (`MAX_CROP_DISTANCE_METERS`, default 15000); distance less than or equal to the limit is `within_range`, and greater distance is `outside_range`.
+- Missing or incomplete coordinates, profile reference, timestamp, or photo cause the submission to be marked `manual_review`. Administrators can review evidence and set the final status to `approved` or `rejected`; their username and review timestamp are recorded.
+- `pending`, `within_range`, `outside_range`, `manual_review`, `approved`, and `rejected` are distinct workflow values. A proximity result is not automatically an administrative approval.
+
+Privacy and limitations:
+- Exact reference/crop coordinates are not exposed in public profile or inventory pages. Harvest evidence requires authentication and owner/admin authorization.
+- The feature uses GPS coordinates submitted by the browser, validated server-side for numeric format and legal latitude/longitude ranges. This does not prove that the client supplied genuine GPS readings; GPS can be inaccurate or spoofed.
+- Photos are supporting evidence, not the source of location. EXIF is not trusted because it can be removed or modified.
+- Browser geolocation requires permission and, in production, HTTPS. Proximity does not prove user identity, crop authenticity, or ownership of farmland or produce; uncertain/missing data requires human review.
+- Camera-only controls remove the ordinary file picker, but a client-submitted image/GPS pair cannot prove cryptographically that camera hardware or genuine GPS produced it.
+- Reverse-geocoding sends the submitted coordinates to OpenStreetMap Nominatim and requires network/service availability; the displayed place name is approximate. PSGC matching uses the official city/municipality, province, region, and barangay API records when a match is available.
 
 PROJECT CLEANUP STATUS
 ----------------------
@@ -357,13 +485,275 @@ Suggested team split:
 
 This keeps the architecture understandable while still supporting a small student team.
 
+COMPLETE SYSTEM REFERENCE
+------------------------
+This reference supplements the feature and setup notes above. Runtime details are
+based on the active app/ package, requirements.txt, migrations, and registered
+routes. legacy_root/ is archived and is not the canonical runtime implementation.
+
+RUNTIME AND DATA FLOW
+---------------------
+1. run.py imports the Flask app and database initialization entry point from app.
+2. app/__init__.py creates the Flask application, loads app/config.py, initializes
+   Flask-SQLAlchemy, Flask-Migrate, Flask-Bcrypt, and Flask-Login, then registers
+   app/routes through app/routes/__init__.py.
+3. Route modules render Jinja templates or return JSON. Domain code is split
+   between app/services/ and app/algorithms/.
+4. app/models/database.py exposes the DB-API-like get_db() compatibility facade
+   over Flask-SQLAlchemy for legacy route SQL. SQLAlchemy model classes live in
+   app/models/.
+5. The market intelligence service loads/normalizes inventory records and calls
+   its supply, forecast, baseline, and recommendation services.
+
+PostgreSQL is the configured target, normally through DATABASE_URL or the
+POSTGRES_* variables. The compatibility layer translates a limited set of
+SQLite-style SQL patterns; it does not make arbitrary SQLite SQL portable.
+Flask-Migrate/Alembic migration files are in migrations/versions/.
+The checked-in revisions are:
+- 166f046df20c_initial_migration.py - initial schema
+- 01e53f8bea4f_add_crop_categories.py - crop categories
+- 9c2f7e4a1b6d_add_preorder_marketplace_columns.py - preorder marketplace fields
+- b72c946fa310_add_geotag_verification.py - harvest evidence and geotag verification
+- c84a1f6b2d90_add_separate_profile_location_labels.py - separate location labels
+- fd6d67b9de23_add_member_models.py - additional member model schema
+
+ACTIVE INTERNAL PACKAGES
+------------------------
+| Package/path | Responsibility |
+|---|---|
+| app/ | Flask factory, application configuration, extensions, and legacy facade |
+| app/routes/ | HTTP route registration and request/response handling |
+| app/models/ | SQLAlchemy entities and database compatibility helpers |
+| app/services/ | Authentication, geolocation/geotagging, profiles, uploads, mail, notifications, marketplace, and intelligence services |
+| app/services/market_intelligence/ | Supply, price, forecast, baseline, and crop-recommendation pipeline |
+| app/services/market_intelligence/data_sources/ | Inventory record normalization and supply/price/history adapters |
+| app/algorithms/ | Legacy market analysis and reliability score exports |
+| app/forms/ | Forms package; currently contains only its package initializer |
+| app/utils/ | Constants, permission, validation, geocoding, and helper utilities |
+| app/templates/ | 46 server-rendered Jinja templates |
+| app/static/ | CSS, chat JavaScript, and static upload assets |
+| migrations/versions/ | Six Alembic revisions for initial schema and subsequent model/features |
+| tests/ | Pytest tests for geotagging, knowledge hub, and public metrics |
+| legacy_root/ | Preserved historical files; not the active application package |
+
+The model package currently defines entities in auth, agriculture, analytics,
+community, knowledge, and marketplace. The inventory, messaging, transactions,
+users, and verification directories are compatibility/domain namespaces, not
+separate ORM model implementations at this time.
+
+PYTHON DEPENDENCIES
+-------------------
+requirements.txt is the authoritative pinned dependency manifest:
+
+| Package | Version | Use |
+|---|---:|---|
+| Flask | 3.1.3 | Web framework and routing |
+| Flask-SQLAlchemy | 3.1.1 | ORM and database integration |
+| Flask-Migrate | 4.1.0 | Flask/Alembic migration integration |
+| Flask-Login | 0.6.3 | Login session support |
+| Flask-Bcrypt | 1.0.1 | Bcrypt extension integration |
+| Flask-WTF | 1.2.2 | WTForms/Flask form integration |
+| Flask-Mail | 0.10.0 | Email integration |
+| SQLAlchemy | 2.0.43 | ORM and SQL toolkit |
+| alembic | 1.19.0 | Schema migrations |
+| psycopg2-binary | 2.9.10 | PostgreSQL driver |
+| python-dotenv | 1.1.1 | .env loading |
+| email-validator | 2.3.0 | Email validation |
+| WTForms | 3.2.1 | Form definitions and validation |
+| requests | 2.32.5 | HTTP requests to external services |
+| Pillow | 11.3.0 | Image processing/validation |
+| geopy | 2.4.1 | Geospatial utilities |
+| gunicorn | 23.0.0 | Production WSGI server |
+| PyJWT | 2.12.1 | JSON Web Tokens |
+| numpy | 2.5.2 | Numerical calculations and AHP/TOPSIS matrices |
+| pandas | 3.0.5 | Forecast time-series input |
+| scikit-learn | 1.9.0 | Linear regression baseline |
+| statsmodels | 0.15.0 | ARIMA demand forecasting |
+| pyDecision | 5.1.1 | Decision-analysis package declared by the project |
+| pytest | 8.3.3 | Test runner |
+
+Some AHP/TOPSIS calculations are implemented locally with NumPy rather than
+calling pyDecision directly. Flask-WTF, Flask-Mail, geopy, and Gunicorn are
+declared dependencies even where their integration is not part of the main
+request path.
+
+ORM DATA MODEL
+--------------
+The following SQLAlchemy model classes are defined under app/models/ and
+exported or loaded through app/models/__init__.py. Consult each model file for
+exact types, nullability, defaults, and relationships.
+
+| Table | Model | Main data |
+|---|---|---|
+| users | User | id, username, email, password (Werkzeug hash), first_name, last_name, phone_number, profile_picture, profile-photo/GPS/PSGC fields, bio, role, location, is_verified, reliability_score, reliability_status, transaction counters, created_at, updated_at |
+| crops | Crop | id, crops_name, category_id |
+| crop_categories | CropCategory | id, name, description |
+| harvest | Harvest | id, crop_id, quantity, farmer, date_received, location |
+| inventory | Inventory | id, crop_id, quantity, farmer, date_received, location, source, photo_path, latitude, longitude, capture_time, distance_from_user, verification_status, verification_notes, reviewed_by, reviewed_at |
+| analytics | Analytics | id, period_type, period_value, total_harvest, top_crop, top_crop_volume, top_crop_id, top_location, top_location_volume |
+| marketplace | MarketplaceListing | id, user_id, username, buyer_username, crop_id, crop_name, amount, price, unit, status, order_status, listing/order/delivery/expiry dates, description, location, delivery_confirmed, buyer_confirmed, buyer_confirm_date, buyer_rating, buyer_rating_date, main_image, listing_type, available_date, preorder_status, preorder_quantity, cancellation fields; images and cart_items relationships |
+| marketplace_images | MarketplaceImage | id, listing_id, image_filename, display_order, created_at |
+| cart | Cart | id, user_id, listing_id, quantity, added_date |
+| knowledge_categories | KnowledgeCategory | category_id, category_name |
+| knowledge_posts | KnowledgePost | post_id, title, content, category_id, author, image, video, status, views, created_at, updated_at |
+| knowledge_likes | KnowledgeLike | id, post_id, username |
+| knowledge_comments | KnowledgeComment | comment_id, post_id, username, comment, created_at |
+| knowledge_replies | KnowledgeReply | reply_id, comment_id, username, reply, created_at |
+| messages | Message | id, sender, recipient, message, timestamp |
+| notifications | Notification | id, username, title, message, type, created_at, is_read |
+
+Preorders and looking-for requests are represented by marketplace listing/order
+fields and listing_type values; there is no separate ORM Order or Transaction
+class in the active model package. Relationship declarations exist for listing
+images and cart rows. app/models/database.py also maintains compatibility/schema
+helpers, so the ORM definitions are not the only SQL used by legacy routes.
+
+HTTP API AND ROUTE CATALOG
+--------------------------
+Unless a route below says otherwise, its registered default method is GET.
+Session-protected routes require a logged-in web session; administrator-only
+pages additionally check the admin role. The JWT harvest API is separate from
+session authentication. This application exposes Flask routes, not a versioned
+REST API or a separate API server.
+
+JSON/API endpoints:
+
+| Method and path | Access | Contract/purpose |
+|---|---|---|
+| POST /token | Public credentials | Form fields username and password; returns a signed HS256 JWT and expires_in (24 hours), or a 400/401/500 error |
+| POST /api/harvest | JWT Authorization header | JSON fields crop_name, positive integer quantity, and location; optional latitude + longitude together and gps_captured_at. Binds harvest to token user; returns 201 with verification/proximity information |
+| GET /api/market-insights | Session | Inventory-based summary, price_monitoring, risk_alerts, recommendations, forecast, baseline, and criteria_weights |
+| GET /api/forecast | Session | Inventory-based forecast array |
+| GET /api/stats | Session | Dashboard statistics; optional nonnegative monthly_offset and yearly_offset query parameters |
+| GET /api/users | Session | Other usernames for chat recipient selection plus AgriBot |
+| POST /api/bot | Session | JSON message; returns an AgriBot reply and stores bot conversation messages |
+| GET /api/messages | Session | Query parameter recipient; returns the latest 50 messages in that conversation |
+| POST /api/messages | Session | JSON recipient and message; stores a chat message and may create an AgriBot response |
+| GET /api/current-user | Session | Returns the current session username |
+| GET /api/listing/<listing_id> | Session | Returns crop_name, amount, and unit for one marketplace listing |
+
+For POST /token, credentials are read from form fields rather than a JSON body.
+For POST /api/harvest, send Authorization: Bearer <token> (the verifier also
+accepts the raw token). JSON harvest submissions cannot attach crop-photo
+evidence; they are therefore created in manual_review. A complete harvest
+profile is required. The token secret must be configured consistently between
+token creation and validation.
+
+Other JSON/AJAX actions and data routes:
+- POST /profile/location captures the signed-in user's profile photo and
+  geotag; it requires browser-captured form data and session authentication.
+- POST /notifications/mark-read marks notifications read for the session user.
+- POST /marketplace/buy/<listing_id>, /complete-order/<listing_id>, and
+  /confirm-receipt/<listing_id> perform the marketplace buyer/seller order flow.
+- POST /marketplace/cart/add/<listing_id>, /cart/update/<cart_id>,
+  /cart/remove/<cart_id>, and /cart/checkout update or check out the session
+  user's cart.
+- POST /marketplace/preorder/<listing_id>,
+  /marketplace/preorder/<order_id>/accept,
+  /marketplace/preorder/<order_id>/reject,
+  /marketplace/preorder/<order_id>/request-cancel, and
+  /marketplace/preorder/<order_id>/approve-cancel manage preorder state.
+- POST /inventory/buy, /inventory/edit_crop, and /inventory/delete_crop
+  update inventory through the browser forms.
+- POST /admin/geotag/<item_id>/review records an administrator's evidence
+  decision. Knowledge likes/comments/replies and administrative writes are
+  also POST form actions as detailed below.
+
+Registered browser routes:
+
+| Area | Paths |
+|---|---|
+| Account | GET/POST /login, GET/POST /register, POST /token, POST /api/harvest, GET /logout and /logout/ |
+| Public and dashboard | /, /home, /about, /crop-types, /dashboard, /dashboard-data, /total-harvest, /top-crop, /locations |
+| Market intelligence | /market-intelligence, /market-intelligence/price-monitoring, /market-intelligence/crop-recommendations, /market-intelligence/demand-forecasting, /market-intelligence/supply-balance |
+| Data/chat/notifications | /api/market-insights, /api/forecast, /api/stats, /api/users, /api/bot, /api/messages (GET/POST), /api/current-user, /messages, /messages/conversations, /messages/<person>, /messages/send (POST), /users/search, /notifications, /notifications-center, /notifications/mark-read (POST) |
+| Inventory | /inventory, /inventory/buy (POST), /inventory/edit_crop (POST), /inventory/delete_crop (POST), /inventory/edit/<item_id> (GET/POST), /inventory/delete/<item_id>, /upload (GET/POST), /harvest-evidence/<filename> |
+| Knowledge hub | /knowledge, /knowledge/<post_id>, /knowledge/like/<post_id> (POST), /knowledge/comment/<post_id> (POST), /knowledge/reply/<comment_id> (POST) |
+| Marketplace | /marketplace, /marketplace/add (GET/POST), /marketplace/buy/<listing_id> (POST), /marketplace/complete-order/<listing_id> (POST), /marketplace/confirm-receipt/<listing_id> (POST), /marketplace/my-purchases, /marketplace/rate/<listing_id> (POST), /marketplace/my-listings, /marketplace/delete/<listing_id> (POST), /marketplace/trade/<listing_id> (GET/POST), /api/listing/<listing_id>, /marketplace/product/<listing_id>, /marketplace/cart, /marketplace/cart/add/<listing_id> (POST), /marketplace/cart/update/<cart_id> (POST), /marketplace/cart/remove/<cart_id> (POST), /marketplace/cart/checkout (POST), /marketplace/edit/<listing_id> (GET/POST), /marketplace/delete-image/<image_id> (POST), /marketplace/set-thumbnail/<image_id> (POST), /marketplace/preorder/<listing_id> (POST), /marketplace/preorder/<order_id>/accept (POST), /marketplace/preorder/<order_id>/reject (POST), /marketplace/preorder/<order_id>/request-cancel (POST), /marketplace/preorder/<order_id>/approve-cancel (POST), /marketplace/my-preorders, /marketplace/my-preorder-requests, /marketplace/looking-for |
+| Profile | /profile, /profile/update (GET/POST), /profile/location (POST) |
+| Administration | /admin, /admin/users, /admin/catalog, /admin/inventory, /admin/geotag/<item_id>/review (POST), /admin/knowledge, /admin/knowledge/create (GET/POST), /admin/knowledge/edit/<post_id> (GET/POST), /admin/knowledge/delete/<post_id> (POST), /admin/knowledge-categories, /admin/users/create (POST), /admin/users/edit/<user_id> (POST), /admin/users/delete/<user_id> (POST), /admin/crop-categories/create (POST), /admin/crop-categories/edit/<category_id> (POST), /admin/crop-categories/delete/<category_id> (POST), /admin/crops/create (POST), /admin/crops/edit/<crop_id> (POST), /admin/crops/delete/<crop_id> (POST), /admin/knowledge-categories/create (POST), /admin/knowledge-categories/edit/<category_id> (POST), /admin/knowledge-categories/delete/<category_id> (POST) |
+
+Dynamic path segments above use Flask integer converters where indicated by
+their registered rules. The crop evidence endpoint is restricted to the record
+owner or an administrator. Market intelligence pages are administrator-only.
+Check the route implementation for any response format or authorization
+details beyond the concise catalog above.
+
+MARKET INTELLIGENCE MODELS AND ALGORITHMS
+-----------------------------------------
+There are two active analysis paths. The service pipeline is the primary
+market-intelligence implementation used by the intelligence pages and APIs.
+app/algorithms/market_analysis.py remains a standalone/compatibility analysis
+path used by legacy consumers and as a fallback in the API routes.
+
+Input and orchestration:
+- data_sources/transaction_data.py normalizes accepted crop, quantity, date,
+  and location field aliases and can load inventory joined to crops from the
+  live database. The inputs are inventory/harvest observations, not completed
+  sales or independently collected market-price feeds.
+- data_sources/supply_data.py aggregates positive quantities by crop and month.
+- analyze_market_intelligence() normalizes or loads records, then runs supply
+  analysis, demand forecasting, a linear-regression baseline, and weighted crop
+  recommendation. The result includes summary, price_monitoring, risk_alerts,
+  recommendations, forecast, baseline, and criteria_weights.
+
+| Component | Model/algorithm and behavior |
+|---|---|
+| SupplyAnalysisService | For each crop, computes mean and sample standard deviation of record quantities. Bounds are max(0, mean - std) and mean + std. Total crop quantity is compared with these bounds: at or below 80% of lower is critical_shortage; below lower is undersupply; above 125% of upper is oversupply; above upper is high_supply; otherwise balanced. Emits crop thresholds, risk signals, summary, and market pressure. |
+| Price snapshot | Uses aggregate crop supply, supply share, and mean supply to form a heuristic index: 100 + (1 - crop share)*40 + (crop supply / mean supply)*5, clamped to 60..190. Labels Rising/Stable/Cooling and Strong demand/Balanced/Pressure by index thresholds. This is a modeled index, not a measured currency price. |
+| DemandForecastingService | Fits statsmodels ARIMA(1,0,0) to each crop's ordered positive inventory quantities and forecasts one step. Empty/single-point or failed model fits use the fallback; predictions are clamped to zero or above. Output identifies arima, fallback-linear, or insufficient-data. |
+| DemandBaselineService | Fits scikit-learn ordinary least squares with record index as x and quantity as y; predicts the next index and returns nonnegative baseline quantity, slope, and in-sample R-squared. Empty and one-point series have explicit simple results. |
+| CriteriaBuilder / AHP | Five benefit criteria: demand_strength, supply_stability, seasonal_fit, price_opportunity, risk_balance. A fixed pairwise comparison matrix is column-normalized, row-averaged, and normalized to weights. The helper also calculates an AHP consistency ratio. |
+| CropRecommendationService / TOPSIS | Derives a five-value metric vector for each crop, applies AHP weights after vector-normalizing each criterion, calculates positive/negative ideal solutions and Euclidean distances, then ranks by closeness to the positive ideal. |
+| data_sources/price_data.py | Provides the price-monitoring snapshot from aggregate inventory supply; it does not query an external spot-price service. |
+| Legacy build_market_analysis() | Groups inventory by crop/month, extrapolates the next point with an ordinary least-squares-style linear trend, estimates a capped heuristic price index (60..180), generates supply-pressure risk alerts, applies a hard-coded crop season map, and ranks its top three recommendations. |
+| reliability_status(score) | Converts a numeric score to Not Yet Rated, Excellent (90+), Good (75+), Fair (60+), or Needs Improvement. The seller-rating flow separately calculates average buyer stars and labels it High/Medium/Low Reliability. |
+| Geotag distance | geotag_service validates coordinate ranges and computes Haversine distance in meters against the farmer reference coordinates; configured threshold defaults to 15,000 meters. Distance is a proximity signal only, not proof or automatic approval. |
+
+Interpretation limits:
+- The demand forecast and price index are heuristics over stored inventory
+  quantities; they are not trained on buyer demand, transaction volumes, or
+  authoritative commodity-price history.
+- Data sparsity, input ordering, duplicate observations, and inventory update
+  practices affect outputs. ARIMA can fall back to the simple linear estimate.
+- Recommendations are decision-support rankings, not agronomic guarantees.
+- Proximity, a photo, a model score, or a crop season label does not establish
+  identity, land ownership, crop authenticity, or product quality.
+
+INTEGRATIONS, UPLOADS, AND SETTINGS
+-----------------------------------
+- python-dotenv loads .env; app/config.py configures DATABASE_URL (or PostgreSQL
+  connection components), SECRET_KEY, JWT_SECRET, mail settings, and crop
+  geotag thresholds. Production deployments must set strong secret values and
+  credentials through the environment, not source control. The code has
+  development fallback values for database credentials and signing secrets;
+  replace them in every deployed environment.
+- JWT helpers read JWT_SECRET from the process environment when the auth service
+  is imported, and sign HS256 tokens with a 24-hour expiration. Set the same
+  strong JWT_SECRET before application startup for issuance and verification.
+- Profile geotagging uses requests-based reverse geocoding through OpenStreetMap
+  Nominatim and PSGC location records when available. app/services/geo_service.py
+  also supports a Google Maps API key when configured.
+- Profile and crop images are validated using Pillow and have a 5 MB limit.
+  Crop evidence is stored outside the public static tree and served through an
+  authenticated owner/admin route; marketplace images are static listing media.
+- Flask-Mail and the email service provide mail integration; notifications are
+  stored in the notifications table and surfaced in the signed-in interface.
+- app/static/ contains the site stylesheets, chat CSS/JavaScript, and committed
+  sample upload images. app/templates/ contains the rendered page templates.
+
+TESTS AND MAINTENANCE
+---------------------
+Existing tests are in tests/ (geotag, knowledge hub, public metrics), with
+additional root-level tests for API middleware, market insights, market
+intelligence service behavior, and upload flows. Run the repository's existing
+pytest suite from the project root using the configured virtual environment.
+Do not add a new schema migration for documentation-only changes.
+
 LAST UPDATED
 ------------
-August 14, 2026
+September 26, 2026
 
 VERSION
 -------
-1.2
-
-
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned; .\.venv\Scripts\Activate.ps1
+1.4

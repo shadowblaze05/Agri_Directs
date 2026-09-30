@@ -1,0 +1,27 @@
+<aside class="analytics-sidebar" aria-label="Main navigation">
+  <a class="analytics-brand" href="{{ url_for('portal_home') }}">
+    <span class="analytics-brand-mark"><i class="fas fa-leaf"></i></span>
+    <span>Agri-Direct<small>Farm management</small></span>
+  </a>
+  <div class="analytics-nav-label">WORKSPACE</div>
+  <nav class="nav flex-column">
+    <a class="nav-link" href="{{ url_for('portal_home') }}"><i class="fas fa-house"></i><span>Home</span></a>
+    <a class="nav-link active" href="{{ url_for('dashboard') }}"><i class="fas fa-chart-line"></i><span>Dashboard</span></a>
+    <a class="nav-link" href="/upload"><i class="fas fa-arrow-up-from-bracket"></i><span>Upload Harvest</span></a>
+    {% if session.get('role') == 'admin' %}
+    <a class="nav-link" href="/market-intelligence"><i class="fas fa-brain"></i><span>Market Intelligence</span></a>
+    {% endif %}
+    <a class="nav-link" href="/marketplace"><i class="fas fa-store"></i><span>Marketplace</span></a>
+    <a class="nav-link" href="/knowledge"><i class="fas fa-book-open"></i><span>Knowledge Hub</span></a>
+    <a class="nav-link" href="/messages"><i class="fas fa-comments"></i><span>Messages</span></a>
+    <a class="nav-link" href="/notifications-center"><i class="fas fa-bell"></i><span>Notifications</span></a>
+    <a class="nav-link" href="/profile"><i class="fas fa-user-circle"></i><span>Profile</span></a>
+  </nav>
+</aside>
+<header class="analytics-topbar">
+  <div class="analytics-topbar-context"><span>ANALYTICS</span><i class="fas fa-chevron-right"></i><strong>{{ analytics_page_title }}</strong></div>
+  <div class="d-flex align-items-center gap-2">
+    <a class="btn btn-sm btn-outline-success" href="{{ url_for('dashboard') }}"><i class="fas fa-chart-line me-1"></i>Dashboard</a>
+    <span class="analytics-user"><i class="fas fa-user-circle"></i>{{ session.get('user', 'User') }}</span>
+  </div>
+</header>

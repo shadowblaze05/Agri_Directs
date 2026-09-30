@@ -16,3 +16,144 @@ h1, h2 {
 .btn-custom:hover {
     background: darkgreen;
 }
+
+@media (max-width: 575.98px) {
+    html,
+    body {
+        min-width: 320px;
+        max-width: 100%;
+        overflow-x: hidden;
+    }
+
+    body {
+        padding-bottom: calc(64px + env(safe-area-inset-bottom)) !important;
+    }
+
+    .sidebar {
+        display: block !important;
+        position: fixed !important;
+        top: auto !important;
+        right: 0 !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: calc(64px + env(safe-area-inset-bottom)) !important;
+        min-height: 0 !important;
+        padding: 0 0 env(safe-area-inset-bottom) !important;
+        overflow: hidden !important;
+        z-index: 1040 !important;
+        background: #1a3408 !important;
+        box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.16);
+    }
+
+    .sidebar nav {
+        display: flex !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: stretch;
+        width: 100%;
+        height: 64px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .sidebar nav::-webkit-scrollbar {
+        display: none;
+    }
+
+    .sidebar .nav-link {
+        display: flex !important;
+        flex: 0 0 auto;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.2rem;
+        min-width: 66px;
+        min-height: 58px;
+        margin: 0 !important;
+        padding: 0.35rem 0.45rem !important;
+        border-radius: 0 !important;
+        color: rgba(255, 255, 255, 0.86) !important;
+        font-size: 0.62rem !important;
+        line-height: 1.1;
+        text-align: center !important;
+        white-space: nowrap;
+    }
+
+    .sidebar .nav-link i {
+        font-size: 1rem !important;
+        line-height: 1;
+    }
+
+    .sidebar .nav-link.active {
+        background: #2d5016 !important;
+        box-shadow: inset 0 3px #83c56c;
+    }
+
+    .navbar-custom {
+        height: 60px !important;
+    }
+
+    .navbar-custom .navbar-brand {
+        margin-left: 0 !important;
+        font-size: 1rem;
+    }
+
+    .main-content {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        min-height: calc(100vh - 124px);
+        margin: 60px 0 0 !important;
+        padding: 12px !important;
+    }
+
+    .main-content .container,
+    .main-content .container-fluid {
+        width: 100%;
+        max-width: 100%;
+        padding-right: 0.5rem;
+        padding-left: 0.5rem;
+    }
+
+    .main-content .table-responsive {
+        max-width: 100%;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .main-content .card,
+    .main-content .dashboard-header,
+    .main-content .page-header,
+    .main-content .marketplace-header {
+        min-width: 0;
+    }
+
+    .main-content img,
+    .main-content video,
+    .main-content canvas {
+        max-width: 100%;
+    }
+
+    .main-content input,
+    .main-content select,
+    .main-content textarea,
+    .main-content button {
+        max-width: 100%;
+    }
+
+    .chatbox {
+        right: 10px !important;
+        bottom: calc(74px + env(safe-area-inset-bottom)) !important;
+        left: 10px !important;
+        width: auto !important;
+        max-width: none !important;
+        height: min(70dvh, 500px) !important;
+    }
+
+    .chat-page {
+        height: calc(100dvh - 134px) !important;
+        min-height: 0 !important;
+    }
+}

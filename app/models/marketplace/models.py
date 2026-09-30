@@ -32,6 +32,11 @@ class MarketplaceListing(Model):
     buyer_rating = Column(Integer)
     buyer_rating_date = Column(String(32))
     main_image = Column(String(255), nullable=True)
+    thumbnail_verified = Column(Integer, nullable=False, default=0)
+    thumbnail_latitude = Column(Float, nullable=True)
+    thumbnail_longitude = Column(Float, nullable=True)
+    thumbnail_distance_meters = Column(Float, nullable=True)
+    thumbnail_captured_at = Column(String(32), nullable=True)
 
 # ============ PRE-ORDER FIELDS ============
     listing_type = Column(String(20), default="standard")   # 'standard' or 'preorder'

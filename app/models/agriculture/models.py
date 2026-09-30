@@ -1,4 +1,4 @@
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from ..base import Column, Model
 
 
@@ -48,6 +48,15 @@ class Inventory(Model):
     date_received = Column(String(32))
     location = Column(String(255))
     source = Column(String(32), default="harvest")
+    photo_path = Column(String(255), nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    capture_time = Column(DateTime(timezone=True), nullable=True)
+    distance_from_user = Column(Float, nullable=True)
+    verification_status = Column(String(32), default="pending", nullable=False)
+    verification_notes = Column(Text, nullable=True)
+    reviewed_by = Column(String(128), nullable=True)
+    reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class CropCategory(Model):

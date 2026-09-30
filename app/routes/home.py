@@ -1,5 +1,6 @@
 import calendar
 from datetime import datetime, timedelta
+import time
 
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 from .. import legacy as core
@@ -11,6 +12,8 @@ from ..services.market_intelligence import analyze_market_intelligence
 
 # Route implementations use the shared compatibility context.
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
+
+_PROCESS_STARTED_MONOTONIC = time.monotonic()
 
 
 def _market_intelligence_access():
@@ -38,10 +41,108 @@ def _latest_updates(limit=3):
     return updates
 
 
+def _format_uptime(seconds):
+    minutes = max(0, int(seconds // 60))
+    days, remaining_minutes = divmod(minutes, 24 * 60)
+    hours, remaining_minutes = divmod(remaining_minutes, 60)
+    if days:
+        return f"{days}d {hours}h"
+    if hours:
+        return f"{hours}h {remaining_minutes}m"
+    return f"{remaining_minutes}m"
+
+
+def _public_metrics(now=None):
+    """Read public counts and month-over-month listing growth from live records."""
+    now = now or datetime.now()
+    current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    previous_month_last_day = current_month_start - timedelta(days=1)
+    previous_month_start = previous_month_last_day.replace(day=1)
+    previous_period_end = previous_month_start.replace(
+        day=min(now.day, calendar.monthrange(
+            previous_month_start.year, previous_month_start.month
+        )[1]),
+        hour=now.hour,
+        minute=now.minute,
+        second=now.second,
+        microsecond=0,
+    )
+    format_db_datetime = lambda value: value.strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = get_db()
+    cur = conn.cursor()
+    buyer_count = cur.execute("""
+        SELECT COUNT(*) AS count FROM (
+            SELECT username AS buyer FROM users WHERE LOWER(COALESCE(role, '')) = 'buyer'
+            UNION
+            SELECT buyer_username AS buyer FROM marketplace
+            WHERE buyer_username IS NOT NULL AND TRIM(buyer_username) <> ''
+        ) AS buyers
+    """).fetchone()["count"]
+    farm_profile_count = cur.execute("""
+        SELECT COUNT(*) AS count FROM users
+        WHERE LOWER(COALESCE(role, '')) <> 'admin'
+          AND first_name IS NOT NULL AND TRIM(first_name) <> ''
+          AND last_name IS NOT NULL AND TRIM(last_name) <> ''
+          AND email IS NOT NULL AND TRIM(email) <> ''
+          AND profile_picture IS NOT NULL AND TRIM(profile_picture) <> ''
+          AND profile_photo_captured_at IS NOT NULL
+          AND location_verified = 1
+          AND geotag_location IS NOT NULL AND TRIM(geotag_location) <> ''
+    """).fetchone()["count"]
+    product_listing_count = cur.execute("""
+        SELECT COUNT(*) AS count FROM marketplace
+        WHERE listing_type IS NULL OR listing_type <> 'looking_for'
+    """).fetchone()["count"]
+    active_listing_count = cur.execute("""
+        SELECT COUNT(*) AS count FROM marketplace
+        WHERE status = 'available'
+          AND (listing_type IS NULL OR listing_type <> 'looking_for')
+    """).fetchone()["count"]
+    post_count = cur.execute("""
+        SELECT COUNT(*) AS count FROM knowledge_posts WHERE status = 'Published'
+    """).fetchone()["count"]
+    listing_growth = cur.execute("""
+        SELECT
+            SUM(CASE WHEN listing_date >= ? AND listing_date <= ? THEN 1 ELSE 0 END)
+                AS current_period,
+            SUM(CASE WHEN listing_date >= ? AND listing_date <= ? THEN 1 ELSE 0 END)
+                AS previous_period
+        FROM marketplace
+        WHERE listing_type IS NULL OR listing_type <> 'looking_for'
+    """, (
+        format_db_datetime(current_month_start),
+        format_db_datetime(now),
+        format_db_datetime(previous_month_start),
+        format_db_datetime(previous_period_end),
+    )).fetchone()
+    conn.close()
+
+    current_count = listing_growth["current_period"] or 0
+    previous_count = listing_growth["previous_period"] or 0
+    if previous_count:
+        growth_percent = round((current_count - previous_count) / previous_count * 100)
+        growth_display = f"{growth_percent:+d}%" if growth_percent else "0%"
+    else:
+        growth_display = "New" if current_count else "0%"
+
+    return {
+        "buyers": f"{buyer_count:,}",
+        "farm_profiles": f"{farm_profile_count:,}",
+        "product_listings": f"{product_listing_count:,}",
+        "market_listings": f"{active_listing_count:,}",
+        "growth": growth_display,
+        "knowledge_posts": f"{post_count:,}",
+        "process_uptime": _format_uptime(time.monotonic() - _PROCESS_STARTED_MONOTONIC),
+        "updated_at": now.strftime("%b %d, %Y %I:%M %p"),
+    }
+
+
 def home():
     """Public landing page for visitors before they sign in or register."""
     updates = _latest_updates(limit=3)
-    return render_template("public_home.html", updates=updates)
+    metrics = _public_metrics()
+    return render_template("public_home.html", updates=updates, metrics=metrics)
 
 
 def portal_home():

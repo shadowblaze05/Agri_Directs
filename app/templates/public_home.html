@@ -806,9 +806,9 @@
             <div class="hero-card floating-list-card">
               <div class="micro-label">Live network</div>
               <ul class="pill-list">
-                <li><span>Buyers</span><strong>1.2K</strong></li>
-                <li><span>Farm profiles</span><strong>680</strong></li>
-                <li><span>Product listings</span><strong>420</strong></li>
+                <li><span>Buyers</span><strong>{{ metrics.buyers }}</strong></li>
+                <li><span>Farm profiles</span><strong>{{ metrics.farm_profiles }}</strong></li>
+                <li><span>Product listings</span><strong>{{ metrics.product_listings }}</strong></li>
               </ul>
             </div>
 
@@ -817,26 +817,27 @@
                 <div>
                   <div class="micro-label">Agri-Direct</div>
                 </div>
-                <span class="chip"><i class="fa-solid fa-circle-dot"></i> Active</span>
+                <span class="chip"><i class="fa-solid fa-circle-dot"></i> Live data</span>
               </div>
               <div class="market-grid">
                 <div class="metric-box">
-                  <strong>248</strong>
+                  <strong>{{ metrics.market_listings }}</strong>
                   <span>Market listings</span>
                 </div>
                 <div class="metric-box">
-                  <strong>15%</strong>
-                  <span>Growth this month</span>
+                  <strong>{{ metrics.growth }}</strong>
+                  <span>New listings vs same period last month</span>
                 </div>
                 <div class="metric-box">
-                  <strong>32</strong>
+                  <strong>{{ metrics.knowledge_posts }}</strong>
                   <span>Knowledge posts</span>
                 </div>
                 <div class="metric-box">
-                  <strong>96%</strong>
-                  <span>Uptime</span>
+                  <strong>{{ metrics.process_uptime }}</strong>
+                  <span>Process uptime</span>
                 </div>
               </div>
+              <div class="small text-muted mt-3 text-end">Database counts updated {{ metrics.updated_at }}</div>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
-from flask import flash, jsonify, redirect, render_template, request, session, url_for
+from flask import current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -8,6 +8,8 @@ from .. import legacy as core
 from ..legacy import logger
 from ..models.database import get_db, update_analytics
 from ..services.auth_service import generate_jwt_token, token_required, verify_jwt_token
+from ..services.geotag_service import validate_coordinates, verify_crop_location
+from ..services.profile_service import missing_harvest_profile_requirements
 
 # Route implementations use the shared compatibility context.
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
@@ -16,8 +18,6 @@ def login():
 
     if request.method == "POST":
 
-        # Accept the previous ``username`` field name for API and test-client
-        # compatibility while the browser form uses the clearer identifier name.
         identifier = (request.form.get("identifier") or request.form.get("username") or "").strip()
         password = request.form.get("password", "")
 
@@ -40,7 +40,7 @@ def login():
                 session["user"] = user["username"]
                 session["role"] = user["role"] if user["role"] else 'buyer'
                 logger.info(f"User {user['username']} logged in")
-                return redirect("/dashboard")
+                return redirect("/home")
             else:
                 logger.warning(f"Invalid password for {identifier}")
         else:
@@ -134,7 +134,9 @@ def get_token():
 def api_harvest():
     """POST harvest data - Protected with JWT"""
     try:
-        data = request.json
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            return jsonify({"error": "Submit harvest data as a JSON object"}), 400
         
         # Validate input
         if not data.get("crop_name") or not data.get("quantity"):
@@ -148,32 +150,111 @@ def api_harvest():
             quantity = int(data["quantity"])
             if quantity <= 0:
                 return jsonify({"error": "Quantity must be positive"}), 400
-        except ValueError:
+        except (TypeError, ValueError):
             return jsonify({"error": "Quantity must be a number"}), 400
         
         token = request.headers.get("Authorization")
         username = verify_jwt_token(token)
+        if not username:
+            return jsonify({"error": "Invalid or expired token"}), 401
+
+        latitude = longitude = capture_time = None
+        latitude_value = data.get("latitude")
+        longitude_value = data.get("longitude")
+        if latitude_value not in (None, "") or longitude_value not in (None, ""):
+            if latitude_value in (None, "") or longitude_value in (None, ""):
+                return jsonify({"error": "Both latitude and longitude are required"}), 400
+            try:
+                latitude, longitude = validate_coordinates(latitude_value, longitude_value)
+            except ValueError as error:
+                return jsonify({"error": str(error)}), 400
+
+            capture_time_value = data.get("gps_captured_at")
+            if capture_time_value:
+                try:
+                    captured_at = datetime.fromisoformat(
+                        str(capture_time_value).replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    return jsonify({"error": "The GPS capture timestamp is invalid"}), 400
+                if captured_at.tzinfo is None:
+                    captured_at = captured_at.replace(tzinfo=timezone.utc)
+                capture_time = captured_at.isoformat()
         
         conn = get_db()
         cur = conn.cursor()
-        
+        cur.execute(
+            "SELECT first_name, last_name, email, profile_picture, profile_photo_captured_at, "
+            "location, psgc_location, geotag_location, location_latitude, location_longitude, location_verified "
+            "FROM users WHERE username=?",
+            (username,),
+        )
+        profile = cur.fetchone()
+        if not profile:
+            conn.close()
+            return jsonify({"error": "The authenticated account could not be found"}), 404
+
+        missing_requirements = missing_harvest_profile_requirements(profile)
+        if missing_requirements:
+            conn.close()
+            return jsonify({
+                "error": "Complete your profile before submitting harvest.",
+                "missing_profile_requirements": missing_requirements,
+            }), 403
+
+        has_reference_location = bool(profile["location_verified"])
+        proximity_status, distance = verify_crop_location(
+            profile["location_latitude"] if has_reference_location else None,
+            profile["location_longitude"] if has_reference_location else None,
+            latitude,
+            longitude,
+            current_app.config["MAX_CROP_DISTANCE_METERS"],
+        )
+        notes = ["API submissions do not include crop photo evidence."]
+        if not has_reference_location:
+            notes.append("Farmer has no captured reference location.")
+        if latitude is None or capture_time is None:
+            notes.append("Harvest GPS capture is missing or incomplete.")
+        verification_status = "manual_review"
+
         cur.execute("""
-        INSERT INTO inventory(crop_id,quantity,farmer,date_received,location)
-        SELECT id, ?, ?, ?, ? FROM crops WHERE crops_name=?
+        INSERT INTO inventory(
+            crop_id, quantity, farmer, date_received, location, latitude, longitude,
+            capture_time, distance_from_user, verification_status, verification_notes
+        )
+        SELECT id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM crops WHERE crops_name=?
         """, (
             quantity,
-            data.get("farmer", username),
+            username,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             data.get("location"),
+            latitude,
+            longitude,
+            capture_time,
+            distance,
+            verification_status,
+            " ".join(notes),
             data["crop_name"].strip(),
         ))
+        if cur.rowcount == 0:
+            conn.close()
+            return jsonify({"error": "Crop was not found"}), 404
         
         conn.commit()
         conn.close()
         update_analytics()
         
         logger.info(f"Harvest recorded via API: {data['crop_name']} x{quantity} by {username}")
-        return jsonify({"status": "harvest recorded", "crop": data["crop_name"], "quantity": quantity}), 201
+        return jsonify({
+            "status": "harvest recorded",
+            "crop": data["crop_name"],
+            "quantity": quantity,
+            "verification_status": verification_status,
+            "proximity_status": proximity_status,
+            "distance_meters": distance,
+            "distance_km": distance / 1000 if distance is not None else None,
+            "max_distance_km": current_app.config["MAX_CROP_DISTANCE_KM"],
+        }), 201
     
     except Exception as e:
         logger.error(f"API Error: {str(e)}")
