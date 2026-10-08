@@ -211,6 +211,23 @@
             });
         }
 
+        function renderStatsError(listIds, retry) {
+            listIds.forEach(listId => {
+                const list = document.getElementById(listId);
+                list.innerHTML = '';
+                const item = document.createElement('li');
+                item.className = 'list-group-item text-danger';
+                item.textContent = 'Unable to load statistics. ';
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'btn btn-link btn-sm p-0';
+                button.textContent = 'Try again';
+                button.addEventListener('click', retry);
+                item.appendChild(button);
+                list.appendChild(item);
+            });
+        }
+
         function createSmallChart(canvasId, labels, values, existingChartRef) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return null;
@@ -228,14 +245,20 @@
             const m = parseInt(document.getElementById('monthly-offset').value || '0',10);
             const y = parseInt(document.getElementById('yearly-offset').value || '0',10);
             fetch(`/api/stats?monthly_offset=${m}&yearly_offset=${y}`)
-                .then(r=>r.json())
+                .then(r=>{
+                    if (!r.ok) throw new Error('Failed to load statistics');
+                    return r.json();
+                })
                 .then(data=>{
                     locMonthlyChart = createSmallChart('loc-monthly-chart', data.top_monthly_locations.map(i=>i.name), data.top_monthly_locations.map(i=>i.total), locMonthlyChart);
                     locYearlyChart = createSmallChart('loc-yearly-chart', data.top_yearly_locations.map(i=>i.name), data.top_yearly_locations.map(i=>i.total), locYearlyChart);
                     renderLocList('loc-monthly-list', data.top_monthly_locations);
                     renderLocList('loc-yearly-list', data.top_yearly_locations);
                 })
-                .catch(err=>console.error('Error loading stats',err));
+                .catch(err=>{
+                    console.error('Error loading stats',err);
+                    renderStatsError(['loc-monthly-list', 'loc-yearly-list'], fetchAndRenderLoc);
+                });
         }
 
         document.addEventListener('DOMContentLoaded', function(){

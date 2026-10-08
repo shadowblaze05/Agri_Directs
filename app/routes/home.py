@@ -16,11 +16,11 @@ globals().update({key: value for key, value in core.__dict__.items() if not key.
 _PROCESS_STARTED_MONOTONIC = time.monotonic()
 
 
-def _market_intelligence_access():
-    """Return a redirect response when the signed-in user is not an admin."""
+def _market_intelligence_access(admin_only=True):
+    """Require sign-in and, when requested, administrator access."""
     if "user" not in session:
         return redirect(url_for("login"))
-    if session.get("role") != "admin":
+    if admin_only and session.get("role") != "admin":
         flash("Market Intelligence is available to administrators only.")
         return redirect(url_for("portal_home"))
     return None
@@ -30,12 +30,12 @@ def _latest_updates(limit=3):
     conn = get_db()
     cur = conn.cursor()
     updates = cur.execute("""
-        SELECT kp.post_id, kp.title, kp.content, kp.image, kp.created_at, kp.author,
+        SELECT kp.post_id, kp.title, kp.content, kp.image, kp.created_at, kp.author, kp.is_pinned,
                kc.category_name
         FROM knowledge_posts kp
         LEFT JOIN knowledge_categories kc ON kc.category_id = kp.category_id
         WHERE kp.status = 'Published'
-        ORDER BY kp.created_at DESC LIMIT ?
+        ORDER BY kp.is_pinned DESC, kp.created_at DESC LIMIT ?
     """, (limit,)).fetchall()
     conn.close()
     return updates
@@ -172,9 +172,11 @@ def portal_home():
           AND status = 'available'
     """, (session["user"],)).fetchone()
     conn.close()
+    market_brief = _market_brief_context(_market_analysis_context())
     return render_template("home.html", updates=updates, featured_listings=featured_listings,
                            marketplace_summary=marketplace_summary,
-                           my_listing_summary=my_listing_summary)
+                           my_listing_summary=my_listing_summary,
+                           market_brief=market_brief)
 
 def about():
     return render_template("about.html")
@@ -223,12 +225,62 @@ def _market_analysis_context():
     return analysis
 
 
+def _market_brief_context(analysis):
+    """Convert the inventory analysis into concise, non-technical guidance."""
+    summary = analysis.get("summary", {})
+    recommendations = analysis.get("recommendations", [])
+    risk_alerts = analysis.get("risk_alerts", [])
+
+    if recommendations:
+        top_crop = recommendations[0].get("crop", "a suitable crop")
+        recommendation = (
+            f"{top_crop} currently ranks as a promising option based on recent "
+            "harvest and supply patterns."
+        )
+    else:
+        recommendation = (
+            "There is not enough recent harvest information to suggest a crop yet."
+        )
+
+    priority_alerts = [
+        alert for alert in risk_alerts
+        if alert.get("severity") in {"high", "medium"}
+    ]
+    priority_alerts.sort(
+        key=lambda alert: 0 if alert.get("severity") == "high" else 1
+    )
+    if priority_alerts:
+        alert = priority_alerts[0]
+        supply_update = (
+            f"{alert.get('crop', 'A crop')}: "
+            f"{alert.get('message', 'Supply is outside its usual range.')}"
+        )
+        next_step = (
+            "Check current buyer interest and marketplace listings before "
+            "making a planting or selling decision."
+        )
+    elif summary.get("active_crops", 0):
+        supply_update = "No unusual supply signals are showing in the latest records."
+        next_step = "Keep your harvest and listings up to date to improve future insights."
+    else:
+        supply_update = "There is not enough harvest information to assess supply yet."
+        next_step = "Add harvest records to receive more useful crop and supply guidance."
+
+    return {
+        "active_crops": summary.get("active_crops", 0),
+        "recommendation": recommendation,
+        "supply_update": supply_update,
+        "next_step": next_step,
+    }
+
+
 def market_intelligence():
-    access_denied = _market_intelligence_access()
+    access_denied = _market_intelligence_access(admin_only=False)
     if access_denied:
         return access_denied
 
     analysis = _market_analysis_context()
+    market_brief = _market_brief_context(analysis)
     summary = analysis.get("summary", {})
     price_monitoring = analysis.get("price_monitoring", [])
     recommendations = analysis.get("recommendations", [])
@@ -275,6 +327,7 @@ def market_intelligence():
         pulse_items=pulse_items,
         focus_items=focus_items,
         insight_items=insight_items,
+        market_brief=market_brief,
     )
 
 
@@ -449,6 +502,7 @@ def dashboard():
     """, ("Monthly",)).fetchall()
 
     conn.close()
+    market_brief = _market_brief_context(_market_analysis_context())
 
     total = latest_analytics["total_harvest"] if latest_analytics else sum(row['quantity'] for row in data)
     top_location_name = latest_analytics["top_location"] if latest_analytics else None
@@ -464,7 +518,8 @@ def dashboard():
                        top_location_name=top_location_name,
                        top_location_volume=top_location_volume,
                        crop_count=crop_count,
-                       analytics_history=analytics_history)
+                       analytics_history=analytics_history,
+                       market_brief=market_brief)
 
 def dashboard_data():
     """Return only the inventory table HTML for real-time updates"""
@@ -1105,17 +1160,10 @@ def notifications():
     cur = conn.cursor()
 
     cur.execute("""
-
-        SELECT *
-
-        FROM notifications
-
+        SELECT * FROM notifications
         WHERE username=?
-
         ORDER BY created_at DESC
-
         LIMIT 20
-
     """, (session["user"],))
 
     rows = cur.fetchall()
@@ -1124,6 +1172,22 @@ def notifications():
     conn.close()
 
     return jsonify(data)
+
+
+def notifications_unread_count():
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COUNT(*) AS unread_count FROM notifications "
+        "WHERE username=? AND is_read=0",
+        (session["user"],),
+    )
+    row = cur.fetchone()
+    conn.close()
+    return jsonify({"unread_count": row["unread_count"] if row else 0})
 
 
 def notification_center():
@@ -1190,10 +1254,11 @@ def register(application):
     application.add_url_rule('/messages/send', endpoint='send_chat_message', view_func=send_chat_message, methods=['POST'])
     application.add_url_rule('/api/current-user', endpoint='api_current_user', view_func=api_current_user)
     application.add_url_rule('/notifications', endpoint='notifications', view_func=notifications)
+    application.add_url_rule('/notifications/unread-count', endpoint='notifications_unread_count', view_func=notifications_unread_count)
     application.add_url_rule('/notifications-center', endpoint='notification_center', view_func=notification_center)
     application.add_url_rule('/notifications/mark-read', endpoint='notifications_mark_read', view_func=notifications_mark_read, methods=['POST'])
     for _name in __all__:
         setattr(core, _name, globals()[_name])
 
 
-__all__ = ['home', 'portal_home', 'about', 'crop_types', 'market_intelligence', 'market_intelligence_price_monitoring', 'market_intelligence_crop_recommendations', 'market_intelligence_demand_forecasting', 'market_intelligence_supply_balance', 'dashboard', 'dashboard_data', 'api_market_insights', 'api_forecast', 'api_stats', 'get_users', 'bot_response', 'get_messagess', 'send_message', 'total_harvest', 'top_crop', 'locations', 'messages_page', 'get_conversations', 'users_search', 'get_messages', 'send_chat_message', 'api_current_user', 'notifications', 'notification_center', 'notifications_mark_read']
+__all__ = ['home', 'portal_home', 'about', 'crop_types', 'market_intelligence', 'market_intelligence_price_monitoring', 'market_intelligence_crop_recommendations', 'market_intelligence_demand_forecasting', 'market_intelligence_supply_balance', 'dashboard', 'dashboard_data', 'api_market_insights', 'api_forecast', 'api_stats', 'get_users', 'bot_response', 'get_messagess', 'send_message', 'total_harvest', 'top_crop', 'locations', 'messages_page', 'get_conversations', 'users_search', 'get_messages', 'send_chat_message', 'api_current_user', 'notifications', 'notifications_unread_count', 'notification_center', 'notifications_mark_read']

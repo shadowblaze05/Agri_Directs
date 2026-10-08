@@ -3,6 +3,7 @@
 from .analytics.models import Analytics
 from .agriculture.models import Crop, Harvest, Inventory, CropCategory
 from .auth.models import User
+from .audit import AuditEvent
 from .community.models import Message, Notification
 from .knowledge.models import (
     KnowledgeCategory,
@@ -34,6 +35,7 @@ __all__ = [
     "Harvest",
     "Inventory",
     "User",
+    "AuditEvent",
     "Message",
     "Notification",
     "KnowledgeCategory",

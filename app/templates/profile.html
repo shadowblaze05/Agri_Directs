@@ -369,6 +369,18 @@
           <aside class="col-lg-4">
             {% if is_public_profile %}
             <section class="profile-card mb-4">
+              <h2 class="section-title mb-2">Farmer reliability</h2>
+              {% if reliability_summary.score is not none %}
+              <div class="stat-value">{{ '%.1f'|format(reliability_summary.score) }}/5</div>
+              <p class="mb-0">
+                <span class="badge {{ 'bg-success' if reliability_summary.status == 'High Reliability' else 'bg-warning text-dark' if reliability_summary.status == 'Medium Reliability' else 'bg-danger' if reliability_summary.status == 'Low Reliability' else 'bg-secondary' }}">{{ reliability_summary.status }}</span>
+                <small class="text-muted">Based on {{ reliability_summary.rating_count }} buyer rating{{ '' if reliability_summary.rating_count == 1 else 's' }}.</small>
+              </p>
+              {% else %}
+              <p class="text-muted mb-0">Not yet rated by marketplace buyers.</p>
+              {% endif %}
+            </section>
+            <section class="profile-card mb-4">
               <h2 class="section-title mb-3">Contact {{ user.first_name or user.username }}</h2>
               {% if user.email %}
               <a class="btn btn-success w-100 mb-2" href="mailto:{{ user.email }}">
@@ -385,6 +397,19 @@
               </a>
             </section>
             {% else %}
+            <section class="profile-card mb-4">
+              <h2 class="section-title mb-2">Farmer reliability</h2>
+              {% if reliability_summary.score is not none %}
+              <div class="stat-value">{{ '%.1f'|format(reliability_summary.score) }}/5</div>
+              <p class="mb-0">
+                <span class="badge {{ 'bg-success' if reliability_summary.status == 'High Reliability' else 'bg-warning text-dark' if reliability_summary.status == 'Medium Reliability' else 'bg-danger' if reliability_summary.status == 'Low Reliability' else 'bg-secondary' }}">{{ reliability_summary.status }}</span>
+                <small class="text-muted">Based on {{ reliability_summary.rating_count }} buyer rating{{ '' if reliability_summary.rating_count == 1 else 's' }}.</small>
+              </p>
+              {% else %}
+              <p class="text-muted mb-0">Not yet rated by marketplace buyers.</p>
+              {% endif %}
+              <p class="small text-muted mt-2 mb-0">This score is the average of ratings submitted after confirmed marketplace orders.</p>
+            </section>
             <section class="profile-card mb-4" aria-labelledby="location-verification-heading">
               <h2 id="location-verification-heading" class="section-title mb-2">
                 <i class="fas fa-location-dot me-2"></i>Camera-verified profile location

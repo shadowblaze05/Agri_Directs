@@ -12,4 +12,16 @@ def reliability_status(score):
         return "Fair"
     return "Needs Improvement"
 
-__all__ = ["reliability_status"]
+
+def seller_reliability_status(score):
+    """Return the seller-rating label for a 1-5 average buyer rating."""
+    if score is None:
+        return "Not Yet Rated"
+    if score >= 4:
+        return "High Reliability"
+    if score >= 3:
+        return "Medium Reliability"
+    return "Low Reliability"
+
+
+__all__ = ["reliability_status", "seller_reliability_status"]

@@ -38,5 +38,15 @@ class Config:
     MAIL_PORT = int(os.environ.get("MAIL_PORT", "587"))
     MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
     MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
+    MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER") or os.environ.get("MAIL_USERNAME", "noreply@agridirect.local")
     MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS", "true").lower() in {"1", "true", "yes", "on"}
     MAIL_USE_SSL = os.environ.get("MAIL_USE_SSL", "false").lower() in {"1", "true", "yes", "on"}
+
+    _mail_suppress_override = os.environ.get("MAIL_SUPPRESS_SEND")
+    if _mail_suppress_override is None:
+        smtp_configured = bool(MAIL_SERVER and MAIL_USERNAME and MAIL_PASSWORD and MAIL_SERVER != "localhost")
+        MAIL_SUPPRESS_SEND = not smtp_configured
+    else:
+        MAIL_SUPPRESS_SEND = _mail_suppress_override.lower() in {"1", "true", "yes", "on"}
+
+    APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000")

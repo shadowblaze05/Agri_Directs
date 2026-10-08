@@ -3,14 +3,86 @@ let currentConversation = null;
 let allConversations = [];
 let messageRefreshInterval = null;
 let searchTimeout = null;
+let hasLoadedConversations = false;
+let messagesLoadedFor = null;
+let messagesAttemptedFor = null;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     loadConversations();
+    loadNotifications();
     setupEventListeners();
     // Refresh conversations every 3 seconds
     setInterval(loadConversations, 3000);
+    setInterval(loadNotifications, 10000);
 });
+
+async function loadNotifications() {
+    const notificationList = document.getElementById('notification-list');
+    const notificationCount = document.getElementById('notification-count');
+    if (!notificationList || !notificationCount) return;
+
+    try {
+        const [notificationsResponse, countResponse] = await Promise.all([
+            fetch('/notifications'),
+            fetch('/notifications/unread-count')
+        ]);
+        if (!notificationsResponse.ok || !countResponse.ok) {
+            throw new Error('Failed to load notifications');
+        }
+
+        const notifications = await notificationsResponse.json();
+        const countData = await countResponse.json();
+        const unreadCount = Number(countData.unread_count || 0);
+        notificationCount.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+        notificationCount.classList.toggle('d-none', unreadCount === 0);
+
+        notificationList.replaceChildren();
+        const heading = document.createElement('li');
+        heading.className = 'dropdown-header';
+        heading.textContent = 'Notifications';
+        notificationList.append(heading);
+
+        if (!notifications.length) {
+            const emptyItem = document.createElement('li');
+            const emptyMessage = document.createElement('span');
+            emptyMessage.className = 'dropdown-item text-muted';
+            emptyMessage.textContent = 'No notifications';
+            emptyItem.append(emptyMessage);
+            notificationList.append(emptyItem);
+        } else {
+            notifications.slice(0, 5).forEach((notification) => {
+                const item = document.createElement('li');
+                const link = document.createElement('a');
+                const href = notification.link;
+                link.className = 'dropdown-item text-wrap';
+                link.href = typeof href === 'string' && href.startsWith('/') && !href.startsWith('//')
+                    ? href
+                    : '/notifications-center';
+                if (!notification.is_read) link.classList.add('fw-bold');
+                const title = document.createElement('span');
+                title.className = 'd-block';
+                title.textContent = notification.title || 'Update';
+                const message = document.createElement('small');
+                message.className = 'text-muted';
+                message.textContent = notification.message || '';
+                link.append(title, message);
+                item.append(link);
+                notificationList.append(item);
+            });
+        }
+
+        const footer = document.createElement('li');
+        const allNotifications = document.createElement('a');
+        allNotifications.className = 'dropdown-item text-center text-success';
+        allNotifications.href = '/notifications-center';
+        allNotifications.textContent = 'View all notifications';
+        footer.append(allNotifications);
+        notificationList.append(footer);
+    } catch (error) {
+        console.error('Failed to load notifications:', error);
+    }
+}
 
 // Setup event listeners
 function setupEventListeners() {
@@ -41,15 +113,39 @@ function setupEventListeners() {
 
 // Load conversation list
 async function loadConversations() {
+    const container = document.getElementById('conversation-list');
+    if (!container) return;
+
+    if (!hasLoadedConversations) {
+        container.innerHTML = `
+            <div class="page-state skeleton" style="min-height: 120px; padding: 1.25rem;" role="status" aria-live="polite">
+                <div class="state-icon"><i class="fas fa-spinner fa-spin"></i></div>
+                <h6 class="state-title">Loading conversations</h6>
+                <p class="state-description">Checking recent messages.</p>
+            </div>
+        `;
+    }
+
     try {
         const response = await fetch('/messages/conversations');
         if (!response.ok) throw new Error('Failed to load conversations');
 
         const conversations = await response.json();
         allConversations = conversations;
+        hasLoadedConversations = true;
         renderConversationList(conversations);
     } catch (error) {
         console.error('Error loading conversations:', error);
+        if (!hasLoadedConversations) {
+            container.innerHTML = `
+                <div class="page-state" style="min-height: 120px; padding: 1.25rem;" role="alert">
+                    <div class="state-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    <h6 class="state-title">Unable to load conversations</h6>
+                    <p class="state-description">Check your connection and try again.</p>
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="loadConversations()">Try again</button>
+                </div>
+            `;
+        }
     }
 }
 
@@ -59,9 +155,10 @@ function renderConversationList(conversations) {
 
     if (!conversations || conversations.length === 0) {
         container.innerHTML = `
-            <div class="text-center text-muted p-3">
-                <p><i class="fas fa-inbox"></i></p>
-                <small>No conversations yet</small>
+            <div class="page-state" style="min-height: 120px; padding: 1.25rem;">
+                <div class="state-icon"><i class="fas fa-inbox"></i></div>
+                <h6 class="state-title">No conversations yet</h6>
+                <p class="state-description">Start a chat to begin messaging.</p>
             </div>
         `;
         return;
@@ -88,6 +185,10 @@ function renderConversationList(conversations) {
 
 // Open a conversation
 async function openConversation(person) {
+    if (currentConversation !== person) {
+        messagesLoadedFor = null;
+        messagesAttemptedFor = null;
+    }
     currentConversation = person;
     renderConversationList(allConversations);
     updateChatHeader(person);
@@ -108,15 +209,42 @@ function updateChatHeader(person) {
 
 // Load messages for a conversation
 async function loadMessages(person) {
+    const container = document.getElementById('messages-area');
+    const messagesContainer = document.getElementById('messages-container');
+    if (currentConversation === person && messagesAttemptedFor !== person) {
+        messagesContainer.style.display = 'flex';
+        container.innerHTML = `
+            <div class="page-state skeleton" role="status" aria-live="polite">
+                <div class="state-icon"><i class="fas fa-spinner fa-spin"></i></div>
+                <h6 class="state-title">Loading messages</h6>
+                <p class="state-description">Opening this conversation.</p>
+            </div>
+        `;
+        messagesAttemptedFor = person;
+    }
+
     try {
         const response = await fetch(`/messages/${person}`);
         if (!response.ok) throw new Error('Failed to load messages');
 
         const messages = await response.json();
+        if (currentConversation !== person) return;
+        messagesLoadedFor = person;
         renderMessages(messages, person);
         scrollToBottom();
     } catch (error) {
         console.error('Error loading messages:', error);
+        if (currentConversation === person && messagesLoadedFor !== person) {
+            messagesContainer.style.display = 'flex';
+            container.innerHTML = `
+                <div class="page-state" role="alert">
+                    <div class="state-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    <h6 class="state-title">Unable to load messages</h6>
+                    <p class="state-description">Check your connection and try again.</p>
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="loadMessages(currentConversation)">Try again</button>
+                </div>
+            `;
+        }
     }
 }
 

@@ -1,13 +1,19 @@
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+import csv
+import io
 import math
 
-from flask import flash, redirect, render_template, request, session, url_for
+from flask import Response, abort, flash, redirect, render_template, request, session, stream_with_context, url_for
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash
 
 from .. import legacy as core
+from ..extensions import db
+from ..models.audit import AuditEvent
 from ..models.database import _save_upload_file, get_db
+from ..services.notification_service import notify_published_announcement
 
 # Route implementations use the shared compatibility context.
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
@@ -272,11 +278,11 @@ def admin_knowledge():
         search_filter = "WHERE kp.title LIKE ? OR kp.author LIKE ? OR kc.category_name LIKE ?"
         params = [f"%{search}%"] * 3
     cur.execute(f"""
-        SELECT kp.post_id, kp.title, kp.status, kp.created_at, kp.views, kc.category_name, kp.author
+        SELECT kp.post_id, kp.title, kp.status, kp.is_pinned, kp.created_at, kp.views, kc.category_name, kp.author
         FROM knowledge_posts kp
         LEFT JOIN knowledge_categories kc ON kp.category_id = kc.category_id
         {search_filter}
-        ORDER BY kp.created_at DESC
+        ORDER BY kp.is_pinned DESC, kp.created_at DESC
     """, params)
     posts = cur.fetchall()
     cur.execute("SELECT category_id, category_name FROM knowledge_categories ORDER BY category_name")
@@ -316,6 +322,7 @@ def create_knowledge_post():
         content = request.form.get("content", "").strip()
         category_id = request.form.get("category_id") or None
         status = request.form.get("status", "Published")
+        is_pinned = request.form.get("is_pinned") == "1"
         if not title or not content:
             flash("Title and content are required")
             return render_template("create_post.html", categories=categories)
@@ -327,11 +334,19 @@ def create_knowledge_post():
         cur = conn.cursor()
         cur.execute(
             """
-            INSERT INTO knowledge_posts (title, content, category_id, author, image, video, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO knowledge_posts
+                (title, content, category_id, author, image, video, status, is_pinned)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING post_id
             """,
-            (title, content, category_id, session.get("user"), image_path, video_path, status),
+            (
+                title, content, category_id, session.get("user"), image_path,
+                video_path, status, int(is_pinned),
+            ),
         )
+        created_post = cur.fetchone()
+        if is_pinned and status == "Published":
+            notify_published_announcement(cur, created_post["post_id"], title)
         conn.commit()
         conn.close()
         flash("Article created successfully")
@@ -363,6 +378,7 @@ def edit_knowledge_post(post_id):
         content = request.form.get("content", "").strip()
         category_id = request.form.get("category_id") or None
         status = request.form.get("status", "Published")
+        is_pinned = request.form.get("is_pinned") == "1"
         if not title or not content:
             flash("Title and content are required")
             return render_template("edit_post.html", post=post, categories=categories)
@@ -375,11 +391,21 @@ def edit_knowledge_post(post_id):
         cur.execute(
             """
             UPDATE knowledge_posts
-            SET title=?, content=?, category_id=?, image=?, video=?, status=?, updated_at=CURRENT_TIMESTAMP
+            SET title=?, content=?, category_id=?, image=?, video=?, status=?, is_pinned=?,
+                updated_at=CURRENT_TIMESTAMP
             WHERE post_id=?
             """,
-            (title, content, category_id, image_path, video_path, status, post_id),
+            (
+                title, content, category_id, image_path, video_path, status,
+                int(is_pinned), post_id,
+            ),
         )
+        if (
+            is_pinned
+            and status == "Published"
+            and (not post["is_pinned"] or post["status"] != "Published")
+        ):
+            notify_published_announcement(cur, post_id, title)
         conn.commit()
         conn.close()
         flash("Article updated successfully")
@@ -763,6 +789,168 @@ def admin_knowledge_categories():
     conn.close()
     return render_template("admin_knowledge_categories.html", categories=categories, search=search)
 
+
+def _audit_log_filters():
+    search = request.args.get("q", "").strip()[:200]
+    category = request.args.get("category", "").strip()
+    method = request.args.get("method", "").strip().upper()
+    result = request.args.get("result", "").strip()
+    start_date = request.args.get("start_date", "").strip()
+    end_date = request.args.get("end_date", "").strip()
+
+    valid_categories = {
+        "Administration", "Application", "API", "Authentication",
+        "Inventory", "Knowledge", "Marketplace", "Messages", "Notifications", "Profile",
+    }
+    valid_methods = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+    if category and category not in valid_categories:
+        abort(400, description="Invalid audit-log category.")
+    if method and method not in valid_methods:
+        abort(400, description="Invalid audit-log method.")
+    if result and result not in {"success", "failure"}:
+        abort(400, description="Invalid audit-log result filter.")
+
+    try:
+        start = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) if start_date else None
+        end = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) if end_date else None
+    except ValueError:
+        abort(400, description="Audit-log dates must use YYYY-MM-DD.")
+    if start and end and start > end:
+        abort(400, description="The start date must not be after the end date.")
+
+    filters = []
+    if search:
+        pattern = f"%{search}%"
+        filters.append(or_(
+            AuditEvent.actor.ilike(pattern),
+            AuditEvent.action.ilike(pattern),
+            AuditEvent.category.ilike(pattern),
+            AuditEvent.endpoint.ilike(pattern),
+            AuditEvent.path.ilike(pattern),
+            AuditEvent.ip_address.ilike(pattern),
+        ))
+    if category:
+        filters.append(AuditEvent.category == category)
+    if method:
+        filters.append(AuditEvent.method == method)
+    if result == "success":
+        filters.append(AuditEvent.status_code < 400)
+    elif result == "failure":
+        filters.append(AuditEvent.status_code >= 400)
+    if start:
+        filters.append(AuditEvent.occurred_at >= start)
+    if end:
+        filters.append(AuditEvent.occurred_at < end + timedelta(days=1))
+
+    return {
+        "filters": filters,
+        "search": search,
+        "category": category,
+        "method": method,
+        "result": result,
+        "start_date": start_date,
+        "end_date": end_date,
+    }
+
+
+def _csv_cell(value):
+    text = "" if value is None else str(value)
+    if text.startswith(("=", "+", "-", "@", "\t", "\r")):
+        return "'" + text
+    return text
+
+
+@_admin_required
+def admin_audit_logs():
+    filter_values = _audit_log_filters()
+    filters = filter_values["filters"]
+    base_query = select(AuditEvent).where(*filters)
+
+    if request.args.get("export") == "csv":
+        def generate_csv():
+            yield "\ufeff"
+            with db.engine.connect() as connection:
+                statement = (
+                    select(AuditEvent.__table__)
+                    .where(*filters)
+                    .order_by(AuditEvent.occurred_at.desc(), AuditEvent.id.desc())
+                )
+                rows = connection.execution_options(stream_results=True).execute(statement)
+                output = io.StringIO(newline="")
+                writer = csv.writer(output)
+                writer.writerow((
+                    "Occurred at (UTC)", "Actor", "Role", "Action", "Category",
+                    "Method", "Endpoint", "Path", "Status code", "Duration (ms)",
+                    "IP address", "User agent", "Route parameters",
+                ))
+                yield output.getvalue()
+                for row in rows:
+                    event = row._mapping
+                    output = io.StringIO(newline="")
+                    writer = csv.writer(output)
+                    writer.writerow(_csv_cell(value) for value in (
+                        event["occurred_at"].isoformat() if event["occurred_at"] else "",
+                        event["actor"],
+                        event["role"],
+                        event["action"],
+                        event["category"],
+                        event["method"],
+                        event["endpoint"],
+                        event["path"],
+                        event["status_code"],
+                        event["duration_ms"],
+                        event["ip_address"],
+                        event["user_agent"],
+                        event["details"],
+                    ))
+                    yield output.getvalue()
+
+        filename = f"agri-direct-audit-log-{datetime.now(timezone.utc):%Y%m%d}.csv"
+        return Response(
+            stream_with_context(generate_csv()),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    page = max(request.args.get("page", 1, type=int), 1)
+    page_size = 50
+    total = db.session.scalar(
+        select(func.count()).select_from(AuditEvent).where(*filters)
+    ) or 0
+    pages = max(math.ceil(total / page_size), 1)
+    events = db.session.scalars(
+        base_query
+        .order_by(AuditEvent.occurred_at.desc(), AuditEvent.id.desc())
+        .limit(page_size)
+        .offset((page - 1) * page_size)
+    ).all()
+
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_count = db.session.scalar(
+        select(func.count()).select_from(AuditEvent).where(AuditEvent.occurred_at >= today_start)
+    ) or 0
+    failure_count = db.session.scalar(
+        select(func.count()).select_from(AuditEvent).where(AuditEvent.status_code >= 400)
+    ) or 0
+    categories = db.session.scalars(
+        select(AuditEvent.category).distinct().order_by(AuditEvent.category)
+    ).all()
+
+    return render_template(
+        "admin_audit_logs.html",
+        events=events,
+        total=total,
+        today_count=today_count,
+        failure_count=failure_count,
+        categories=categories,
+        page=page,
+        pages=pages,
+        page_size=page_size,
+        **{key: value for key, value in filter_values.items() if key != "filters"},
+    )
+
+
 def page_not_found(e):
     return render_template('404.html'), 404
 
@@ -776,6 +964,7 @@ def register(application):
     application.add_url_rule('/admin/knowledge/edit/<int:post_id>', endpoint='edit_knowledge_post', view_func=edit_knowledge_post, methods=['GET', 'POST'])
     application.add_url_rule('/admin/knowledge/delete/<int:post_id>', endpoint='delete_knowledge_post', view_func=delete_knowledge_post, methods=['POST'])
     application.add_url_rule('/admin', endpoint='admin', view_func=admin)
+    application.add_url_rule('/admin/audit-logs', endpoint='admin_audit_logs', view_func=admin_audit_logs)
     application.add_url_rule('/admin/users', endpoint='admin_users', view_func=admin_users)
     application.add_url_rule('/admin/catalog', endpoint='admin_catalog', view_func=admin_catalog)
     application.add_url_rule('/admin/inventory', endpoint='admin_inventory', view_func=admin_inventory)
@@ -806,6 +995,7 @@ def register(application):
 __all__ = [
     'admin_knowledge', 'create_knowledge_post', 'edit_knowledge_post', 'delete_knowledge_post',
     'admin', 'admin_users', 'admin_catalog', 'admin_inventory', 'admin_marketplace',
+    'admin_audit_logs',
     'create_admin_marketplace_listing', 'edit_admin_marketplace_listing', 'delete_admin_marketplace_listing',
     'admin_review_geotag', 'admin_knowledge_categories',
     'create_admin_user', 'edit_admin_user', 'delete_admin_user',

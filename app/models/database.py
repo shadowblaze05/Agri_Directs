@@ -276,9 +276,21 @@ def init_db():
     cur = conn.cursor()
 
     if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
-        cur.execute("DELETE FROM inventory")
-        cur.execute("DELETE FROM analytics")
-        cur.execute("DELETE FROM users")
+        for table_name in (
+            "knowledge_replies",
+            "knowledge_comments",
+            "knowledge_likes",
+            "knowledge_posts",
+            "notifications",
+            "messages",
+            "inventory",
+            "analytics",
+            "users",
+        ):
+            try:
+                cur.execute(f"DELETE FROM {table_name}")
+            except Exception:
+                logger.debug("Skipping reset for missing table %s", table_name)
         conn.commit()
 
     # Create referenced domain tables before PostgreSQL validates foreign keys.
@@ -491,6 +503,13 @@ def init_db():
         cur.execute("ALTER TABLE users ADD COLUMN cancelled_transactions INTEGER DEFAULT 0")
     if 'total_transactions' not in users_columns:
         cur.execute("ALTER TABLE users ADD COLUMN total_transactions INTEGER DEFAULT 0")
+
+    cur.execute("SELECT * FROM users WHERE username=?", ("admin",))
+    if cur.fetchone() is None:
+        cur.execute(
+            "INSERT INTO users(username, password, role) VALUES (?, ?, ?)",
+            ("admin", generate_password_hash("admin"), "admin"),
+        )
     
     cur.execute("""
     CREATE TABLE IF NOT EXISTS analytics(
@@ -537,7 +556,25 @@ def init_db():
         message TEXT,
         type TEXT,
         created_at TEXT,
-        is_read INTEGER DEFAULT 0
+        is_read INTEGER DEFAULT 0,
+        link TEXT
+    )
+    """)
+    cur.execute("PRAGMA table_info(notifications)")
+    notification_columns = [row[1] for row in cur.fetchall()]
+    if "link" not in notification_columns:
+        cur.execute("ALTER TABLE notifications ADD COLUMN link TEXT")
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS password_reset_tokens(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        token TEXT UNIQUE,
+        expires_at TEXT,
+        created_at TEXT,
+        used_at TEXT,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (user_id) REFERENCES users(id)
     )
     """)
 
@@ -573,12 +610,19 @@ def init_db():
         image TEXT,
         video TEXT,
         status TEXT DEFAULT 'Published',
+        is_pinned INTEGER NOT NULL DEFAULT 0,
         views INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME,
         FOREIGN KEY(category_id) REFERENCES knowledge_categories(category_id)
     )
     """)
+    cur.execute("PRAGMA table_info(knowledge_posts)")
+    knowledge_post_columns = [row[1] for row in cur.fetchall()]
+    if "is_pinned" not in knowledge_post_columns:
+        cur.execute(
+            "ALTER TABLE knowledge_posts ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0"
+        )
     cur.execute("""
     CREATE TABLE IF NOT EXISTS knowledge_likes(
         id INTEGER PRIMARY KEY AUTOINCREMENT,

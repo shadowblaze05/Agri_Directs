@@ -10,10 +10,18 @@ branch_labels = None
 depends_on = None
 
 
+def _add_column_if_missing(table_name, column):
+    existing_columns = {
+        existing["name"] for existing in sa.inspect(op.get_bind()).get_columns(table_name)
+    }
+    if column.name not in existing_columns:
+        op.add_column(table_name, column)
+
+
 def upgrade():
-    op.add_column("users", sa.Column("location_latitude", sa.Float(), nullable=True))
-    op.add_column("users", sa.Column("location_longitude", sa.Float(), nullable=True))
-    op.add_column(
+    _add_column_if_missing("users", sa.Column("location_latitude", sa.Float(), nullable=True))
+    _add_column_if_missing("users", sa.Column("location_longitude", sa.Float(), nullable=True))
+    _add_column_if_missing(
         "users",
         sa.Column(
             "location_verified",
@@ -22,24 +30,24 @@ def upgrade():
             server_default=sa.false(),
         ),
     )
-    op.add_column(
+    _add_column_if_missing(
         "users",
         sa.Column("location_verified_at", sa.DateTime(timezone=True), nullable=True),
     )
-    op.add_column(
+    _add_column_if_missing(
         "users",
         sa.Column("profile_photo_captured_at", sa.DateTime(timezone=True), nullable=True),
     )
 
-    op.add_column("inventory", sa.Column("photo_path", sa.String(length=255), nullable=True))
-    op.add_column("inventory", sa.Column("latitude", sa.Float(), nullable=True))
-    op.add_column("inventory", sa.Column("longitude", sa.Float(), nullable=True))
-    op.add_column(
+    _add_column_if_missing("inventory", sa.Column("photo_path", sa.String(length=255), nullable=True))
+    _add_column_if_missing("inventory", sa.Column("latitude", sa.Float(), nullable=True))
+    _add_column_if_missing("inventory", sa.Column("longitude", sa.Float(), nullable=True))
+    _add_column_if_missing(
         "inventory",
         sa.Column("capture_time", sa.DateTime(timezone=True), nullable=True),
     )
-    op.add_column("inventory", sa.Column("distance_from_user", sa.Float(), nullable=True))
-    op.add_column(
+    _add_column_if_missing("inventory", sa.Column("distance_from_user", sa.Float(), nullable=True))
+    _add_column_if_missing(
         "inventory",
         sa.Column(
             "verification_status",
@@ -48,9 +56,9 @@ def upgrade():
             server_default="pending",
         ),
     )
-    op.add_column("inventory", sa.Column("verification_notes", sa.Text(), nullable=True))
-    op.add_column("inventory", sa.Column("reviewed_by", sa.String(length=128), nullable=True))
-    op.add_column(
+    _add_column_if_missing("inventory", sa.Column("verification_notes", sa.Text(), nullable=True))
+    _add_column_if_missing("inventory", sa.Column("reviewed_by", sa.String(length=128), nullable=True))
+    _add_column_if_missing(
         "inventory",
         sa.Column("reviewed_at", sa.DateTime(timezone=True), nullable=True),
     )

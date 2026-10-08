@@ -63,6 +63,7 @@
                             <th>Title</th>
                             <th>Category</th>
                             <th>Status</th>
+                            <th>Pinned</th>
                             <th>Author</th>
                             <th>Views</th>
                             <th>Created</th>
@@ -75,6 +76,7 @@
                             <td>{{ post['title'] }}</td>
                             <td>{{ post['category_name'] or '-' }}</td>
                             <td><span class="badge bg-{{ 'success' if post['status'] == 'Published' else 'warning' }}">{{ post['status'] }}</span></td>
+                            <td>{% if post['is_pinned'] %}<span class="badge bg-primary">Pinned</span>{% else %}-{% endif %}</td>
                             <td>{{ post['author'] or '-' }}</td>
                             <td>{{ post['views'] }}</td>
                             <td>{{ post['created_at'] }}</td>

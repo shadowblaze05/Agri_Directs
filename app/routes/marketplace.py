@@ -3,6 +3,7 @@ from flask import current_app, flash, jsonify, redirect, render_template, reques
 from PIL import Image, UnidentifiedImageError
 from .. import legacy as core
 from ..legacy import logger
+from ..algorithms.reliability_score import seller_reliability_status
 from ..models.database import get_db
 from ..services.geotag_service import (
     calculate_distance_meters,
@@ -142,7 +143,10 @@ def marketplace():
     cur.execute("""
         SELECT m.*, u.username as seller_name, u.location as seller_location,
                u.reliability_score, u.reliability_status,
-               u.completed_transactions, u.cancelled_transactions, u.total_transactions
+               u.completed_transactions, u.cancelled_transactions, u.total_transactions,
+               (SELECT COUNT(*) FROM marketplace ratings
+                WHERE ratings.username = u.username AND ratings.buyer_rating IS NOT NULL)
+                   AS seller_rating_count
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
         WHERE m.status = 'available'
@@ -694,7 +698,7 @@ def rate_marketplace_seller(listing_id):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT id, username FROM marketplace
+        SELECT id, username, crop_name FROM marketplace
         WHERE id = ? AND buyer_username = ? AND status IN ('sold', 'delivered', 'completed') AND buyer_rating IS NULL
           AND delivery_confirmed = 1 AND buyer_confirmed = 1
     """, (listing_id, session["user"]))
@@ -711,10 +715,22 @@ def rate_marketplace_seller(listing_id):
     rating_count = rating_summary["rating_count"] or 0
     average_rating = rating_summary["average_rating"]
     if rating_count > 0 and average_rating is not None:
-        status = "High Reliability" if average_rating >= 4 else "Medium Reliability" if average_rating >= 3 else "Low Reliability"
+        status = seller_reliability_status(average_rating)
         cur.execute("UPDATE users SET reliability_score = ?, reliability_status = ? WHERE username = ?", (round(average_rating, 2), status, order["username"]))
     else:
         cur.execute("UPDATE users SET reliability_score = NULL, reliability_status = 'Not Yet Rated' WHERE username = ?", (order["username"],))
+    cur.execute(
+        "INSERT INTO notifications(username,title,message,type,created_at,is_read) "
+        "VALUES (?,?,?,?,?,?)",
+        (
+            order["username"],
+            "New Farmer Rating",
+            f"{session['user']} rated your {order['crop_name']} order {rating}/5 stars.",
+            "marketplace",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            0,
+        ),
+    )
     conn.commit()
     conn.close()
     flash("Thank you. Your rating has been submitted.")
@@ -824,7 +840,10 @@ def trade_marketplace_item(listing_id):
     current_user_id = current_user["id"]
 
     cur.execute("""
-        SELECT m.*, u.username as seller_name, u.reliability_score, u.reliability_status, u.location AS seller_location
+        SELECT m.*, u.username as seller_name, u.reliability_score, u.reliability_status, u.location AS seller_location,
+               (SELECT COUNT(*) FROM marketplace ratings
+                WHERE ratings.username = u.username AND ratings.buyer_rating IS NOT NULL)
+                   AS seller_rating_count
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
         WHERE m.id = ? AND m.status = 'available'

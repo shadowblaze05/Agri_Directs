@@ -9,6 +9,7 @@ from PIL import Image, UnidentifiedImageError
 import requests
 
 from .. import legacy as core
+from ..algorithms.reliability_score import seller_reliability_status
 from ..models.database import get_db
 from ..services.geotag_service import (
     resolve_psgc_location,
@@ -26,6 +27,21 @@ def _profile_data(cursor, username):
     return cursor.fetchone()
 
 
+def _seller_reliability(cursor, username):
+    cursor.execute(
+        "SELECT AVG(buyer_rating) AS average_rating, COUNT(buyer_rating) AS rating_count "
+        "FROM marketplace WHERE username=? AND buyer_rating IS NOT NULL",
+        (username,),
+    )
+    summary = cursor.fetchone()
+    average_rating = summary["average_rating"] if summary else None
+    return {
+        "score": round(average_rating, 2) if average_rating is not None else None,
+        "rating_count": summary["rating_count"] if summary else 0,
+        "status": seller_reliability_status(average_rating),
+    }
+
+
 def profile():
     """Show the signed-in user's account overview."""
     if "user" not in session:
@@ -34,6 +50,7 @@ def profile():
     conn = get_db()
     cur = conn.cursor()
     user = _profile_data(cur, session["user"])
+    reliability_summary = _seller_reliability(cur, session["user"])
     cur.execute(
         "SELECT COUNT(DISTINCT crop_id) AS crop_count, COALESCE(SUM(quantity), 0) AS total_quantity "
         "FROM inventory WHERE farmer=?", (session["user"],)
@@ -51,6 +68,7 @@ def profile():
     return render_template(
         "profile.html",
         user=user,
+        reliability_summary=reliability_summary,
         inventory_summary=inventory_summary,
         recent_inventory=recent_inventory,
         missing_profile_requirements=missing_requirements,
@@ -65,11 +83,17 @@ def seller_profile(username):
     conn = get_db()
     cur = conn.cursor()
     user = _profile_data(cur, username)
+    reliability_summary = _seller_reliability(cur, username) if user else None
     conn.close()
     if not user:
         abort(404)
 
-    return render_template("profile.html", user=user, is_public_profile=True)
+    return render_template(
+        "profile.html",
+        user=user,
+        reliability_summary=reliability_summary,
+        is_public_profile=True,
+    )
 
 
 def update_profile():

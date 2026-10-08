@@ -86,7 +86,7 @@
                         <i class="fas fa-brain"></i>
                         <h1 class="h3 mb-0">Market Intelligence</h1>
                     </div>
-                    <p class="mb-0">A polished visualization layer for market monitoring, crop recommendations, forecasting, and supply balance insights.</p>
+                    <p class="mb-0">{% if session.get('role') == 'admin' %}Market monitoring, crop recommendations, forecasts, and supply signals.{% else %}A simple guide to current crop and supply trends, based on recent harvest records.{% endif %}</p>
                 </div>
                 <a href="/dashboard" class="btn btn-light text-success fw-semibold">
                     <i class="fas fa-arrow-left me-2"></i>Return to Dashboard
@@ -94,6 +94,7 @@
             </div>
         </div>
 
+        {% if session.get('role') == 'admin' %}
         <ul class="nav nav-pills flex-wrap mb-4">
             <li class="nav-item">
                 <a class="nav-link {% if active_page == 'summary' %}active{% endif %}" href="/market-intelligence">Summary</a>
@@ -111,11 +112,14 @@
                 <a class="nav-link {% if active_page == 'supply' %}active{% endif %}" href="/market-intelligence/supply-balance">Supply Balance</a>
             </li>
         </ul>
+        {% endif %}
 
         {% block content %}{% endblock %}
     </div>
 
+    {% if session.get('role') == 'admin' %}
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>

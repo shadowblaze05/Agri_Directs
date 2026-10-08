@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 
 import jwt
-from flask import jsonify, request
+from flask import g, jsonify, request
 
 logger = logging.getLogger(__name__)
 JWT_SECRET = os.environ.get("JWT_SECRET", "jwt_secret_key_agridirect")
@@ -50,6 +50,7 @@ def token_required(f):
         username = verify_jwt_token(token)
         if not username:
             return jsonify({"error": "Invalid or expired token"}), 401
-        
+        g.audit_actor = username
+        g.audit_role = "api"
         return f(*args, **kwargs)
     return decorated

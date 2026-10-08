@@ -259,9 +259,9 @@ source for model-level types and constraints.
 | cart | id (PK), user_id (FK to users.id, cascade delete), listing_id (FK to marketplace.id, cascade delete), quantity, added_date. Shopping cart rows. |
 | analytics | id (PK), period_type, period_value, total_harvest, top_crop, top_crop_volume, top_crop_id, top_location, top_location_volume. Computed monthly/yearly dashboard summaries. |
 | messages | id (PK), sender, recipient, message, timestamp. User and AgriBot conversations. |
-| notifications | id (PK), username, title, message, type, created_at, is_read. Per-user notifications. |
+| notifications | id (PK), username, title, message, type, created_at, is_read, link. Per-user notifications; linked announcements can open their Knowledge Hub post. |
 | knowledge_categories | category_id (PK), category_name (unique). Knowledge Hub categories. |
-| knowledge_posts | post_id (PK), title, content, category_id, author, image, video, status, views, created_at, updated_at. Knowledge articles and media references. |
+| knowledge_posts | post_id (PK), title, content, category_id, author, image, video, status, is_pinned, views, created_at, updated_at. Knowledge articles and media references; pinned published updates are promoted in feeds and notify non-admin users. |
 | knowledge_likes | id (PK), post_id, username. Knowledge article likes; the compatibility initializer enforces unique (post_id, username). |
 | knowledge_comments | comment_id (PK), post_id, username, comment, created_at. Article comments. |
 | knowledge_replies | reply_id (PK), comment_id, username, reply, created_at. Replies to comments. |
@@ -511,11 +511,13 @@ SQLite-style SQL patterns; it does not make arbitrary SQLite SQL portable.
 Flask-Migrate/Alembic migration files are in migrations/versions/.
 The checked-in revisions are:
 - 166f046df20c_initial_migration.py - initial schema
+- fd6d67b9de23_add_member_models.py - additional member model schema
 - 01e53f8bea4f_add_crop_categories.py - crop categories
 - 9c2f7e4a1b6d_add_preorder_marketplace_columns.py - preorder marketplace fields
 - b72c946fa310_add_geotag_verification.py - harvest evidence and geotag verification
 - c84a1f6b2d90_add_separate_profile_location_labels.py - separate location labels
-- fd6d67b9de23_add_member_models.py - additional member model schema
+- 4e2d91c7a6b8_verify_marketplace_thumbnails.py - verified marketplace thumbnails
+- a81f4c6e2b90_add_audit_events.py - append-only request audit events
 
 ACTIVE INTERNAL PACKAGES
 ------------------------
@@ -524,7 +526,7 @@ ACTIVE INTERNAL PACKAGES
 | app/ | Flask factory, application configuration, extensions, and legacy facade |
 | app/routes/ | HTTP route registration and request/response handling |
 | app/models/ | SQLAlchemy entities and database compatibility helpers |
-| app/services/ | Authentication, geolocation/geotagging, profiles, uploads, mail, notifications, marketplace, and intelligence services |
+| app/services/ | Authentication, audit events, geolocation/geotagging, profiles, uploads, mail, notifications, marketplace, and intelligence services |
 | app/services/market_intelligence/ | Supply, price, forecast, baseline, and crop-recommendation pipeline |
 | app/services/market_intelligence/data_sources/ | Inventory record normalization and supply/price/history adapters |
 | app/algorithms/ | Legacy market analysis and reliability score exports |
@@ -532,7 +534,7 @@ ACTIVE INTERNAL PACKAGES
 | app/utils/ | Constants, permission, validation, geocoding, and helper utilities |
 | app/templates/ | 46 server-rendered Jinja templates |
 | app/static/ | CSS, chat JavaScript, and static upload assets |
-| migrations/versions/ | Six Alembic revisions for initial schema and subsequent model/features |
+| migrations/versions/ | Eight Alembic revisions for initial schema and subsequent model/features |
 | tests/ | Pytest tests for geotagging, knowledge hub, and public metrics |
 | legacy_root/ | Preserved historical files; not the active application package |
 
@@ -601,6 +603,7 @@ exact types, nullability, defaults, and relationships.
 | knowledge_replies | KnowledgeReply | reply_id, comment_id, username, reply, created_at |
 | messages | Message | id, sender, recipient, message, timestamp |
 | notifications | Notification | id, username, title, message, type, created_at, is_read |
+| audit_events | AuditEvent | occurred_at, actor, role, action, category, method, endpoint, path, status_code, duration_ms, IP address, user agent, route parameters |
 
 Preorders and looking-for requests are represented by marketplace listing/order
 fields and listing_type values; there is no separate ORM Order or Transaction
@@ -643,6 +646,7 @@ Other JSON/AJAX actions and data routes:
 - POST /profile/location captures the signed-in user's profile photo and
   geotag; it requires browser-captured form data and session authentication.
 - POST /notifications/mark-read marks notifications read for the session user.
+- GET /notifications/unread-count returns the signed-in user's unread notification count for the Messages bell.
 - POST /marketplace/buy/<listing_id>, /complete-order/<listing_id>, and
   /confirm-receipt/<listing_id> perform the marketplace buyer/seller order flow.
 - POST /marketplace/cart/add/<listing_id>, /cart/update/<cart_id>,
@@ -666,16 +670,27 @@ Registered browser routes:
 | Account | GET/POST /login, GET/POST /register, POST /token, POST /api/harvest, GET /logout and /logout/ |
 | Public and dashboard | /, /home, /about, /crop-types, /dashboard, /dashboard-data, /total-harvest, /top-crop, /locations |
 | Market intelligence | /market-intelligence, /market-intelligence/price-monitoring, /market-intelligence/crop-recommendations, /market-intelligence/demand-forecasting, /market-intelligence/supply-balance |
-| Data/chat/notifications | /api/market-insights, /api/forecast, /api/stats, /api/users, /api/bot, /api/messages (GET/POST), /api/current-user, /messages, /messages/conversations, /messages/<person>, /messages/send (POST), /users/search, /notifications, /notifications-center, /notifications/mark-read (POST) |
+| Data/chat/notifications | /api/market-insights, /api/forecast, /api/stats, /api/users, /api/bot, /api/messages (GET/POST), /api/current-user, /messages, /messages/conversations, /messages/<person>, /messages/send (POST), /users/search, /notifications, /notifications/unread-count, /notifications-center, /notifications/mark-read (POST) |
 | Inventory | /inventory, /inventory/buy (POST), /inventory/edit_crop (POST), /inventory/delete_crop (POST), /inventory/edit/<item_id> (GET/POST), /inventory/delete/<item_id>, /upload (GET/POST), /harvest-evidence/<filename> |
 | Knowledge hub | /knowledge, /knowledge/<post_id>, /knowledge/like/<post_id> (POST), /knowledge/comment/<post_id> (POST), /knowledge/reply/<comment_id> (POST) |
 | Marketplace | /marketplace, /marketplace/add (GET/POST), /marketplace/buy/<listing_id> (POST), /marketplace/complete-order/<listing_id> (POST), /marketplace/confirm-receipt/<listing_id> (POST), /marketplace/my-purchases, /marketplace/rate/<listing_id> (POST), /marketplace/my-listings, /marketplace/delete/<listing_id> (POST), /marketplace/trade/<listing_id> (GET/POST), /api/listing/<listing_id>, /marketplace/product/<listing_id>, /marketplace/cart, /marketplace/cart/add/<listing_id> (POST), /marketplace/cart/update/<cart_id> (POST), /marketplace/cart/remove/<cart_id> (POST), /marketplace/cart/checkout (POST), /marketplace/edit/<listing_id> (GET/POST), /marketplace/delete-image/<image_id> (POST), /marketplace/set-thumbnail/<image_id> (POST), /marketplace/preorder/<listing_id> (POST), /marketplace/preorder/<order_id>/accept (POST), /marketplace/preorder/<order_id>/reject (POST), /marketplace/preorder/<order_id>/request-cancel (POST), /marketplace/preorder/<order_id>/approve-cancel (POST), /marketplace/my-preorders, /marketplace/my-preorder-requests, /marketplace/looking-for |
 | Profile | /profile, /profile/update (GET/POST), /profile/location (POST) |
 | Administration | /admin, /admin/users, /admin/catalog, /admin/inventory, /admin/geotag/<item_id>/review (POST), /admin/knowledge, /admin/knowledge/create (GET/POST), /admin/knowledge/edit/<post_id> (GET/POST), /admin/knowledge/delete/<post_id> (POST), /admin/knowledge-categories, /admin/users/create (POST), /admin/users/edit/<user_id> (POST), /admin/users/delete/<user_id> (POST), /admin/crop-categories/create (POST), /admin/crop-categories/edit/<category_id> (POST), /admin/crop-categories/delete/<category_id> (POST), /admin/crops/create (POST), /admin/crops/edit/<crop_id> (POST), /admin/crops/delete/<crop_id> (POST), /admin/knowledge-categories/create (POST), /admin/knowledge-categories/edit/<category_id> (POST), /admin/knowledge-categories/delete/<category_id> (POST) |
+| Audit log | /admin/audit-logs |
+
+The audit log is administrator-only and records write requests across the app,
+authentication events, and admin-console page access. It captures the actor,
+role, action, UTC time, route/parameters, response status, duration, IP address,
+and user agent, but never stores submitted form contents, passwords, or tokens.
+Admins can search and filter by actor/action/path/IP, category, method, response,
+and date range, then export the matching events as a CSV. Entries are append-only
+in the admin UI. Apply the schema revision with `flask --app run.py db upgrade`
+before enabling the updated application against an existing database.
 
 Dynamic path segments above use Flask integer converters where indicated by
 their registered rules. The crop evidence endpoint is restricted to the record
-owner or an administrator. Market intelligence pages are administrator-only.
+owner or an administrator. The Market Intelligence brief is available to signed-in
+users; detailed market-monitoring pages remain administrator-only.
 Check the route implementation for any response format or authorization
 details beyond the concise catalog above.
 
@@ -707,7 +722,7 @@ Input and orchestration:
 | CropRecommendationService / TOPSIS | Derives a five-value metric vector for each crop, applies AHP weights after vector-normalizing each criterion, calculates positive/negative ideal solutions and Euclidean distances, then ranks by closeness to the positive ideal. |
 | data_sources/price_data.py | Provides the price-monitoring snapshot from aggregate inventory supply; it does not query an external spot-price service. |
 | Legacy build_market_analysis() | Groups inventory by crop/month, extrapolates the next point with an ordinary least-squares-style linear trend, estimates a capped heuristic price index (60..180), generates supply-pressure risk alerts, applies a hard-coded crop season map, and ranks its top three recommendations. |
-| reliability_status(score) | Converts a numeric score to Not Yet Rated, Excellent (90+), Good (75+), Fair (60+), or Needs Improvement. The seller-rating flow separately calculates average buyer stars and labels it High/Medium/Low Reliability. |
+| reliability_status(score) | Converts a 0–100 score to Not Yet Rated, Excellent (90+), Good (75+), Fair (60+), or Needs Improvement. seller_reliability_status(score) labels the one-to-five-star average buyer rating as Not Yet Rated, High Reliability (4+), Medium Reliability (3+), or Low Reliability. Seller profiles show the average and number of ratings; this is separate from the 0–100 status helper. |
 | Geotag distance | geotag_service validates coordinate ranges and computes Haversine distance in meters against the farmer reference coordinates; configured threshold defaults to 15,000 meters. Distance is a proximity signal only, not proof or automatic approval. |
 
 Interpretation limits:
@@ -737,8 +752,9 @@ INTEGRATIONS, UPLOADS, AND SETTINGS
 - Profile and crop images are validated using Pillow and have a 5 MB limit.
   Crop evidence is stored outside the public static tree and served through an
   authenticated owner/admin route; marketplace images are static listing media.
-- Flask-Mail and the email service provide mail integration; notifications are
-  stored in the notifications table and surfaced in the signed-in interface.
+- Flask-Mail and the email service provide mail integration; in-app notifications
+  for messages, marketplace actions, and pinned Agricultural Updates are stored
+  per user and surfaced in the Messages bell and notification center.
 - app/static/ contains the site stylesheets, chat CSS/JavaScript, and committed
   sample upload images. app/templates/ contains the rendered page templates.
 
@@ -757,3 +773,12 @@ September 26, 2026
 VERSION
 -------
 1.4
+
+
+
+MAIL_SERVER=smtp.gmail.com
+MAIL_PORT=587
+MAIL_USERNAME=your_email@example.com
+MAIL_PASSWORD=your_email_app_password
+MAIL_USE_TLS=true
+MAIL_USE_SSL=false

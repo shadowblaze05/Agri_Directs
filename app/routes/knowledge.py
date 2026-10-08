@@ -18,7 +18,7 @@ def knowledge_feed():
     categories = cur.fetchall()
 
     sql = """
-        SELECT kp.post_id, kp.title, kp.content, kp.image, kp.video, kp.status, kp.views, kp.created_at,
+        SELECT kp.post_id, kp.title, kp.content, kp.image, kp.video, kp.status, kp.is_pinned, kp.views, kp.created_at,
                kp.author, kc.category_name, kc.category_id,
                (SELECT COUNT(*) FROM knowledge_likes kl WHERE kl.post_id = kp.post_id) AS like_count,
                (SELECT COUNT(*) FROM knowledge_comments kcmt WHERE kcmt.post_id = kp.post_id) AS comment_count
@@ -33,7 +33,7 @@ def knowledge_feed():
     if category_id:
         sql += " AND kp.category_id = ?"
         params.append(category_id)
-    sql += " ORDER BY kp.created_at DESC"
+    sql += " ORDER BY kp.is_pinned DESC, kp.created_at DESC"
 
     posts = cur.execute(sql, params).fetchall()
     conn.close()

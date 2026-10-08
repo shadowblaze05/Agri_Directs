@@ -224,11 +224,9 @@
             <a class="nav-link" href="/upload">
                 <i class="fas fa-upload"></i> Upload Harvest
             </a>
-            {% if session.get('role') == 'admin' %}
             <a class="nav-link" href="/market-intelligence">
-                <i class="fas fa-brain"></i> Market Intelligence
+                <i class="fas fa-lightbulb"></i> Market Brief
             </a>
-            {% endif %}
             <a class="nav-link" href="/marketplace">
                 <i class="fas fa-store"></i> Marketplace
             </a>
@@ -307,7 +305,38 @@
                 </div>
             </div>
 
-        <!-- Statistics Cards -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-light border-0 d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i class="fas fa-lightbulb text-success"></i> Your Market Brief</h5>
+                            <a href="/market-intelligence" class="btn btn-sm btn-outline-success">View market brief</a>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <div class="small text-muted text-uppercase">Crop to watch</div>
+                                    <p class="mb-0">{{ market_brief.recommendation }}</p>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="small text-muted text-uppercase">Supply update</div>
+                                    <p class="mb-0">{{ market_brief.supply_update }}</p>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="small text-muted text-uppercase">What you can do</div>
+                                    <p class="mb-0">{{ market_brief.next_step }}</p>
+                                </div>
+                            </div>
+                            <p class="small text-muted mt-3 mb-0">
+                                Based on {{ market_brief.active_crops }} crop types in recent harvest records.
+                                This is a supply-trend guide, not a guaranteed price or confirmed buyer demand.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Statistics Cards -->
         <div class="row mb-4">
             <div class="col-md-3">
                 <a href="/total-harvest" style="text-decoration: none; color: inherit;">
@@ -753,7 +782,10 @@
         function updateDashboard() {
             // Update inventory table
             fetch('/dashboard-data')
-                .then(response => response.text())
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to update inventory');
+                    return response.text();
+                })
                 .then(html => {
                     document.getElementById('inventory-table').innerHTML = html;
                     
@@ -767,7 +799,10 @@
 
             // Update statistics
             fetch(getStatsUrl())
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to update dashboard statistics');
+                    return response.json();
+                })
                 .then(data => {
                     document.getElementById('total-quantity').textContent = data.total_quantity;
                     document.getElementById('top-crop').textContent = data.top_crop;
@@ -779,7 +814,19 @@
                     updateYearlySummaryChart(data.top_yearly);
                     updateDateRanges(data);
                 })
-                .catch(error => console.error('Error updating stats:', error));
+                .catch(error => {
+                    console.error('Error updating stats:', error);
+                    ['monthly-most-bought', 'yearly-most-bought'].forEach(listId => {
+                        const list = document.getElementById(listId);
+                        if (list) {
+                            list.innerHTML = '<li class="list-group-item text-danger">Unable to load statistics.</li>';
+                        }
+                    });
+                    ['total-quantity', 'top-crop', 'top-crop-qty', 'crops-count', 'location-count'].forEach(id => {
+                        const value = document.getElementById(id);
+                        if (value) value.textContent = 'Unavailable';
+                    });
+                });
         }
 
         function updateDateRanges(data) {
@@ -826,6 +873,8 @@
 
         // Chat functionality
         let currentRecipient = '';
+        let loadedRecipientMessages = null;
+        let attemptedRecipientMessages = null;
 
         function toggleChat() {
             const chatbox = document.getElementById('chatbox');
@@ -843,12 +892,19 @@
         }
 
         function loadUsers() {
+            const select = document.getElementById('recipient-select');
+            select.innerHTML = '<option value="">Loading users...</option>';
             fetch('/api/users')
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to load users');
+                    return response.json();
+                })
                 .then(users => {
-                    const select = document.getElementById('recipient-select');
                     select.innerHTML = '<option value="">Choose a user...</option>';
-                    
+                    if (!users.length) {
+                        select.innerHTML = '<option value="">No users available</option>';
+                        return;
+                    }
                     users.forEach(user => {
                         const option = document.createElement('option');
                         option.value = user;
@@ -856,7 +912,10 @@
                         select.appendChild(option);
                     });
                 })
-                .catch(error => console.error('Error loading users:', error));
+                .catch(error => {
+                    console.error('Error loading users:', error);
+                    select.innerHTML = '<option value="">Unable to load users - reopen chat to retry</option>';
+                });
         }
 
         function loadMessages() {
@@ -871,16 +930,35 @@
                     </div>
                 `;
                 currentRecipient = '';
+                attemptedRecipientMessages = null;
                 return;
             }
             
-            currentRecipient = recipient;
+            if (currentRecipient !== recipient) {
+                currentRecipient = recipient;
+                loadedRecipientMessages = null;
+                attemptedRecipientMessages = null;
+            }
+            if (attemptedRecipientMessages !== recipient) {
+                chatMessages.innerHTML = `
+                    <div class="page-state skeleton" role="status" aria-live="polite">
+                        <div class="state-icon"><i class="fas fa-spinner fa-spin"></i></div>
+                        <h6 class="state-title">Loading messages</h6>
+                    </div>
+                `;
+                attemptedRecipientMessages = recipient;
+            }
             
             const endpoint = `/api/messages?recipient=${encodeURIComponent(recipient)}`;
 
             fetch(endpoint)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to load messages');
+                    return response.json();
+                })
                 .then(messages => {
+                    if (currentRecipient !== recipient) return;
+                    loadedRecipientMessages = recipient;
                     chatMessages.innerHTML = '';
                     
                     if (messages.length === 0) {
@@ -904,7 +982,18 @@
                         chatMessages.scrollTop = chatMessages.scrollHeight;
                     }
                 })
-                .catch(error => console.error('Error loading messages:', error));
+                .catch(error => {
+                    console.error('Error loading messages:', error);
+                    if (currentRecipient === recipient && loadedRecipientMessages !== recipient) {
+                        chatMessages.innerHTML = `
+                            <div class="page-state" role="alert">
+                                <div class="state-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                                <h6 class="state-title">Unable to load messages</h6>
+                                <button type="button" class="btn btn-sm btn-outline-success" onclick="loadMessages()">Try again</button>
+                            </div>
+                        `;
+                    }
+                });
         }
 
         function sendMessage() {
@@ -954,40 +1043,84 @@
         }, 3000);
 
 
-        async function loadNotifications(){
-
-            const response = await fetch("/notifications");
-        
-            const notifications = await response.json();
-        
-            const list = document.getElementById("notification-list");
-        
-            const badge = document.getElementById("notification-count");
-        
-            badge.innerText = notifications.filter(n=>!n.is_read).length;
-        
+        function renderNotificationSkeleton(list) {
             list.innerHTML = `
                 <li class="dropdown-header">Notifications</li>
-            `;
-        
-            notifications.forEach(n=>{
-        
-                list.innerHTML += `
                 <li>
-        
-                    <a class="dropdown-item">
-        
-                        <strong>${n.title}</strong><br>
-        
-                        <small>${n.message}</small>
-        
-                    </a>
-        
+                    <div class="page-state skeleton notification-list-empty">
+                        <span class="skeleton-line"></span>
+                        <span class="skeleton-line short"></span>
+                    </div>
                 </li>
+            `;
+        }
+
+        function renderNotificationEmptyState(list) {
+            list.innerHTML = `
+                <li class="dropdown-header">Notifications</li>
+                <li>
+                    <div class="page-state notification-list-empty">
+                        <div class="state-icon"><i class="fas fa-bell-slash"></i></div>
+                        <h6 class="state-title">No notifications</h6>
+                        <p class="state-description">You are all caught up.</p>
+                    </div>
+                </li>
+            `;
+        }
+
+        let hasRenderedNotifications = false;
+
+        async function loadNotifications(){
+            const list = document.getElementById("notification-list");
+            const badge = document.getElementById("notification-count");
+            if (!list || !badge) return;
+
+            if (!hasRenderedNotifications) {
+                renderNotificationSkeleton(list);
+                badge.innerText = '...';
+            }
+
+            try {
+                const response = await fetch("/notifications");
+                if (!response.ok) throw new Error('Failed to load notifications');
+                const notifications = await response.json();
+
+                hasRenderedNotifications = true;
+                badge.innerText = notifications.filter(n => !n.is_read).length;
+                list.innerHTML = '<li class="dropdown-header">Notifications</li>';
+
+                if (!notifications || notifications.length === 0) {
+                    renderNotificationEmptyState(list);
+                    return;
+                }
+
+                notifications.forEach(n => {
+                    list.innerHTML += `
+                    <li>
+                        <a class="dropdown-item" href="/notifications-center">
+                            <strong>${(n.title || 'Update').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</strong><br>
+                            <small>${(n.message || 'New update').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</small>
+                        </a>
+                    </li>
+                    `;
+                });
+            } catch (error) {
+                console.error('Failed to load notifications', error);
+                if (!hasRenderedNotifications) list.innerHTML = `
+                    <li class="dropdown-header">Notifications</li>
+                    <li>
+                        <div class="page-state notification-list-empty">
+                            <div class="state-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                            <h6 class="state-title">Unable to load</h6>
+                            <p class="state-description">We will retry automatically. You can also open this menu again.</p>
+                        </div>
+                    </li>
                 `;
-        
-            });
-        
+                if (!hasRenderedNotifications) {
+                    hasRenderedNotifications = true;
+                    badge.innerText = '!';
+                }
+            }
         }
         
         async function markNotificationsRead(){

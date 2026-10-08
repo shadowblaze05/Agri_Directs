@@ -361,6 +361,14 @@
                                         {{ listing['reliability_status'] }}
                                     </span>
                                     {% endif %}
+                                    <br>
+                                    <i class="fas fa-star text-warning"></i>
+                                    {% if listing['reliability_score'] is not none %}
+                                    {{ '%.1f'|format(listing['reliability_score']) }}/5
+                                    ({{ listing['seller_rating_count'] }} buyer rating{{ '' if listing['seller_rating_count'] == 1 else 's' }})
+                                    {% else %}
+                                    Not rated yet
+                                    {% endif %}
                                 </p>
 
                                 {% if listing['listing_type'] == 'preorder' and listing['available_date'] %}

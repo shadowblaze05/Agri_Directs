@@ -57,3 +57,64 @@ def test_admin_can_create_publish_post_and_users_can_interact(client):
         follow_redirects=True,
     )
     assert reply_response.status_code == 200
+
+
+def test_pinning_published_update_notifies_users_once(client):
+    connection = app_module.get_db()
+    cursor = connection.cursor()
+    cursor.execute(
+        "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+        ("farmer-one", "unused", "user"),
+    )
+    connection.commit()
+    connection.close()
+
+    client.post("/login", data={"username": "admin", "password": "admin"})
+    response = client.post(
+        "/admin/knowledge/create",
+        data={
+            "title": "Weather advisory",
+            "category_id": "1",
+            "content": "Heavy rainfall is expected.",
+            "status": "Published",
+            "is_pinned": "1",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+
+    connection = app_module.get_db()
+    cursor = connection.cursor()
+    post = cursor.execute(
+        "SELECT post_id, is_pinned FROM knowledge_posts WHERE title=?",
+        ("Weather advisory",),
+    ).fetchone()
+    notification_count = cursor.execute(
+        "SELECT COUNT(*) AS count FROM notifications WHERE username=? AND type=?",
+        ("farmer-one", "announcement"),
+    ).fetchone()["count"]
+    connection.close()
+    assert post["is_pinned"] == 1
+    assert notification_count == 1
+
+    response = client.post(
+        f"/admin/knowledge/edit/{post['post_id']}",
+        data={
+            "title": "Updated weather advisory",
+            "category_id": "1",
+            "content": "Heavy rainfall is expected this week.",
+            "status": "Published",
+            "is_pinned": "1",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+
+    connection = app_module.get_db()
+    cursor = connection.cursor()
+    notification_count = cursor.execute(
+        "SELECT COUNT(*) AS count FROM notifications WHERE username=? AND type=?",
+        ("farmer-one", "announcement"),
+    ).fetchone()["count"]
+    connection.close()
+    assert notification_count == 1

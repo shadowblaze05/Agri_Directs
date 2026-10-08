@@ -12,6 +12,7 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
       rel="stylesheet"
     />
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
     <style>
       body {
         background: #f5f5f5;
@@ -201,39 +202,110 @@
             </div>
           </div>
         </div>
-        {% for notification in notifications %}
-        <article
-          class="notification-card {% if not notification['is_read'] %}unread{% endif %}"
-        >
-          <div class="d-flex gap-3">
-            <div class="notification-icon">
-              <i
-                class="fas {% if notification['type'] == 'message' %}fa-comments{% elif notification['type'] == 'marketplace' %}fa-store{% else %}fa-bell{% endif %}"
-              ></i>
-            </div>
-            <div class="flex-grow-1">
-              <div class="d-flex justify-content-between gap-3">
-                <h5 class="mb-1">{{ notification['title'] }}</h5>
-                <span class="notification-time text-nowrap"
-                  >{{ notification['created_at'][:19] if
-                  notification['created_at'] else '' }}</span
-                >
+        <div id="notifications-feed">
+          {% if notifications %}
+            {% for notification in notifications %}
+            <article
+              class="notification-card {% if not notification['is_read'] %}unread{% endif %}"
+            >
+              <div class="d-flex gap-3">
+                <div class="notification-icon">
+                  <i class="fas {% if notification['type'] == 'message' %}fa-comments{% elif notification['type'] == 'marketplace' %}fa-store{% elif notification['type'] == 'announcement' %}fa-thumbtack{% else %}fa-bell{% endif %}"></i>
+                </div>
+                <div class="flex-grow-1">
+                  <div class="d-flex justify-content-between gap-3">
+                    <h5 class="mb-1">{% if notification['link'] %}<a class="text-decoration-none text-dark" href="{{ notification['link'] }}">{{ notification['title'] }}</a>{% else %}{{ notification['title'] }}{% endif %}</h5>
+                    <span class="notification-time text-nowrap"
+                      >{{ notification['created_at'][:19] if
+                      notification['created_at'] else '' }}</span
+                    >
+                  </div>
+                  <p class="mb-0 text-muted">{{ notification['message'] }}</p>
+                </div>
               </div>
-              <p class="mb-0 text-muted">{{ notification['message'] }}</p>
-            </div>
+            </article>
+            {% endfor %}
+          {% else %}
+          <div class="page-state" id="notifications-empty-state">
+            <div class="state-icon"><i class="fas fa-bell-slash"></i></div>
+            <h5 class="state-title">No notifications yet</h5>
+            <p class="state-description">
+              Important account and activity updates will appear here.
+            </p>
           </div>
-        </article>
-        {% else %}
-        <div class="empty-state">
-          <i class="far fa-bell fa-3x text-success mb-3"></i>
-          <h5>No notifications yet</h5>
-          <p class="mb-0">
-            Important account and activity updates will appear here.
-          </p>
+          {% endif %}
         </div>
-        {% endfor %}
       </div>
     </main>
+    <script>
+      async function loadNotificationsFeed() {
+        const notificationFeed = document.getElementById('notifications-feed');
+        if (!notificationFeed) return;
+
+        notificationFeed.innerHTML = `
+          <div class="page-state skeleton">
+            <div class="state-icon"><i class="fas fa-spinner fa-spin"></i></div>
+            <h5 class="state-title">Loading notifications</h5>
+            <p class="state-description">Checking for new updates and activity.</p>
+          </div>
+        `;
+
+        try {
+          const response = await fetch('/notifications');
+          if (!response.ok) throw new Error('Failed to load notifications');
+          const notifications = await response.json();
+
+          if (!notifications || notifications.length === 0) {
+            notificationFeed.innerHTML = `
+              <div class="page-state" id="notifications-empty-state">
+                <div class="state-icon"><i class="fas fa-bell-slash"></i></div>
+                <h5 class="state-title">No notifications yet</h5>
+                <p class="state-description">You are all caught up for now.</p>
+              </div>
+            `;
+            return;
+          }
+
+          notificationFeed.innerHTML = notifications.map((notification) => {
+            const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({
+              '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[character]);
+            const title = escapeHtml(notification.title || 'Update');
+            const message = escapeHtml(notification.message || '');
+            const createdAt = escapeHtml((notification.created_at || '').slice(0, 19));
+            const link = /^\/knowledge\/\d+$/.test(notification.link || '') ? notification.link : null;
+            return `
+            <article class="notification-card ${notification.is_read ? '' : 'unread'}">
+              <div class="d-flex gap-3">
+                <div class="notification-icon">
+                    <i class="fas ${notification.type === 'message' ? 'fa-comments' : notification.type === 'marketplace' ? 'fa-store' : notification.type === 'announcement' ? 'fa-thumbtack' : 'fa-bell'}"></i>
+                </div>
+                <div class="flex-grow-1">
+                  <div class="d-flex justify-content-between gap-3">
+                    <h5 class="mb-1">${link ? `<a class="text-decoration-none text-dark" href="${link}">${title}</a>` : title}</h5>
+                    <span class="notification-time text-nowrap">${createdAt}</span>
+                  </div>
+                  <p class="mb-0 text-muted">${message}</p>
+                </div>
+              </div>
+            </article>
+          `;
+          }).join('');
+        } catch (error) {
+          console.error('Failed to load notifications:', error);
+          notificationFeed.innerHTML = `
+            <div class="page-state">
+              <div class="state-icon"><i class="fas fa-exclamation-triangle"></i></div>
+              <h5 class="state-title">Unable to load notifications</h5>
+              <p class="state-description">Check your connection and try again.</p>
+              <button type="button" class="btn btn-sm btn-outline-success" onclick="loadNotificationsFeed()">Try again</button>
+            </div>
+          `;
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', loadNotificationsFeed);
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   </body>
 </html>

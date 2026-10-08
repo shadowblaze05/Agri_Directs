@@ -210,6 +210,10 @@ The database-backed counts are queried when `/` is rendered. They are not a pers
 
 **Features and expected results:**
 
+- All signed-in users can read a concise market brief on the Dashboard and at `/market-intelligence`; detailed monitoring charts remain administrator-only.
+- The signed-in Home page (`/home`) also summarizes the leading crop signal, notable supply update, and suggested next step.
+- Presents the leading crop signal, any notable supply issue, and a practical next step in plain language for regular users.
+- Labels the brief as inventory-derived guidance, not a guaranteed price, forecast, or confirmed buyer demand.
 - Loads market insight data from `/api/market-insights` and forecast data from `/api/forecast`.
 - Presents supply/market pressure, estimated price movement, oversupply or undersupply risk, recommendations, and demand forecasts when sufficient harvest data exists.
 - Helps a user recognize crops that may have excess supply, limited supply, changing demand, or a stronger market opportunity.
@@ -239,6 +243,8 @@ The database-backed counts are queried when `/` is rendered. They are not a pers
 - The trade modal lets the user choose one of their available crops and a trade amount.
 - Provides shortcuts to create a listing, review My Listings, and review My Purchases.
 - Shows a pending-rating prompt for delivered/sold purchases that have not yet been rated; buyers can submit a one-to-five-star rating.
+- Sends user-targeted in-app notifications for new messages and marketplace transaction or rating events. The Messages bell shows unread counts and recent notifications, including marketplace updates.
+- Administrators can pin a published Agricultural Update; users receive a notification linking directly to it, and pinned posts appear first in the Home and Knowledge Hub feeds.
 - Includes the standard navigation, profile menu, and quick chat access.
 
 ### Add Marketplace Listing (`/marketplace/add`)
@@ -289,7 +295,8 @@ The database-backed counts are queried when `/` is rendered. They are not a pers
 - Partial purchases reduce the listing amount; a fully purchased listing changes state to sold.
 - Order completion/delivery updates transaction status and contributes to seller reliability tracking.
 - Rating is permitted only for the buyer of a delivered/sold listing and only once per transaction.
-- The system tracks total, completed, and cancelled transactions, plus a reliability score/status for marketplace users.
+- The farmer reliability score is the average one-to-five-star rating from confirmed marketplace orders. Profiles show the score, its matching status, and the number of buyer ratings behind it.
+- The system tracks total, completed, and cancelled transactions for marketplace users.
 
 ---
 
@@ -385,7 +392,19 @@ The database-backed counts are queried when `/` is rendered. They are not a pers
 - Lets an admin edit or delete any inventory record.
 - Shows crop evidence, proximity status, distance, GPS capture time, and review notes; administrators can approve or reject submissions.
 - Shows users with role and marketplace reliability/transaction information.
-- Provides links to Dashboard, Knowledge Hub Admin, and Logout.
+- Provides links to Dashboard, Knowledge Hub Admin, Audit Log, and Logout.
+
+### Audit Log (`/admin/audit-logs`)
+
+**Purpose:** provide administrators with a searchable activity trail; administrator only.
+
+**Features and expected results:**
+
+- Records write requests throughout the application, authentication activity, and admin-console page access.
+- Shows UTC timestamp, actor and role, action, category, request method/path, response status, duration, IP address, user agent, and route parameters.
+- Supports text search plus category, method, response, and date-range filters, with newest events first and paginated results.
+- Exports the currently matching events to CSV.
+- Does not store form bodies, passwords, or authentication tokens; the console provides no delete action for audit entries.
 
 ---
 
