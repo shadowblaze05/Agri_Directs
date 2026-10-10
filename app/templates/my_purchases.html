@@ -1,51 +1,198 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>My Purchases - Agri-Direct</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        :root { --agri-deep: #1a3408; --agri-green: #2d5016; --agri-pale: #eff5e9; }
+        body { background: #f3f6f0; color: #253120; }
+        .purchases-nav { background: linear-gradient(110deg, #1a3408, #315d1a); }
+        .purchases-nav .navbar-brand { color: white; font-weight: 700; }
+        .purchases-hero {
+            background: linear-gradient(120deg, #1a3408 0%, #315d1a 68%, #4b7929 100%);
+            color: white; border-radius: 18px; padding: 32px;
+            box-shadow: 0 14px 32px rgba(26,52,8,.15);
+        }
+        .purchases-hero .eyebrow { color: #d4e5c8; font-size: .76rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+        .stage-summary { border: 1px solid #e7eddf; border-radius: 14px; transition: transform .18s, box-shadow .18s; }
+        .stage-summary:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(26,52,8,.08); }
+        .stage-icon { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--agri-pale); color: var(--agri-green); }
+        .stage-section { scroll-margin-top: 88px; }
+        .purchase-card { border: 1px solid #e7eddf; border-radius: 15px; overflow: hidden; }
+        .purchase-card .card-body { padding: 22px; }
+        .purchase-status { background: var(--agri-pale); color: var(--agri-green); font-weight: 700; }
+        .order-progress { height: 7px; background: #e9eee5; }
+        .order-progress .progress-bar { background: linear-gradient(90deg, #2d5016, #78a84b); }
+        .section-heading { border-left: 4px solid #4b7929; padding-left: 12px; }
+        .rating-buttons .btn { min-width: 44px; }
+        .rating-buttons { display: inline-flex; flex-wrap: wrap; gap: .35rem; }
+        .stage-icon { flex: 0 0 42px; }
+        .purchase-card { overflow-wrap: anywhere; }
+        .purchase-card .btn { min-height: 44px; }
+        @media (max-width: 575.98px) {
+            .purchases-nav .container {
+                flex-wrap: wrap;
+                gap: .5rem;
+                padding-top: .5rem;
+                padding-bottom: .5rem;
+            }
+            .purchases-nav .navbar-brand { width: 100%; }
+            .purchases-nav .container > .d-flex { width: 100%; }
+            .purchases-nav .container > .d-flex .btn { flex: 1 1 0; }
+            .stage-summary .card-body { gap: .5rem !important; padding: .75rem; }
+            .stage-summary .stage-icon { width: 36px; height: 36px; flex-basis: 36px; }
+            .purchases-hero { padding: 23px; }
+            .purchases-hero h1 { font-size: 1.8rem; }
+            .purchase-card .card-body { padding: 17px; }
+            .purchase-card .row > [class*="col-"] { min-width: 0; }
+            .rating-buttons { margin-top: .5rem; }
+        }
+    </style>
 </head>
-<body><main class="container py-5">
-    <div class="d-flex justify-content-between align-items-center mb-4"><div><h1 class="h2"><i class="fas fa-shopping-bag"></i> My Purchases</h1><p class="text-muted mb-0">Rate farmers after your order is confirmed.</p></div><a class="btn btn-outline-success" href="{{ url_for('marketplace') }}">Marketplace</a></div>
-    {% with messages = get_flashed_messages() %}{% if messages %}{% for message in messages %}<div class="alert alert-info">{{ message }}</div>{% endfor %}{% endif %}{% endwith %}
-    {% for order in purchases %}
-<article class="card shadow-sm mb-3">
-  <div class="card-body">
-    <div class="row align-items-center">
-      <div class="col-md-6">
-        <h2 class="h5 mb-1">{{ order['crop_name'] }}</h2>
-        <p class="mb-1">Seller: <strong>{{ order['seller_name'] }}</strong></p>
-        <small class="text-muted">Order date: {{ (order['delivery_date'] or order['order_date'])[:16] if (order['delivery_date'] or order['order_date']) else 'N/A' }}</small>
-      </div>
-      <div class="col-md-6 text-md-end mt-3 mt-md-0">
-        {% if order['buyer_rating'] %}
-          <span class="text-warning">{% for _ in range(order['buyer_rating']) %}<i class="fas fa-star"></i>{% endfor %}</span>
-          <span class="ms-1 text-muted">Your rating</span>
-        {% else %}
-          {# Only allow rating when seller has confirmed delivery and buyer has confirmed receipt #}
-          {% if order['delivery_confirmed'] and order['buyer_confirmed'] %}
-            <form method="POST" action="{{ url_for('rate_marketplace_seller', listing_id=order['id']) }}">
-              <span class="me-2">Rate this farmer:</span>
-              {% for value in range(1, 6) %}
-                <button class="btn btn-outline-warning btn-sm" type="submit" name="rating" value="{{ value }}" title="{{ value }} star{{ '' if value == 1 else 's' }}">{{ value }} <i class="fas fa-star"></i></button>
-              {% endfor %}
-            </form>
-          {% elif order['delivery_confirmed'] and not order['buyer_confirmed'] %}
-            <form method="POST" action="{{ url_for('confirm_marketplace_receipt', listing_id=order['id']) }}">
-              <button class="btn btn-success btn-sm" type="submit">Confirm receipt</button>
-              <small class="d-block text-muted mt-2">After you confirm receipt you will be able to rate the seller.</small>
-            </form>
-          {% else %}
-            <span class="text-muted">Awaiting seller delivery confirmation before you can confirm receipt and rate.</span>
-          {% endif %}
-        {% endif %}
-      </div>
+<body>
+<nav class="navbar navbar-dark purchases-nav">
+    <div class="container">
+        <a class="navbar-brand" href="{{ url_for('portal_home') }}"><i class="fas fa-leaf me-2"></i>Agri-Direct</a>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-light btn-sm" href="{{ url_for('marketplace') }}"><i class="fas fa-store me-1"></i>Marketplace</a>
+            <a class="btn btn-outline-light btn-sm" href="{{ url_for('my_marketplace_listings') }}"><i class="fas fa-list me-1"></i>My Listings</a>
+        </div>
     </div>
-  </div>
-</article>
-{% else %}
-  <div class="alert alert-light border">You have no orders available for rating yet.</div>
-{% endfor %}
-</main></body></html>
+</nav>
+
+<main class="container py-4 py-lg-5">
+    <header class="purchases-hero mb-4">
+        <div class="eyebrow mb-2">Order tracking</div>
+        <div class="d-flex flex-wrap justify-content-between align-items-end gap-3">
+            <div>
+                <h1 class="display-6 fw-bold mb-2"><i class="fas fa-bag-shopping me-2"></i>My Purchases</h1>
+                <p class="mb-0 opacity-75">Follow your order from seller preparation to delivery and receipt.</p>
+            </div>
+            <a class="btn btn-light text-success fw-semibold" href="{{ url_for('marketplace') }}"><i class="fas fa-plus me-1"></i>Find produce</a>
+        </div>
+    </header>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            {% for message in messages %}<div class="alert alert-info border-0 shadow-sm">{{ message }}</div>{% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% set stages = [
+        ('To Pay', 'to-pay', 'fa-hourglass-start', to_pay_purchases),
+        ('To Ship', 'to-ship', 'fa-box', to_ship_purchases),
+        ('To Receive', 'to-receive', 'fa-truck', to_receive_purchases),
+        ('Completed', 'completed', 'fa-circle-check', completed_purchases)
+    ] %}
+    <div class="row g-3 mb-5">
+        {% for stage_name, stage_id, stage_icon, stage_orders in stages %}
+        <div class="col-6 col-lg-3">
+            <a class="card stage-summary h-100 text-decoration-none text-reset" href="#{{ stage_id }}">
+                <div class="card-body d-flex align-items-center gap-3">
+                    <span class="stage-icon"><i class="fas {{ stage_icon }}"></i></span>
+                    <div>
+                        <div class="small text-muted">{{ stage_name }}</div>
+                        <div class="h4 mb-0 fw-bold">{{ stage_orders|length }}</div>
+                    </div>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% for stage_name, stage_id, stage_icon, stage_orders in stages %}
+    <section class="stage-section mb-5" id="{{ stage_id }}">
+        <div class="d-flex align-items-center gap-3 mb-3">
+            <span class="stage-icon"><i class="fas {{ stage_icon }}"></i></span>
+            <div>
+                <h2 class="h4 section-heading mb-0">{{ stage_name }}</h2>
+                <small class="text-muted">{{ stage_orders|length }} order{% if stage_orders|length != 1 %}s{% endif %}</small>
+            </div>
+        </div>
+
+        {% if stage_orders %}
+            {% for order in stage_orders %}
+            <article class="card purchase-card shadow-sm mb-3">
+                <div class="card-body">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+                        <div>
+                            <h3 class="h5 fw-bold mb-1">{{ order['crop_name'] }}</h3>
+                            <div class="text-muted small">
+                                <i class="fas fa-user me-1"></i>{{ order['seller_name'] }}
+                                <span class="mx-2">·</span>
+                                {% if order['order_date'] %}Ordered {{ order['order_date'][:16] }}{% else %}Date unavailable{% endif %}
+                            </div>
+                        </div>
+                        <span class="badge rounded-pill purchase-status px-3 py-2">{{ stage_name }}</span>
+                    </div>
+
+                    {% if order['delivery_province'] and order['delivery_city'] and order['delivery_barangay'] and order['delivery_street'] %}
+                    <div class="small text-muted mb-3">
+                        <i class="fas fa-location-dot text-success me-1"></i>
+                        Deliver to: {{ order['delivery_street'] }}, Barangay {{ order['delivery_barangay'] }}, {{ order['delivery_city'] }}, {{ order['delivery_province'] }}
+                        {% if order['delivery_landmark'] %}<span class="d-block ms-4">Landmark: {{ order['delivery_landmark'] }}</span>{% endif %}
+                    </div>
+                    {% endif %}
+
+                    <div class="row g-3 align-items-center">
+                        <div class="col-md-5">
+                            <div class="d-flex gap-4">
+                                <div><div class="small text-muted">Quantity</div><strong>{{ order['amount'] }} {{ order['unit'] or 'kg' }}</strong></div>
+                                <div><div class="small text-muted">Order total</div><strong class="text-success">₱{{ "%.2f"|format(order['amount'] * order['price']) }}</strong></div>
+                            </div>
+                        </div>
+                        <div class="col-md-7">
+                            {% if stage_name == 'To Pay' %}
+                                <div class="progress order-progress mb-2"><div class="progress-bar" style="width: 10%"></div></div>
+                                <small class="text-muted"><i class="fas fa-clock me-1"></i>Waiting for the seller to start packing your order.</small>
+                            {% elif stage_name == 'To Ship' %}
+                                <div class="progress order-progress mb-2"><div class="progress-bar" style="width: 40%"></div></div>
+                                <small class="text-muted"><i class="fas fa-box-open me-1"></i>{{ 'The seller is packing your order.' if order['order_status'] == 'packing' else 'Your order has been prepared for shipping.' }}</small>
+                            {% elif stage_name == 'To Receive' %}
+                                <div class="progress order-progress mb-2"><div class="progress-bar" style="width: 75%"></div></div>
+                                {% if order['delivery_confirmed'] and not order['buyer_confirmed'] %}
+                                    <form method="POST" action="{{ url_for('confirm_marketplace_receipt', listing_id=order['id']) }}">
+                                        <button class="btn btn-success" type="submit"><i class="fas fa-check me-1"></i>Order received</button>
+                                        <small class="d-block text-muted mt-2">Confirm only after the item has arrived. You can then rate the seller.</small>
+                                    </form>
+                                {% else %}
+                                    <small class="text-muted"><i class="fas fa-truck me-1"></i>The seller has marked your order as delivered. Waiting for your confirmation.</small>
+                                {% endif %}
+                            {% elif stage_name == 'Completed' %}
+                                <div class="progress order-progress mb-2"><div class="progress-bar" style="width: 100%"></div></div>
+                                {% if order['buyer_rating'] %}
+                                    <span class="text-warning">{% for _ in range(order['buyer_rating']) %}<i class="fas fa-star"></i>{% endfor %}</span>
+                                    <span class="small text-muted ms-2">Your seller rating</span>
+                                {% else %}
+                                    <form method="POST" action="{{ url_for('rate_marketplace_seller', listing_id=order['id']) }}">
+                                        <span class="small text-muted me-2">Rate your seller</span>
+                                        <span class="rating-buttons">
+                                            {% for value in range(1, 6) %}
+                                            <button class="btn btn-outline-warning btn-sm" type="submit" name="rating" value="{{ value }}" title="{{ value }} star{{ '' if value == 1 else 's' }}" aria-label="Rate seller {{ value }} out of 5">{{ value }} <i class="fas fa-star"></i></button>
+                                            {% endfor %}
+                                        </span>
+                                    </form>
+                                {% endif %}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </article>
+            {% endfor %}
+        {% else %}
+            <div class="card border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center gap-3 py-4">
+                    <span class="stage-icon"><i class="fas {{ stage_icon }}"></i></span>
+                    <div><strong>No orders in {{ stage_name|lower }} yet</strong><div class="small text-muted">Your orders will appear here as they progress.</div></div>
+                </div>
+            </div>
+        {% endif %}
+    </section>
+    {% endfor %}
+</main>
+</body>
+</html>

@@ -3,62 +3,187 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ post['title'] }}</title>
+    <title>{{ post['title'] }} - Knowledge Hub</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        :root { --hub-deep: #1a3408; --hub-green: #2d5016; --hub-pale: #eff5e9; --hub-ink: #253120; }
+        body { background: #f3f6f0; color: var(--hub-ink); }
+        .navbar-custom { height: 70px; z-index: 1030; background: linear-gradient(135deg, var(--hub-deep), #0f1f03); box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+        .sidebar { background: var(--hub-deep); color: white; min-height: 100vh; position: fixed; inset: 0 auto 0 0; width: 250px; padding-top: 80px; z-index: 1000; overflow-y: auto; }
+        .sidebar .nav-link { color: rgba(255,255,255,.82); padding: 12px 20px; margin: 4px 10px; border-radius: 8px; }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active { color: white; background: #31591a; }
+        .main-content { margin: 70px 0 0 250px; padding: 24px; }
+        .article-shell { max-width: 1040px; margin: 0 auto; }
+        .article-card, .comments-card { overflow: hidden; border: 1px solid #e5ecdf; border-radius: 18px; background: white; box-shadow: 0 8px 25px rgba(34,54,25,.055); }
+        .article-cover { display: block; width: 100%; max-height: 490px; object-fit: cover; background: var(--hub-pale); }
+        .article-content { padding: clamp(22px, 4vw, 42px); }
+        .article-tag { display: inline-flex; align-items: center; gap: .45rem; padding: .4rem .75rem; border-radius: 999px; color: var(--hub-green); background: var(--hub-pale); font-size: .8rem; font-weight: 700; }
+        .article-title { margin: 16px 0 12px; color: var(--hub-deep); font-size: clamp(1.8rem, 3.5vw, 2.7rem); font-weight: 780; letter-spacing: -.035em; overflow-wrap: anywhere; }
+        .article-meta { display: flex; flex-wrap: wrap; gap: .45rem 1rem; color: #778171; font-size: .88rem; }
+        .article-body { margin-top: 26px; color: #384334; font-size: 1.04rem; line-height: 1.85; overflow-wrap: anywhere; white-space: pre-line; }
+        .article-video { display: block; width: 100%; max-height: 520px; margin-top: 24px; border-radius: 14px; background: #10170e; }
+        .article-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: 28px; padding-top: 22px; border-top: 1px solid #e9eee5; }
+        .like-button { min-height: 44px; min-width: 106px; border-radius: 10px; }
+        .like-count { color: #687262; font-weight: 600; }
+        .comments-card { margin-top: 22px; padding: clamp(20px, 3vw, 30px); }
+        .comments-heading { color: var(--hub-deep); font-weight: 750; }
+        .comment-form textarea, .reply-form textarea { min-height: 112px; border-color: #dfe7d8; border-radius: 12px; resize: vertical; }
+        .comment-form textarea:focus, .reply-form textarea:focus { border-color: #7da45f; box-shadow: 0 0 0 .2rem rgba(45,80,22,.12); }
+        .comment-submit, .reply-form .btn { min-height: 44px; border-radius: 9px; }
+        .comment-item { padding: 18px 0; border-bottom: 1px solid #edf1e9; }
+        .comment-item:last-child { border-bottom: 0; }
+        .comment-avatar { display: inline-grid; place-items: center; width: 38px; height: 38px; flex: 0 0 38px; border-radius: 12px; color: var(--hub-green); background: var(--hub-pale); }
+        .comment-bubble { min-width: 0; overflow-wrap: anywhere; }
+        .comment-text { margin: 8px 0 4px; color: #465141; white-space: pre-line; }
+        .reply-item { margin: 12px 0 0 48px; padding: 12px 14px; border-left: 3px solid #9fbe86; border-radius: 0 10px 10px 0; background: #f6f9f3; overflow-wrap: anywhere; }
+        .reply-form { margin: 14px 0 0 48px; }
+        .article-back { min-height: 42px; border-radius: 9px; }
+        @media (min-width: 576px) and (max-width: 991.98px) {
+            .sidebar { display: none; }
+            .main-content { margin-left: 0; }
+            .navbar-brand { margin-left: 0 !important; }
+        }
+        @media (max-width: 575.98px) {
+            .main-content { padding: 12px !important; }
+            .article-card, .comments-card { border-radius: 14px; }
+            .article-content { padding: 20px; }
+            .article-body { font-size: 1rem; }
+            .comment-item .d-flex { align-items: flex-start !important; }
+            .reply-item, .reply-form { margin-left: 18px; }
+        }
+    </style>
 </head>
 <body>
-    <div class="container py-4">
-        <div class="mb-3">
-            <a href="/knowledge" class="btn btn-outline-secondary btn-sm">← Back to Knowledge Hub</a>
-        </div>
-        <h2>{{ post['title'] }}</h2>
-        <p class="text-muted">{{ post['category_name'] or 'General' }} • {{ post['author'] or 'Admin' }} • {{ post['created_at']|datetime_format }} • {{ post['views'] }} views</p>
-
-        {% if post['image'] %}
-        <img src="{{ post['image'] }}" class="img-fluid rounded mb-3" alt="{{ post['title'] }}">
-        {% endif %}
-        {% if post['video'] %}
-        <video controls class="w-100 rounded mb-3">
-            <source src="{{ post['video'] }}" type="video/mp4">
-        </video>
-        {% endif %}
-
-        <div class="mb-4">{{ post['content'] }}</div>
-
-        <div class="d-flex align-items-center gap-2 mb-4">
-            <form method="post" action="/knowledge/like/{{ post['post_id'] }}">
-                <button class="btn btn-outline-danger" type="submit">{{ '💔 Unlike' if liked else '❤️ Like' }}</button>
-            </form>
-            <span class="text-muted">{{ post['like_count'] }} likes</span>
-        </div>
-
-        <h4>Comments</h4>
-        <form method="post" action="/knowledge/comment/{{ post['post_id'] }}" class="mb-4">
-            <textarea name="comment" class="form-control mb-2" rows="3" placeholder="Write a comment..."></textarea>
-            <button class="btn btn-success" type="submit">Post Comment</button>
-        </form>
-
-        {% for comment in comments %}
-        <div class="card mb-3">
-            <div class="card-body">
-                <strong>{{ comment['username'] }}</strong>
-                <p class="mb-2">{{ comment['comment'] }}</p>
-                <small class="text-muted">{{ comment['created_at']|datetime_format }}</small>
-                {% if session.get('role') == 'admin' %}
-                <form method="post" action="/knowledge/reply/{{ comment['comment_id'] }}" class="mt-2">
-                    <textarea class="form-control mb-2" name="reply" rows="2" placeholder="Reply to this comment..."></textarea>
-                    <button class="btn btn-outline-secondary btn-sm" type="submit">Reply</button>
-                </form>
-                {% endif %}
-                {% for reply in replies.get(comment['comment_id'], []) %}
-                <div class="border rounded p-2 mt-2 bg-light">
-                    <strong>{{ reply['username'] }}</strong>
-                    <div>{{ reply['reply'] }}</div>
-                </div>
-                {% endfor %}
+    <div class="sidebar">
+        <nav class="nav flex-column">
+            <a class="nav-link" href="/home"><i class="fas fa-home"></i> Home</a>
+            <a class="nav-link" href="/dashboard"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a class="nav-link" href="/upload"><i class="fas fa-upload"></i> Upload Harvest</a>
+            {% if session.get('role') == 'admin' %}<a class="nav-link" href="/market-intelligence"><i class="fas fa-brain"></i> Market Intelligence</a>{% endif %}
+            <a class="nav-link" href="/marketplace"><i class="fas fa-store"></i> Marketplace</a>
+            <a class="nav-link active" href="/knowledge"><i class="fas fa-book-open"></i> Knowledge Hub</a>
+            <a class="nav-link" href="/messages"><i class="fas fa-comments"></i> Messages</a>
+            <a class="nav-link" href="/notifications-center"><i class="fas fa-bell"></i> Notifications</a>
+            <a class="nav-link" href="/profile"><i class="fas fa-user-circle"></i> Profile</a>
+            <a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
+        </nav>
+    </div>
+    <nav class="navbar navbar-dark navbar-custom fixed-top">
+        <div class="container-fluid">
+            <a class="navbar-brand mb-0 h1 ms-5 text-white text-decoration-none" href="/home"><i class="fas fa-leaf me-2"></i>Agri-Direct</a>
+            <div class="dropdown">
+                <button class="btn btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="fas fa-user-circle me-1"></i>{{ session.get('user', 'User') }}</button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge me-2"></i>Profile</a></li>
+                    {% if session.get('role') == 'admin' %}<li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt me-2"></i>Admin Console</a></li>{% endif %}
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
+                </ul>
             </div>
         </div>
-        {% endfor %}
-    </div>
+    </nav>
+
+    <main class="main-content">
+        <div class="article-shell">
+            <a href="{{ url_for('knowledge_feed') }}" class="btn btn-outline-success article-back mb-3"><i class="fas fa-arrow-left me-2"></i>Back to Knowledge Hub</a>
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}{% for message in messages %}<div class="alert alert-info border-0 shadow-sm" role="status">{{ message }}</div>{% endfor %}{% endif %}
+            {% endwith %}
+            <article class="article-card">
+                {% if post['image'] %}<img src="{{ post['image'] }}" class="article-cover" alt="{{ post['title'] }}">{% endif %}
+                <div class="article-content">
+                    <span class="article-tag"><i class="fas fa-seedling"></i>{{ post['category_name'] or 'General' }}</span>
+                    <h1 class="article-title">{{ post['title'] }}</h1>
+                    <div class="article-meta">
+                        <span><i class="far fa-user me-1"></i>{{ post['author'] or 'Agri-Direct Team' }}</span>
+                        <span><i class="far fa-calendar me-1"></i>{{ post['created_at']|datetime_format }}</span>
+                        <span><i class="far fa-eye me-1"></i>{{ post['views'] }} views</span>
+                    </div>
+                    {% if post['video'] %}<video controls class="article-video"><source src="{{ post['video'] }}" type="video/mp4">Your browser does not support embedded video.</video>{% endif %}
+                    <div class="article-body">{{ post['content'] }}</div>
+                    <div class="article-actions">
+                        <form method="post" action="{{ url_for('like_knowledge_post', post_id=post['post_id']) }}" data-like-form>
+                            <button class="btn {{ 'btn-danger' if liked else 'btn-outline-danger' }} like-button" type="submit" aria-pressed="{{ 'true' if liked else 'false' }}"><i class="fas fa-heart me-1"></i><span data-like-label>{{ 'Unlike' if liked else 'Like' }}</span></button>
+                        </form>
+                        <span class="like-count"><span data-like-count>{{ post['like_count'] }}</span> likes</span>
+                        <span class="article-meta ms-sm-auto"><i class="far fa-comment me-1"></i>{{ comments|length }} comments</span>
+                    </div>
+                    <div class="alert alert-danger py-2 mt-3 mb-0 d-none" role="alert" data-like-error></div>
+                </div>
+            </article>
+
+            <section class="comments-card" aria-labelledby="commentsHeading">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <div><h2 class="comments-heading h4 mb-1" id="commentsHeading">Community discussion</h2><p class="small text-muted mb-0">Share a question or helpful experience with the community.</p></div>
+                    <span class="article-tag"><i class="far fa-comments"></i>{{ comments|length }} comments</span>
+                </div>
+                <form method="post" action="{{ url_for('comment_knowledge_post', post_id=post['post_id']) }}" class="comment-form mb-4">
+                    <label class="form-label fw-semibold" for="commentText">Add a comment</label>
+                    <textarea id="commentText" name="comment" class="form-control mb-3" rows="4" placeholder="Write a comment..." required></textarea>
+                    <button class="btn btn-success comment-submit" type="submit"><i class="fas fa-paper-plane me-2"></i>Post Comment</button>
+                </form>
+                {% for comment in comments %}
+                <article class="comment-item">
+                    <div class="d-flex align-items-center gap-3">
+                        <span class="comment-avatar"><i class="fas fa-user"></i></span>
+                        <div class="comment-bubble flex-grow-1">
+                            <div class="d-flex flex-wrap justify-content-between gap-1"><strong>{{ comment['username'] }}</strong><small class="text-muted">{{ comment['created_at']|datetime_format }}</small></div>
+                            <p class="comment-text">{{ comment['comment'] }}</p>
+                        </div>
+                    </div>
+                    {% if session.get('role') == 'admin' %}
+                    <form method="post" action="{{ url_for('reply_to_comment', comment_id=comment['comment_id']) }}" class="reply-form">
+                        <label class="form-label small fw-semibold" for="reply-{{ comment['comment_id'] }}">Admin reply</label>
+                        <textarea id="reply-{{ comment['comment_id'] }}" class="form-control mb-2" name="reply" rows="2" placeholder="Reply to this comment..." required></textarea>
+                        <button class="btn btn-outline-success btn-sm" type="submit"><i class="fas fa-reply me-1"></i>Reply</button>
+                    </form>
+                    {% endif %}
+                    {% for reply in replies.get(comment['comment_id'], []) %}
+                    <div class="reply-item">
+                        <div class="d-flex flex-wrap justify-content-between gap-1"><strong><i class="fas fa-reply me-1 text-success"></i>{{ reply['username'] }}</strong><small class="text-muted">{{ reply['created_at']|datetime_format }}</small></div>
+                        <div class="mt-1">{{ reply['reply'] }}</div>
+                    </div>
+                    {% endfor %}
+                </article>
+                {% else %}
+                <div class="text-center text-muted py-4"><i class="far fa-comment-dots fa-2x text-success mb-2"></i><p class="mb-0">No comments yet. Start the discussion.</p></div>
+                {% endfor %}
+            </section>
+        </div>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const likeForm = document.querySelector("[data-like-form]");
+        likeForm.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const button = likeForm.querySelector("button");
+            const errorMessage = document.querySelector("[data-like-error]");
+            button.disabled = true;
+            errorMessage.classList.add("d-none");
+            try {
+                const response = await fetch(likeForm.action, {
+                    method: "POST",
+                    headers: { "Accept": "application/json" }
+                });
+                const result = await response.json();
+                if (!response.ok || !["liked", "unliked"].includes(result.status)) {
+                    throw new Error(result.message || "Unable to update your like. Please try again.");
+                }
+                const isLiked = result.status === "liked";
+                button.classList.toggle("btn-danger", isLiked);
+                button.classList.toggle("btn-outline-danger", !isLiked);
+                button.setAttribute("aria-pressed", String(isLiked));
+                likeForm.querySelector("[data-like-label]").textContent = isLiked ? "Unlike" : "Like";
+                document.querySelector("[data-like-count]").textContent = result.like_count;
+            } catch (error) {
+                errorMessage.textContent = error.message;
+                errorMessage.classList.remove("d-none");
+            } finally {
+                button.disabled = false;
+            }
+        });
+    </script>
 </body>
 </html>

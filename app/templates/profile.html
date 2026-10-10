@@ -310,12 +310,8 @@
                   <div>{{ user.phone_number or 'Not provided' }}</div>
                 </div>
                 <div class="col-12">
-                  <div class="detail-label">PSGC Location</div>
-                  <div>{{ user.psgc_location or 'No PSGC match yet.' }}</div>
-                  <div class="detail-label mt-3">GPS-derived Place</div>
-                  <div>
-                    {{ user.geotag_location or 'Capture a profile photo with GPS to save this place.' }}
-                  </div>
+                  <div class="detail-label">Location</div>
+                  <div>{{ user.psgc_location or 'Not available' }}</div>
                 </div>
                 <div class="col-12">
                   <div class="detail-label">About</div>
@@ -425,8 +421,7 @@
               <a class="btn btn-outline-success btn-sm" href="{{ url_for('update_profile') }}">
                 <i class="fas fa-camera me-1"></i>{{ 'Update profile photo and location' if user.profile_picture else 'Capture profile photo and location' }}
               </a>
-              <p class="small mt-3 mb-1"><strong>GPS-derived place:</strong> {{ user.geotag_location or 'Not captured yet' }}</p>
-              <p class="small mb-0"><strong>PSGC location:</strong> {{ user.psgc_location or 'No match found yet' }}</p>
+              <p class="small mt-3 mb-0"><strong>Location:</strong> {{ user.psgc_location or 'Not available' }}</p>
             </section>
             <section class="profile-card mb-4">
               <h2 class="section-title mb-3">Farm Activity</h2>
@@ -449,7 +444,7 @@
               <h2 class="section-title mb-3">Profile Status</h2>
               <p class="small text-muted mb-3">
                 Harvest submission requires your first and last name, email, and a camera-captured
-                profile photo with a GPS-derived farm location. Phone number and bio are optional.
+                profile photo and location capture. Phone number and bio are optional.
               </p>
               {% if missing_profile_requirements %}
                 <div class="alert alert-warning py-2 small">

@@ -200,6 +200,7 @@ def _market_records_from_db():
     cur.execute(
         "SELECT c.crops_name AS crop_name, i.quantity, i.date_received, i.location "
         "FROM inventory i JOIN crops c ON c.id = i.crop_id "
+        "WHERE i.source IS NULL OR i.source = 'harvest' "
         "ORDER BY i.date_received DESC"
     )
     rows = cur.fetchall()
@@ -275,7 +276,7 @@ def _market_brief_context(analysis):
 
 
 def market_intelligence():
-    access_denied = _market_intelligence_access(admin_only=False)
+    access_denied = _market_intelligence_access()
     if access_denied:
         return access_denied
 
@@ -541,13 +542,7 @@ def api_market_insights():
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT c.crops_name AS crop_name, i.quantity, i.date_received FROM inventory i JOIN crops c ON c.id=i.crop_id ORDER BY i.date_received DESC")
-    rows = cur.fetchall()
-    conn.close()
-
-    records = [{"crop_name": row["crop_name"], "quantity": row["quantity"], "date_received": row["date_received"]} for row in rows]
+    records = _market_records_from_db()
     try:
         analysis = analyze_market_intelligence(records)
     except Exception:
@@ -560,13 +555,7 @@ def api_forecast():
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT c.crops_name AS crop_name, i.quantity, i.date_received FROM inventory i JOIN crops c ON c.id=i.crop_id ORDER BY i.date_received DESC")
-    rows = cur.fetchall()
-    conn.close()
-
-    records = [{"crop_name": row["crop_name"], "quantity": row["quantity"], "date_received": row["date_received"]} for row in rows]
+    records = _market_records_from_db()
     try:
         analysis = analyze_market_intelligence(records)
     except Exception:

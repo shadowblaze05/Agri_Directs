@@ -567,8 +567,8 @@ def test_profile_editor_uses_camera_capture_without_file_picker(client, monkeypa
     assert b"Camera permission timed out." in response.data
     assert b"cameraRequestTimedOut" in response.data
     assert b"await cameraPreview.play()" in response.data
-    assert b"PSGC location" in response.data
-    assert b"GPS-derived place" in response.data
+    assert b"Location" in response.data
+    assert b"GPS-derived place" not in response.data
     assert b'type="file"' not in response.data
 
 
@@ -941,6 +941,7 @@ def test_profile_location_panel_does_not_render_exact_coordinates(client, monkey
                 "profile_picture": "/static/uploads/profiles/profile.jpg",
                 "profile_photo_captured_at": "2026-09-26T12:00:00+00:00",
                 "location": "Farm",
+                "psgc_location": "Example City, Province",
                 "geotag_location": "GPS Farm Place",
                 "location_latitude": 12.34,
                 "location_longitude": 56.78,
@@ -970,8 +971,11 @@ def test_profile_location_panel_does_not_render_exact_coordinates(client, monkey
     response = client.get("/profile")
 
     assert response.status_code == 200
-    assert b"PSGC Location" in response.data
-    assert b"GPS-derived Place" in response.data
+    assert b"Location" in response.data
+    assert b"Example City, Province" in response.data
+    assert b"GPS Farm Place" not in response.data
+    assert b"PSGC Location" not in response.data
+    assert b"GPS-derived Place" not in response.data
     assert b"Update profile photo and location" in response.data
     assert b"12.34" not in response.data
     assert b"56.78" not in response.data

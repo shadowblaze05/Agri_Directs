@@ -428,6 +428,9 @@ def buy_marketplace_item(listing_id):
         return jsonify({"error": "Unauthorized"}), 401
 
     data = request.get_json() or {}
+    delivery_address, address_error = _delivery_address_from_payload(data)
+    if address_error:
+        return jsonify({"error": address_error}), 400
     quantity = data.get("quantity", 1)
 
     try:
@@ -484,21 +487,35 @@ def buy_marketplace_item(listing_id):
     order_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if quantity == listing["amount"]:
-        cur.execute("UPDATE marketplace SET status = 'sold', buyer_username = ?, order_status = 'sold', order_date = ?, delivery_confirmed = 0 WHERE id = ?", (
-            session["user"], order_timestamp, listing_id
+        cur.execute("""
+            UPDATE marketplace
+            SET status = 'sold', buyer_username = ?, order_status = 'to_pay',
+                order_date = ?, delivery_confirmed = 0,
+                delivery_province = ?, delivery_city = ?, delivery_barangay = ?,
+                delivery_street = ?, delivery_landmark = ?
+            WHERE id = ?
+        """, (
+            session["user"], order_timestamp,
+            delivery_address["delivery_province"], delivery_address["delivery_city"],
+            delivery_address["delivery_barangay"], delivery_address["delivery_street"],
+            delivery_address["delivery_landmark"], listing_id,
         ))
     else:
         cur.execute("""
             INSERT INTO marketplace (
                 user_id, username, buyer_username, crop_id, crop_name, amount, price, unit,
-                status, order_status, listing_date, order_date, expiry_date, description, location, delivery_confirmed
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                status, order_status, listing_date, order_date, expiry_date, description, location, delivery_confirmed,
+                delivery_province, delivery_city, delivery_barangay, delivery_street, delivery_landmark
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             listing["user_id"], listing["username"], session["user"],
             listing["crop_id"], listing["crop_name"], quantity, listing["price"],
-            listing["unit"], "sold", "sold", listing["listing_date"],
+            listing["unit"], "sold", "to_pay", listing["listing_date"],
             order_timestamp, listing["expiry_date"], listing["description"],
-            listing["location"], 0
+            listing["location"], 0,
+            delivery_address["delivery_province"], delivery_address["delivery_city"],
+            delivery_address["delivery_barangay"], delivery_address["delivery_street"],
+            delivery_address["delivery_landmark"],
         ))
         cur.execute("UPDATE marketplace SET amount = amount - ? WHERE id = ?", (quantity, listing_id))
 
@@ -529,19 +546,23 @@ def buy_marketplace_item(listing_id):
                        (item["quantity"] - remaining, item["id"]))
             remaining = 0
 
-    conn.commit()
-
     try:
         if seller_username:
             cur.execute(
                 "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
-                (seller_username, "Item Sold",
-                 f"{session['user']} purchased {quantity} {listing['crop_name']} from your listing.",
-                 "marketplace", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 0)
+                (
+                    seller_username,
+                    "Item Sold",
+                    f"{session['user']} purchased {quantity} {listing['crop_name']} from your listing.",
+                    "marketplace",
+                    order_timestamp,
+                    0,
+                ),
             )
-            conn.commit()
     except Exception:
         logger.exception("Failed to create marketplace purchase notification")
+
+    conn.commit()
 
     conn.close()
 
@@ -549,6 +570,127 @@ def buy_marketplace_item(listing_id):
         "status": "success",
         "message": f"Purchased {quantity} {listing['crop_name']} for ₱{total_price:.2f}"
     })
+
+
+def _marketplace_order_label(order_status):
+    labels = {
+        "to_pay": "To Pay",
+        "packing": "Packing",
+        "to_ship": "To Ship",
+        "to_receive": "To Receive",
+        "delivered": "Delivered",
+        "completed": "Completed",
+        "sold": "Sold",
+        "available": "Available",
+    }
+    return labels.get((order_status or "").strip(), "In Progress")
+
+
+def _delivery_address_from_payload(payload):
+    if not isinstance(payload, dict):
+        return None, "Enter your delivery address before placing the order."
+
+    required_fields = {
+        "delivery_province": "Province",
+        "delivery_city": "City or municipality",
+        "delivery_barangay": "Barangay",
+        "delivery_street": "Street address",
+    }
+    address = {}
+    for field, label in required_fields.items():
+        value = payload.get(field)
+        if not isinstance(value, str) or not value.strip():
+            return None, f"{label} is required for delivery."
+        value = value.strip()
+        if len(value) > 255:
+            return None, f"{label} must be 255 characters or fewer."
+        address[field] = value
+
+    landmark = payload.get("delivery_landmark", "")
+    if not isinstance(landmark, str):
+        return None, "Landmark must be text."
+    landmark = landmark.strip()
+    if len(landmark) > 255:
+        return None, "Landmark must be 255 characters or fewer."
+    address["delivery_landmark"] = landmark or None
+    return address, None
+
+
+def update_marketplace_order_status(listing_id):
+    if "user" not in session:
+        return redirect("/login")
+
+    requested_status = request.form.get("order_status")
+    allowed_statuses = {"packing", "to_ship", "to_receive"}
+    if requested_status not in allowed_statuses:
+        flash("Invalid order status update.")
+        return redirect(url_for("my_marketplace_transactions"))
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE username = ?", (session["user"],))
+    current_user = cur.fetchone()
+    if not current_user:
+        conn.close()
+        flash("User not found")
+        return redirect(url_for("my_marketplace_transactions"))
+
+    cur.execute("SELECT * FROM marketplace WHERE id = ? AND user_id = ? AND status = 'sold'", (listing_id, current_user["id"]))
+    listing = cur.fetchone()
+    if not listing:
+        conn.close()
+        flash("This order is not currently available for status update.")
+        return redirect(url_for("my_marketplace_transactions"))
+
+    current_status = (listing["order_status"] or "to_pay").strip()
+    if current_status == "to_pay" and requested_status != "packing":
+        conn.close()
+        flash("The seller must mark the order as packing before it can move to shipping.")
+        return redirect(url_for("my_marketplace_transactions"))
+    if current_status == "packing" and requested_status != "to_ship":
+        conn.close()
+        flash("This order can only move from packing to shipping.")
+        return redirect(url_for("my_marketplace_transactions"))
+    if current_status == "to_ship" and requested_status != "to_receive":
+        conn.close()
+        flash("This order can only move from shipping to delivery.")
+        return redirect(url_for("my_marketplace_transactions"))
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if requested_status == "to_receive":
+        cur.execute(
+            "UPDATE marketplace SET status = 'delivered', order_status = 'to_receive', delivery_date = ?, delivery_confirmed = 1 WHERE id = ?",
+            (timestamp, listing_id),
+        )
+        message = f"Your order for {listing['crop_name']} is now on the way and has been marked as delivered by {session['user']}. Please confirm receipt when it arrives."
+    elif requested_status == "to_ship":
+        cur.execute(
+            "UPDATE marketplace SET status = 'sold', order_status = 'to_ship', delivery_confirmed = 0 WHERE id = ?",
+            (listing_id,),
+        )
+        message = f"Your order for {listing['crop_name']} is now being shipped by {session['user']}."
+    else:
+        cur.execute(
+            "UPDATE marketplace SET status = 'sold', order_status = 'packing', delivery_confirmed = 0 WHERE id = ?",
+            (listing_id,),
+        )
+        message = f"Your order for {listing['crop_name']} is now being packed by {session['user']}."
+
+    if listing["buyer_username"]:
+        try:
+            cur.execute(
+                "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
+                (listing["buyer_username"], "Order Update",
+                 message,
+                 "marketplace", timestamp, 0)
+            )
+        except Exception:
+            logger.exception("Failed to create marketplace order update notification")
+
+    conn.commit()
+    conn.close()
+    flash(f"Order status updated to {_marketplace_order_label(requested_status)}.")
+    return redirect(url_for("my_marketplace_transactions"))
 
 
 def complete_marketplace_order(listing_id):
@@ -571,7 +713,7 @@ def complete_marketplace_order(listing_id):
         return jsonify({"error": "Order not found or not eligible for completion"}), 404
 
     cur.execute(
-        "UPDATE marketplace SET status = 'delivered', order_status = 'delivered', delivery_date = ?, delivery_confirmed = 1 WHERE id = ?",
+        "UPDATE marketplace SET status = 'delivered', order_status = 'to_receive', delivery_date = ?, delivery_confirmed = 1 WHERE id = ?",
         (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), listing_id)
     )
 
@@ -675,12 +817,38 @@ def my_marketplace_purchases():
         SELECT m.*, u.username AS seller_name, u.location AS seller_location
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
-        WHERE m.buyer_username = ? AND m.status IN ('sold', 'delivered')
+        WHERE m.buyer_username = ? AND m.status IN ('sold', 'delivered', 'completed')
         ORDER BY COALESCE(m.delivery_date, m.order_date) DESC
     """, (session["user"],))
     purchases = cur.fetchall()
     conn.close()
-    return render_template("my_purchases.html", purchases=purchases)
+
+    to_pay_purchases = []
+    to_ship_purchases = []
+    to_receive_purchases = []
+    completed_purchases = []
+
+    for purchase in purchases:
+        order_status = (purchase["order_status"] or "to_pay").strip()
+        if purchase["buyer_rating"] is not None:
+            completed_purchases.append(purchase)
+        elif purchase["buyer_confirmed"]:
+            completed_purchases.append(purchase)
+        elif order_status == "to_receive" or purchase["delivery_confirmed"]:
+            to_receive_purchases.append(purchase)
+        elif order_status in ("packing", "to_ship"):
+            to_ship_purchases.append(purchase)
+        else:
+            to_pay_purchases.append(purchase)
+
+    return render_template(
+        "my_purchases.html",
+        purchases=purchases,
+        to_pay_purchases=to_pay_purchases,
+        to_ship_purchases=to_ship_purchases,
+        to_receive_purchases=to_receive_purchases,
+        completed_purchases=completed_purchases,
+    )
 
 
 def rate_marketplace_seller(listing_id):
@@ -766,7 +934,6 @@ def my_marketplace_listings():
     active_listings = []
     preorder_requests = []
     looking_for_listings = []
-    sold_listings = []
     traded_listings = []
 
     for listing in all_listings:
@@ -780,8 +947,6 @@ def my_marketplace_listings():
             preorder_requests.append(listing)
         elif status == 'available':
             active_listings.append(listing)
-        elif status == 'sold':
-            sold_listings.append(listing)
         elif status == 'traded':
             traded_listings.append(listing)
 
@@ -789,9 +954,45 @@ def my_marketplace_listings():
                         active_listings=active_listings,
                         preorder_requests=preorder_requests,
                         looking_for_listings=looking_for_listings,
-                        sold_listings=sold_listings,
                         traded_listings=traded_listings,
                         cart_count=cart_count)
+
+
+def my_marketplace_transactions():
+    if "user" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE username = ?", (session["user"],))
+    current_user = cur.fetchone()
+    if not current_user:
+        conn.close()
+        flash("User not found")
+        return redirect("/marketplace")
+
+    cur.execute("""
+        SELECT m.*,
+               buyer.first_name AS buyer_first_name,
+               buyer.last_name AS buyer_last_name,
+               buyer.email AS buyer_email,
+               buyer.phone_number AS buyer_phone_number,
+               buyer.location AS buyer_location
+        FROM marketplace m
+        LEFT JOIN users buyer ON buyer.username = m.buyer_username
+        WHERE m.user_id = ?
+          AND m.status IN ('sold', 'delivered', 'completed')
+          AND m.buyer_username IS NOT NULL
+        ORDER BY COALESCE(m.order_date, m.listing_date) DESC
+    """, (current_user["id"],))
+    transactions = cur.fetchall()
+    conn.close()
+
+    return render_template(
+        "marketplace_transactions.html",
+        transactions=transactions,
+        cart_count=get_cart_count(session["user"]),
+    )
 
 
 def delete_marketplace_listing(listing_id):
@@ -1270,6 +1471,11 @@ def checkout_cart():
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
+    payload = request.get_json() or {}
+    delivery_address, address_error = _delivery_address_from_payload(payload)
+    if address_error:
+        return jsonify({"error": address_error}), 400
+
     conn = get_db()
     cur = conn.cursor()
 
@@ -1308,24 +1514,51 @@ def checkout_cart():
         if item["quantity"] == listing["amount"]:
             cur.execute("""
                 UPDATE marketplace 
-                SET status = 'sold', buyer_username = ?, order_status = 'sold', order_date = ?, delivery_confirmed = 0 
+                SET status = 'sold', buyer_username = ?, order_status = 'to_pay',
+                    order_date = ?, delivery_confirmed = 0,
+                    delivery_province = ?, delivery_city = ?, delivery_barangay = ?,
+                    delivery_street = ?, delivery_landmark = ?
                 WHERE id = ?
-            """, (session["user"], order_timestamp, item["listing_id"]))
+            """, (
+                session["user"], order_timestamp,
+                delivery_address["delivery_province"], delivery_address["delivery_city"],
+                delivery_address["delivery_barangay"], delivery_address["delivery_street"],
+                delivery_address["delivery_landmark"], item["listing_id"],
+            ))
         else:
             cur.execute("""
                 INSERT INTO marketplace (
                     user_id, username, buyer_username, crop_id, crop_name, amount, price, unit,
-                    status, order_status, listing_date, order_date, expiry_date, description, location, delivery_confirmed
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status, order_status, listing_date, order_date, expiry_date, description, location, delivery_confirmed,
+                    delivery_province, delivery_city, delivery_barangay, delivery_street, delivery_landmark
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 item["seller_id"], item["seller_name"], session["user"],
                 item["crop_id"], item["crop_name"], item["quantity"], item["price"],
-                item["unit"] or "kg", "sold", "sold",
+                item["unit"] or "kg", "sold", "to_pay",
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"), order_timestamp,
-                None, None, item["location"], 0
+                None, None, item["location"], 0,
+                delivery_address["delivery_province"], delivery_address["delivery_city"],
+                delivery_address["delivery_barangay"], delivery_address["delivery_street"],
+                delivery_address["delivery_landmark"],
             ))
             cur.execute("UPDATE marketplace SET amount = amount - ? WHERE id = ?",
                        (item["quantity"], item["listing_id"]))
+
+        try:
+            cur.execute(
+                "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
+                (
+                    item["seller_name"],
+                    "Item Sold",
+                    f"{session['user']} purchased {item['quantity']} {item['crop_name']} from your listing.",
+                    "marketplace",
+                    order_timestamp,
+                    0,
+                ),
+            )
+        except Exception:
+            logger.exception("Failed to create marketplace purchase notification")
 
         cur.execute("""
             INSERT INTO inventory(crop_id, quantity, farmer, date_received, location, source)
@@ -2017,10 +2250,12 @@ def register(application):
     application.add_url_rule('/marketplace/add', endpoint='add_marketplace_listing', view_func=add_marketplace_listing, methods=['GET', 'POST'])
     application.add_url_rule('/marketplace/buy/<int:listing_id>', endpoint='buy_marketplace_item', view_func=buy_marketplace_item, methods=['POST'])
     application.add_url_rule('/marketplace/complete-order/<int:listing_id>', endpoint='complete_marketplace_order', view_func=complete_marketplace_order, methods=['POST'])
+    application.add_url_rule('/marketplace/order-status/<int:listing_id>', endpoint='update_marketplace_order_status', view_func=update_marketplace_order_status, methods=['POST'])
     application.add_url_rule('/marketplace/confirm-receipt/<int:listing_id>', endpoint='confirm_marketplace_receipt', view_func=confirm_marketplace_receipt, methods=['POST'])
     application.add_url_rule('/marketplace/my-purchases', endpoint='my_marketplace_purchases', view_func=my_marketplace_purchases)
     application.add_url_rule('/marketplace/rate/<int:listing_id>', endpoint='rate_marketplace_seller', view_func=rate_marketplace_seller, methods=['POST'])
     application.add_url_rule('/marketplace/my-listings', endpoint='my_marketplace_listings', view_func=my_marketplace_listings)
+    application.add_url_rule('/marketplace/transactions', endpoint='my_marketplace_transactions', view_func=my_marketplace_transactions)
     application.add_url_rule('/marketplace/delete/<int:listing_id>', endpoint='delete_marketplace_listing', view_func=delete_marketplace_listing, methods=['POST'])
     application.add_url_rule('/marketplace/trade/<int:listing_id>', endpoint='trade_marketplace_item', view_func=trade_marketplace_item, methods=['GET', 'POST'])
     application.add_url_rule('/api/listing/<int:listing_id>', endpoint='get_listing_api', view_func=get_listing_api)
@@ -2032,6 +2267,13 @@ def register(application):
     application.add_url_rule('/marketplace/cart/update/<int:cart_id>', endpoint='update_cart_item', view_func=update_cart_item, methods=['POST'])
     application.add_url_rule('/marketplace/cart/remove/<int:cart_id>', endpoint='remove_from_cart', view_func=remove_from_cart, methods=['POST'])
     application.add_url_rule('/marketplace/cart/checkout', endpoint='checkout_cart', view_func=checkout_cart, methods=['POST'])
+
+    # Backwards-compatible aliases for older templates and scripts that still use /cart.
+    application.add_url_rule('/cart', endpoint='view_cart_legacy', view_func=view_cart)
+    application.add_url_rule('/cart/add/<int:listing_id>', endpoint='add_to_cart_legacy', view_func=add_to_cart, methods=['POST'])
+    application.add_url_rule('/cart/update/<int:cart_id>', endpoint='update_cart_item_legacy', view_func=update_cart_item, methods=['POST'])
+    application.add_url_rule('/cart/remove/<int:cart_id>', endpoint='remove_from_cart_legacy', view_func=remove_from_cart, methods=['POST'])
+    application.add_url_rule('/cart/checkout', endpoint='checkout_cart_legacy', view_func=checkout_cart, methods=['POST'])
 
     application.add_url_rule('/marketplace/edit/<int:listing_id>',
                         endpoint='edit_marketplace_listing',

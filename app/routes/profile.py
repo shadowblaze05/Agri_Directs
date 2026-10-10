@@ -33,11 +33,14 @@ def _seller_reliability(cursor, username):
         "FROM marketplace WHERE username=? AND buyer_rating IS NOT NULL",
         (username,),
     )
-    summary = cursor.fetchone()
-    average_rating = summary["average_rating"] if summary else None
+    summary = cursor.fetchone() or {}
+    if not isinstance(summary, dict):
+        summary = {}
+    average_rating = summary.get("average_rating")
+    rating_count = summary.get("rating_count") or 0
     return {
         "score": round(average_rating, 2) if average_rating is not None else None,
-        "rating_count": summary["rating_count"] if summary else 0,
+        "rating_count": rating_count,
         "status": seller_reliability_status(average_rating),
     }
 

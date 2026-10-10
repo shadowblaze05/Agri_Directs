@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transactions - Agri-Direct</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        :root { --agri-deep: #1a3408; --agri-green: #2d5016; --agri-pale: #eff5e9; }
+        body { background: #f3f6f0; color: #253120; }
+        .transactions-nav { background: linear-gradient(110deg, #1a3408, #315d1a); }
+        .transactions-nav .navbar-brand { color: white; font-weight: 700; }
+        .transaction-hero {
+            background: linear-gradient(120deg, #1a3408 0%, #315d1a 68%, #4b7929 100%);
+            color: white; border-radius: 18px; padding: 30px;
+            box-shadow: 0 14px 32px rgba(26,52,8,.15);
+        }
+        .transaction-hero .eyebrow { color: #d4e5c8; font-size: .76rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+        .transaction-card { border: 1px solid #e7eddf; border-radius: 15px; overflow: hidden; }
+        .transaction-card .card-body { padding: 24px; }
+        .transaction-status { background: var(--agri-pale); color: var(--agri-green); font-size: .82rem; }
+        .buyer-details { background: #f5f8f2; border: 1px solid #e8eee3; border-radius: 12px; }
+        .buyer-details a { color: var(--agri-green); text-decoration: none; }
+        .buyer-details a:hover { text-decoration: underline; }
+        .progress { background: #e8eee3; border-radius: 999px; }
+        .progress-bar { background: linear-gradient(90deg, #2d5016, #78a84b); border-radius: 999px; }
+        .progress-label { font-size: .75rem; }
+        .transaction-empty { border: 1px dashed #cbd8c2; border-radius: 16px; }
+        .buyer-details { overflow-wrap: anywhere; }
+        .transaction-card .btn { min-height: 44px; }
+        @media (max-width: 575.98px) {
+            .transactions-nav .container {
+                flex-wrap: wrap;
+                gap: .5rem;
+                padding-top: .5rem;
+                padding-bottom: .5rem;
+            }
+            .transactions-nav .navbar-brand { width: 100%; }
+            .transactions-nav .container > .d-flex { width: 100%; }
+            .transactions-nav .container > .d-flex .btn { flex: 1 1 0; }
+            .transaction-hero { padding: 22px; }
+            .transaction-hero h1 { font-size: 1.8rem; }
+            .transaction-card .card-body { padding: 17px; }
+            .transaction-hero .text-end { text-align: left !important; }
+            .transaction-hero .btn { white-space: normal; }
+            .progress-label { font-size: .62rem; gap: .2rem; }
+            .progress-label span { flex: 1 1 auto; text-align: center; }
+            .buyer-details { padding: 14px !important; }
+        }
+    </style>
+</head>
+<body>
+<nav class="navbar navbar-dark transactions-nav">
+    <div class="container">
+        <a class="navbar-brand" href="{{ url_for('portal_home') }}"><i class="fas fa-leaf me-2"></i>Agri-Direct</a>
+        <div class="d-flex gap-2">
+            <a class="btn btn-outline-light btn-sm" href="{{ url_for('my_marketplace_listings') }}"><i class="fas fa-list me-1"></i>My Listings</a>
+            <a class="btn btn-outline-light btn-sm" href="{{ url_for('my_marketplace_purchases') }}"><i class="fas fa-bag-shopping me-1"></i>My Purchases</a>
+        </div>
+    </div>
+</nav>
+<main class="container py-5">
+    <header class="transaction-hero mb-4">
+        <div class="eyebrow mb-2">Seller workspace</div>
+        <div class="d-flex flex-wrap justify-content-between align-items-end gap-3">
+            <div>
+                <h1 class="display-6 fw-bold mb-2"><i class="fas fa-receipt me-2"></i>Transactions</h1>
+                <p class="mb-0 opacity-75">Keep buyers informed and manage every order from packing to receipt.</p>
+            </div>
+            <div class="d-flex align-items-center gap-3">
+                <div class="text-end"><div class="small opacity-75">Orders</div><div class="h3 fw-bold mb-0">{{ transactions|length }}</div></div>
+                <a class="btn btn-light text-success fw-semibold" href="{{ url_for('add_marketplace_listing') }}"><i class="fas fa-plus me-1"></i>New Listing</a>
+            </div>
+        </div>
+    </header>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-info">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% for order in transactions %}
+        {% set current_status = order['order_status'] or 'to_pay' %}
+        {% set buyer_name = ((order['buyer_first_name'] or '') ~ ' ' ~ (order['buyer_last_name'] or '')).strip() %}
+        {% if current_status == 'completed' or order['buyer_confirmed'] %}
+            {% set status_label = 'Completed' %}
+            {% set progress = 100 %}
+        {% elif current_status == 'packing' %}
+            {% set status_label = 'Packing' %}
+            {% set progress = 25 %}
+        {% elif current_status == 'to_ship' %}
+            {% set status_label = 'To Ship' %}
+            {% set progress = 50 %}
+        {% elif current_status == 'to_receive' or order['delivery_confirmed'] %}
+            {% set status_label = 'To Receive' %}
+            {% set progress = 75 %}
+        {% else %}
+            {% set status_label = 'To Pay' %}
+            {% set progress = 0 %}
+        {% endif %}
+
+        <article class="card transaction-card shadow-sm mb-4">
+            <div class="card-body p-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+                    <div>
+                        <h2 class="h4 mb-1">{{ order['crop_name'] }}</h2>
+                        <div class="text-muted small">
+                            Order #{{ order['id'] }}
+                            {% if order['order_date'] %} · Placed {{ order['order_date'][:16] }}{% endif %}
+                        </div>
+                    </div>
+                    <span class="badge rounded-pill text-bg-success transaction-status">{{ status_label }}</span>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-lg-5">
+                        <div class="buyer-details p-3 h-100">
+                            <h3 class="h6 mb-3"><i class="fas fa-user me-2"></i>Buyer information</h3>
+                            <p class="mb-2"><strong>{{ buyer_name or order['buyer_username'] }}</strong>
+                                <span class="text-muted">(@{{ order['buyer_username'] }})</span>
+                            </p>
+                            {% if order['buyer_phone_number'] %}
+                                <p class="small mb-2"><i class="fas fa-phone me-2 text-muted"></i><a href="tel:{{ order['buyer_phone_number'] }}">{{ order['buyer_phone_number'] }}</a></p>
+                            {% endif %}
+                            {% if order['buyer_email'] %}
+                                <p class="small mb-2"><i class="fas fa-envelope me-2 text-muted"></i><a href="mailto:{{ order['buyer_email'] }}">{{ order['buyer_email'] }}</a></p>
+                            {% endif %}
+                            {% if order['buyer_location'] %}
+                                <p class="small mb-0"><i class="fas fa-map-marker-alt me-2 text-muted"></i>{{ order['buyer_location'] }}</p>
+                            {% endif %}
+                            {% if not order['buyer_phone_number'] and not order['buyer_email'] and not order['buyer_location'] %}
+                                <p class="small text-muted mb-0">The buyer has not provided additional contact or location details.</p>
+                            {% endif %}
+                            {% if order['buyer_username'] %}
+                                <a class="btn btn-outline-success btn-sm mt-3" href="{{ url_for('messages_page', recipient=order['buyer_username']) }}">
+                                    <i class="fas fa-comments me-1"></i>Contact Buyer
+                                </a>
+                            {% endif %}
+                            <hr class="my-3">
+                            <h4 class="small fw-bold mb-2"><i class="fas fa-truck me-2 text-success"></i>Delivery address</h4>
+                            {% if order['delivery_province'] and order['delivery_city'] and order['delivery_barangay'] and order['delivery_street'] %}
+                                <address class="small mb-0">
+                                    {{ order['delivery_street'] }}<br>
+                                    Barangay {{ order['delivery_barangay'] }}, {{ order['delivery_city'] }}<br>
+                                    {{ order['delivery_province'] }}
+                                    {% if order['delivery_landmark'] %}<br><span class="text-muted">Landmark: {{ order['delivery_landmark'] }}</span>{% endif %}
+                                </address>
+                            {% else %}
+                                <p class="small text-muted mb-0">No delivery address was saved for this order.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-lg-7">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <div class="small text-muted">Quantity</div>
+                                <strong>{{ order['amount'] }} {{ order['unit'] or 'kg' }}</strong>
+                            </div>
+                            <div class="text-end">
+                                <div class="small text-muted">Order total</div>
+                                <strong>₱{{ "%.2f"|format(order['amount'] * order['price']) }}</strong>
+                            </div>
+                        </div>
+
+                        <div class="mt-4">
+                            <div class="progress" role="progressbar" aria-label="Order progress" aria-valuenow="{{ progress }}" aria-valuemin="0" aria-valuemax="100" style="height: 8px;">
+                                <div class="progress-bar bg-success" style="width: {{ progress }}%"></div>
+                            </div>
+                            <div class="d-flex justify-content-between mt-2 text-muted progress-label">
+                                <span>To Pay</span><span>Packing</span><span>To Ship</span><span>To Receive</span><span>Completed</span>
+                            </div>
+                        </div>
+
+                        <div class="mt-4">
+                            {% if current_status == 'to_pay' or current_status == 'sold' %}
+                                <form method="POST" action="{{ url_for('update_marketplace_order_status', listing_id=order['id']) }}">
+                                    <input type="hidden" name="order_status" value="packing">
+                                    <button class="btn btn-success" type="submit"><i class="fas fa-box me-1"></i> Mark as Packing</button>
+                                </form>
+                            {% elif current_status == 'packing' %}
+                                <form method="POST" action="{{ url_for('update_marketplace_order_status', listing_id=order['id']) }}">
+                                    <input type="hidden" name="order_status" value="to_ship">
+                                    <button class="btn btn-primary" type="submit"><i class="fas fa-truck me-1"></i> Mark as Shipped</button>
+                                </form>
+                            {% elif current_status == 'to_ship' %}
+                                <form method="POST" action="{{ url_for('update_marketplace_order_status', listing_id=order['id']) }}">
+                                    <input type="hidden" name="order_status" value="to_receive">
+                                    <button class="btn btn-warning" type="submit"><i class="fas fa-check-circle me-1"></i> Mark as Delivered</button>
+                                </form>
+                            {% elif order['buyer_confirmed'] %}
+                                <div class="alert alert-success mb-0"><i class="fas fa-check-circle me-1"></i> Buyer confirmed receipt.</div>
+                            {% else %}
+                                <div class="alert alert-info mb-0"><i class="fas fa-clock me-1"></i> Delivery status sent. Waiting for the buyer to confirm receipt.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </article>
+    {% else %}
+        <div class="card transaction-empty border-0 shadow-sm">
+            <div class="card-body text-center py-5">
+                <i class="fas fa-receipt fa-3x text-muted mb-3"></i>
+                <h2 class="h5">No transactions yet</h2>
+                <p class="text-muted mb-0">Orders from buyers will appear here with their details and delivery progress.</p>
+            </div>
+        </div>
+    {% endfor %}
+</main>
+</body>
+</html>

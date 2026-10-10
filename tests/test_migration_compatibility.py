@@ -142,3 +142,26 @@ def test_pinned_update_and_notification_link_migration_is_repeatable(monkeypatch
         }
         assert "is_pinned" in knowledge_columns
         assert "link" in notification_columns
+
+
+def test_delivery_address_migration_is_repeatable_for_legacy_marketplace_table(monkeypatch):
+    engine = create_engine("sqlite://")
+    migration = load_migration(
+        "e41b7c2a9d50_add_marketplace_delivery_addresses.py"
+    )
+    with engine.begin() as connection:
+        connection.execute(text("CREATE TABLE marketplace (id INTEGER PRIMARY KEY)"))
+
+        run_upgrade(connection, migration, monkeypatch)
+        run_upgrade(connection, migration, monkeypatch)
+
+        marketplace_columns = {
+            column["name"] for column in inspect(connection).get_columns("marketplace")
+        }
+        assert {
+            "delivery_province",
+            "delivery_city",
+            "delivery_barangay",
+            "delivery_street",
+            "delivery_landmark",
+        } <= marketplace_columns

@@ -50,7 +50,7 @@
             <section class="card mb-4">
                 <div class="card-body p-4 p-md-5">
                     <h2 class="h5 mb-2"><i class="fas fa-camera me-2 text-success"></i>Camera-captured profile photo and location</h2>
-                    <p class="text-muted">Take a new profile photo and allow browser location access. GPS is saved separately from the photo. We show both the GPS-resolved place and its matching official PSGC location when available.</p>
+                    <p class="text-muted">Take a new profile photo and allow browser location access. The official location is displayed when available. GPS data is retained privately for harvest-range checks.</p>
                     <div class="d-flex align-items-center gap-4">
                         {% if user.profile_picture %}
                             <img id="preview" class="avatar-preview" src="{{ user.profile_picture }}" alt="Current profile photo">
@@ -81,11 +81,9 @@
                         <div class="col-md-6"><label class="form-label" for="email">Email address *</label><input type="email" class="form-control" id="email" name="email" required value="{{ user.email or '' }}"></div>
                         <div class="col-md-6"><label class="form-label" for="phone_number">Phone number</label><input type="tel" class="form-control" id="phone_number" name="phone_number" value="{{ user.phone_number or '' }}" placeholder="e.g. +63 912 345 6789"></div>
                         <div class="col-12">
-                            <label class="form-label">GPS-derived place</label>
-                            <div id="geotagLocationValue" class="form-control bg-light">{{ user.geotag_location or 'Not captured yet' }}</div>
-                            <label class="form-label mt-3">PSGC location</label>
-                            <div id="psgcLocationValue" class="form-control bg-light">{{ user.psgc_location or 'No PSGC match yet' }}</div>
-                            <div class="form-text">The GPS-derived place is retained separately. The PSGC location is resolved from official Philippine Standard Geographic Code data when a match is available.</div>
+                            <label class="form-label">Location</label>
+                            <div id="psgcLocationValue" class="form-control bg-light">{{ user.psgc_location or 'Not available' }}</div>
+                            <div class="form-text">This location is resolved from official Philippine Standard Geographic Code data when a match is available.</div>
                         </div>
                         <div class="col-12"><label class="form-label" for="bio">About your farm</label><textarea class="form-control" id="bio" name="bio" rows="4" maxlength="800" placeholder="Describe your farm, crops, or farming experience.">{{ user.bio or '' }}</textarea></div>
                     </div>
@@ -212,8 +210,7 @@
                     const response = await fetch('{{ url_for("capture_profile_location") }}', { method: 'POST', body });
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.error || 'Could not save profile photo and location.');
-                    document.getElementById('geotagLocationValue').textContent = result.geotag_location;
-                    document.getElementById('psgcLocationValue').textContent = result.psgc_location || 'No PSGC match found';
+                    document.getElementById('psgcLocationValue').textContent = result.psgc_location || 'Not available';
                     captureMessage.textContent = result.message;
                 } catch (error) {
                     captureMessage.textContent = error.message;

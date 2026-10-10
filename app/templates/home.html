@@ -262,11 +262,13 @@
         <a class="nav-link" href="/upload"
           ><i class="fas fa-upload"></i> Upload Harvest</a
         >
+        {% if session.get('role') == 'admin' %}
         <a
           class="nav-link"
           href="{{ url_for('market_intelligence') }}"
-          ><i class="fas fa-lightbulb"></i> Market Brief</a
+          ><i class="fas fa-brain"></i> Market Intelligence</a
         >
+        {% endif %}
         <a class="nav-link" href="{{ url_for('marketplace') }}"
           ><i class="fas fa-store"></i> Marketplace</a
         >
@@ -296,9 +298,16 @@
         <div class="d-flex ms-auto align-items-center">
           <a
             href="{{ url_for('notification_center') }}"
-            class="btn btn-outline-light me-2"
+            class="btn btn-outline-light me-2 position-relative"
             title="Notifications"
+            aria-label="Notifications"
             ><i class="fas fa-bell"></i
+            ><span
+              id="home-notification-badge"
+              class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none"
+              aria-live="polite"
+              aria-atomic="true"
+            ></span
           ></a>
           <div class="dropdown">
             <button
@@ -393,11 +402,13 @@
                 Guidance only; this is not a guaranteed price or confirmed buyer demand.
               </p>
             </div>
+            {% if session.get('role') == 'admin' %}
             <div class="flex-shrink-0">
               <a class="btn btn-outline-success btn-sm" href="{{ url_for('market_intelligence') }}">
                 More market insights <i class="fas fa-arrow-right ms-1"></i>
               </a>
             </div>
+            {% endif %}
           </div>
         </section>
 
@@ -573,5 +584,38 @@
       </div>
     </main>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      async function refreshHomeNotificationBadge() {
+        const badge = document.getElementById("home-notification-badge");
+        if (!badge) return;
+
+        try {
+          const response = await fetch("/notifications/unread-count");
+          if (!response.ok) throw new Error("Failed to load unread notification count");
+          const result = await response.json();
+          const unreadCount = Number(result.unread_count);
+          if (!Number.isInteger(unreadCount) || unreadCount < 0) {
+            throw new Error("Unread notification count was invalid");
+          }
+
+          const notificationLink = badge.closest("a");
+          if (notificationLink) {
+            notificationLink.setAttribute(
+              "aria-label",
+              unreadCount ? `Notifications, ${unreadCount} unread` : "Notifications"
+            );
+          }
+          badge.textContent = unreadCount > 99 ? "99+" : String(unreadCount);
+          badge.classList.toggle("d-none", unreadCount === 0);
+        } catch (error) {
+          console.error("Failed to refresh home notification badge:", error);
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        refreshHomeNotificationBadge();
+        window.setInterval(refreshHomeNotificationBadge, 5000);
+      });
+    </script>
   </body>
 </html>

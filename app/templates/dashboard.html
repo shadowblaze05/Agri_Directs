@@ -224,9 +224,11 @@
             <a class="nav-link" href="/upload">
                 <i class="fas fa-upload"></i> Upload Harvest
             </a>
+            {% if session.get('role') == 'admin' %}
             <a class="nav-link" href="/market-intelligence">
-                <i class="fas fa-lightbulb"></i> Market Brief
+                <i class="fas fa-brain"></i> Market Intelligence
             </a>
+            {% endif %}
             <a class="nav-link" href="/marketplace">
                 <i class="fas fa-store"></i> Marketplace
             </a>
@@ -310,7 +312,9 @@
                     <div class="card border-0 shadow-sm">
                         <div class="card-header bg-light border-0 d-flex justify-content-between align-items-center">
                             <h5 class="mb-0"><i class="fas fa-lightbulb text-success"></i> Your Market Brief</h5>
-                            <a href="/market-intelligence" class="btn btn-sm btn-outline-success">View market brief</a>
+                            {% if session.get('role') == 'admin' %}
+                            <a href="/market-intelligence" class="btn btn-sm btn-outline-success">View market insights</a>
+                            {% endif %}
                         </div>
                         <div class="card-body">
                             <div class="row g-3">
