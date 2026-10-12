@@ -141,9 +141,10 @@ def marketplace():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT m.*, u.username as seller_name, u.location as seller_location,
+        SELECT m.id, m.crop_name, m.amount, m.price, m.unit, m.listing_date,
+               m.main_image, m.thumbnail_verified, m.listing_type, m.available_date,
+               u.username as seller_name,
                u.reliability_score, u.reliability_status,
-               u.completed_transactions, u.cancelled_transactions, u.total_transactions,
                (SELECT COUNT(*) FROM marketplace ratings
                 WHERE ratings.username = u.username AND ratings.buyer_rating IS NOT NULL)
                    AS seller_rating_count
@@ -453,7 +454,9 @@ def buy_marketplace_item(listing_id):
     current_user_id = current_user["id"]
 
     cur.execute("""
-        SELECT m.*, u.username as seller_name
+        SELECT m.user_id, m.username, m.crop_id, m.crop_name, m.amount, m.price,
+               m.unit, m.listing_date, m.expiry_date, m.description, m.location,
+               u.username AS seller_name
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
         WHERE m.id = ? AND m.status = 'available'
@@ -472,16 +475,7 @@ def buy_marketplace_item(listing_id):
         conn.close()
         return jsonify({"error": f"Only {listing['amount']} units available"}), 400
 
-    seller_username = None
-    try:
-        seller_username = listing["seller_name"]
-    except Exception:
-        try:
-            seller_username = listing["username"]
-        except Exception:
-            cur.execute("SELECT username FROM users WHERE id = ?", (listing["user_id"],))
-            rr = cur.fetchone()
-            seller_username = rr["username"] if rr else None
+    seller_username = listing["seller_name"]
 
     total_price = quantity * listing["price"]
     order_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -635,7 +629,11 @@ def update_marketplace_order_status(listing_id):
         flash("User not found")
         return redirect(url_for("my_marketplace_transactions"))
 
-    cur.execute("SELECT * FROM marketplace WHERE id = ? AND user_id = ? AND status = 'sold'", (listing_id, current_user["id"]))
+    cur.execute(
+        """SELECT order_status, crop_name, buyer_username
+           FROM marketplace WHERE id = ? AND user_id = ? AND status = 'sold'""",
+        (listing_id, current_user["id"]),
+    )
     listing = cur.fetchone()
     if not listing:
         conn.close()
@@ -705,7 +703,11 @@ def complete_marketplace_order(listing_id):
         conn.close()
         return jsonify({"error": "User not found"}), 404
 
-    cur.execute("SELECT * FROM marketplace WHERE id = ? AND user_id = ? AND status = 'sold'", (listing_id, current_user["id"]))
+    cur.execute(
+        """SELECT buyer_username, crop_name
+           FROM marketplace WHERE id = ? AND user_id = ? AND status = 'sold'""",
+        (listing_id, current_user["id"]),
+    )
     listing = cur.fetchone()
 
     if not listing:
@@ -748,7 +750,11 @@ def confirm_marketplace_receipt(listing_id):
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute("SELECT * FROM marketplace WHERE id = ? AND buyer_username = ?", (listing_id, session["user"]))
+    cur.execute(
+        """SELECT delivery_confirmed, buyer_confirmed, username, crop_name
+           FROM marketplace WHERE id = ? AND buyer_username = ?""",
+        (listing_id, session["user"]),
+    )
     listing = cur.fetchone()
     if not listing:
         conn.close()
@@ -814,7 +820,11 @@ def my_marketplace_purchases():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT m.*, u.username AS seller_name, u.location AS seller_location
+        SELECT m.id, m.crop_name, m.order_status, m.buyer_rating, m.buyer_confirmed,
+               m.delivery_confirmed, m.order_date, m.amount, m.unit,
+               m.price, m.delivery_province, m.delivery_city, m.delivery_barangay,
+               m.delivery_street, m.delivery_landmark,
+               u.username AS seller_name
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
         WHERE m.buyer_username = ? AND m.status IN ('sold', 'delivered', 'completed')
@@ -924,7 +934,10 @@ def my_marketplace_listings():
     current_user_id = current_user["id"]
 
     cur.execute("""
-        SELECT m.*
+        SELECT m.id, m.user_id, m.username, m.buyer_username, m.crop_id,
+               m.crop_name, m.amount, m.price, m.unit, m.status, m.listing_date,
+               m.description, m.main_image, m.thumbnail_verified, m.listing_type,
+               m.preorder_status, m.available_date, m.order_status, m.buyer_rating
         FROM marketplace m
         WHERE m.user_id = ?
         ORDER BY m.listing_date DESC
@@ -972,12 +985,16 @@ def my_marketplace_transactions():
         return redirect("/marketplace")
 
     cur.execute("""
-        SELECT m.*,
+        SELECT m.id, m.crop_name, m.buyer_username, m.order_status,
+               m.buyer_confirmed, m.delivery_confirmed, m.order_date,
+               m.delivery_province, m.delivery_city, m.delivery_barangay,
+               m.delivery_street, m.delivery_landmark, m.amount, m.unit, m.price,
                buyer.first_name AS buyer_first_name,
                buyer.last_name AS buyer_last_name,
                buyer.email AS buyer_email,
                buyer.phone_number AS buyer_phone_number,
-               buyer.location AS buyer_location
+               buyer.location AS buyer_location,
+               buyer.username AS buyer_profile_username
         FROM marketplace m
         LEFT JOIN users buyer ON buyer.username = m.buyer_username
         WHERE m.user_id = ?
@@ -1009,8 +1026,10 @@ def delete_marketplace_listing(listing_id):
         return jsonify({"error": "User not found"}), 404
     current_user_id = current_user["id"]
 
-    cur.execute("SELECT * FROM marketplace WHERE id = ? AND user_id = ?",
-                (listing_id, current_user_id))
+    cur.execute(
+        "SELECT 1 FROM marketplace WHERE id = ? AND user_id = ?",
+        (listing_id, current_user_id),
+    )
     listing = cur.fetchone()
 
     if not listing:
@@ -1041,7 +1060,9 @@ def trade_marketplace_item(listing_id):
     current_user_id = current_user["id"]
 
     cur.execute("""
-        SELECT m.*, u.username as seller_name, u.reliability_score, u.reliability_status, u.location AS seller_location,
+        SELECT m.id, m.user_id, m.username, m.crop_id, m.crop_name, m.amount,
+               m.unit, m.location,                               u.username AS seller_name, u.reliability_score,
+               u.reliability_status,
                (SELECT COUNT(*) FROM marketplace ratings
                 WHERE ratings.username = u.username AND ratings.buyer_rating IS NOT NULL)
                    AS seller_rating_count
@@ -1183,7 +1204,10 @@ def get_listing_api(listing_id):
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM marketplace WHERE id = ?", (listing_id,))
+    cur.execute(
+        "SELECT crop_name, amount, unit FROM marketplace WHERE id = ?",
+        (listing_id,),
+    )
     listing = cur.fetchone()
     conn.close()
 
@@ -1237,7 +1261,8 @@ def delete_listing_image(image_id):
         return jsonify({"error": "User not found"}), 404
 
     cur.execute("""
-        SELECT mi.*, m.user_id, m.id as listing_id, m.main_image
+        SELECT mi.id, mi.listing_id, mi.image_filename, m.user_id,
+               m.id AS listing_id, m.main_image
         FROM marketplace_images mi
         JOIN marketplace m ON mi.listing_id = m.id
         WHERE mi.id = ?
@@ -1315,7 +1340,8 @@ def view_cart():
         return redirect("/login")
 
     cur.execute("""
-        SELECT c.*, m.crop_name, m.price, m.unit, m.main_image, m.thumbnail_verified,
+        SELECT c.id, c.quantity, c.added_date,
+               m.crop_name, m.price, m.unit, m.main_image, m.thumbnail_verified,
                m.username as seller_name,
                m.amount as available_amount, m.id as listing_id
         FROM cart c
@@ -1425,7 +1451,7 @@ def update_cart_item(cart_id):
         return jsonify({"error": "User not found"}), 404
 
     cur.execute("""
-        SELECT c.*, m.amount as available_amount
+        SELECT m.amount as available_amount
         FROM cart c
         JOIN marketplace m ON c.listing_id = m.id
         WHERE c.id = ? AND c.user_id = ?
@@ -1488,7 +1514,8 @@ def checkout_cart():
     user_id = user["id"]
 
     cur.execute("""
-        SELECT c.*, m.user_id as seller_id, m.crop_name, m.price, m.amount as available_amount,
+        SELECT c.listing_id, c.quantity, m.user_id as seller_id, m.crop_name,
+               m.price, m.amount as available_amount,
                m.username as seller_name, m.location, m.crop_id, m.unit
         FROM cart c
         JOIN marketplace m ON c.listing_id = m.id
@@ -1604,9 +1631,11 @@ def product_detail(listing_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT m.*, u.username as seller_name, u.location as seller_location,
-               u.reliability_score, u.reliability_status,
-               u.completed_transactions, u.cancelled_transactions, u.total_transactions
+        SELECT m.id, m.user_id, m.username, m.crop_id, m.crop_name, m.amount,
+               m.price, m.unit, m.listing_type, m.available_date, m.listing_date,
+               m.description, m.location, m.main_image,
+               u.username AS seller_name,
+               u.username AS seller_profile_username, u.location as seller_location
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
         WHERE m.id = ? AND m.status = 'available'
@@ -1630,7 +1659,9 @@ def product_detail(listing_id):
         images = [{"image_filename": listing["main_image"], "display_order": 0}]
 
     cur.execute("""
-        SELECT * FROM marketplace
+        SELECT id, crop_name, price, unit, amount, main_image, thumbnail_verified,
+               listing_type, listing_date, available_date
+        FROM marketplace
         WHERE user_id = ? AND status = 'available' AND id != ?
         ORDER BY listing_date DESC LIMIT 4
     """, (listing["user_id"], listing_id))
@@ -1667,7 +1698,12 @@ def edit_marketplace_listing(listing_id):
 
     user_id = user["id"]
 
-    cur.execute("SELECT * FROM marketplace WHERE id = ? AND user_id = ?", (listing_id, user_id))
+    cur.execute(
+        """SELECT id, status, crop_name, crop_id, amount, price, unit, description,
+                  listing_type, main_image
+           FROM marketplace WHERE id = ? AND user_id = ?""",
+        (listing_id, user_id),
+    )
     listing = cur.fetchone()
 
     if not listing:
@@ -1836,7 +1872,11 @@ def create_preorder(listing_id):
         return jsonify({"error": "User not found"}), 404
 
     cur.execute("""
-        SELECT * FROM marketplace
+        SELECT user_id, amount, username, crop_id, crop_name, price, unit,
+               listing_date, expiry_date, description, location, available_date,
+               main_image, thumbnail_verified, thumbnail_latitude, thumbnail_longitude,
+               thumbnail_distance_meters, thumbnail_captured_at
+        FROM marketplace
         WHERE id = ? AND listing_type = 'preorder' AND status = 'available'
     """, (listing_id,))
     listing = cur.fetchone()
@@ -1911,7 +1951,8 @@ def accept_preorder(order_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT * FROM marketplace
+        SELECT buyer_username, amount, unit, crop_name
+        FROM marketplace
         WHERE id = ? AND username = ? AND listing_type = 'preorder'
           AND preorder_status = 'pending'
     """, (order_id, session["user"]))
@@ -1956,7 +1997,8 @@ def reject_preorder(order_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT * FROM marketplace
+        SELECT buyer_username, crop_name
+        FROM marketplace
         WHERE id = ? AND username = ? AND listing_type = 'preorder'
           AND preorder_status = 'pending'
     """, (order_id, session["user"]))
@@ -2010,7 +2052,8 @@ def request_preorder_cancel(order_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT * FROM marketplace
+        SELECT username, buyer_username, crop_name
+        FROM marketplace
         WHERE id = ? AND listing_type = 'preorder'
           AND preorder_status IN ('pending', 'confirmed')
           AND (username = ? OR buyer_username = ?)
@@ -2057,7 +2100,8 @@ def approve_preorder_cancel(order_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT * FROM marketplace
+        SELECT cancel_requested_by, crop_name
+        FROM marketplace
         WHERE id = ? AND listing_type = 'preorder'
           AND preorder_status = 'cancel_requested'
           AND (username = ? OR buyer_username = ?)
@@ -2103,7 +2147,10 @@ def my_preorders():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT m.*, u.username AS seller_name, u.location AS seller_location
+        SELECT m.id, m.crop_name, m.preorder_status, m.main_image, m.amount,
+               m.unit, m.price, m.available_date, m.cancel_requested_by,
+               m.cancel_reason, u.username AS seller_name,
+               u.location AS seller_location
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
         WHERE m.buyer_username = ? AND m.listing_type = 'preorder'
@@ -2129,7 +2176,9 @@ def my_preorder_requests():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT * FROM marketplace
+        SELECT id, main_image, crop_name, preorder_status, buyer_username, amount,
+               unit, price, available_date, cancel_requested_by, cancel_reason
+        FROM marketplace
         WHERE username = ? AND listing_type = 'preorder'
         ORDER BY CASE preorder_status
             WHEN 'pending' THEN 1
@@ -2229,7 +2278,10 @@ def looking_for_listings():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT m.*, u.username as seller_name, u.location as seller_location
+        SELECT m.id, m.user_id, m.username, m.crop_name, m.amount, m.price,
+               m.unit, m.listing_date, m.location, m.main_image,
+               m.thumbnail_verified, m.listing_type, m.available_date,
+               u.username as seller_name, u.location as seller_location
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
         WHERE m.listing_type = 'looking_for'

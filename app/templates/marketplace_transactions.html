@@ -124,6 +124,11 @@
                             <p class="mb-2"><strong>{{ buyer_name or order['buyer_username'] }}</strong>
                                 <span class="text-muted">(@{{ order['buyer_username'] }})</span>
                             </p>
+                            {% if order['buyer_profile_username'] %}
+                                <a class="btn btn-outline-primary btn-sm mt-2" href="{{ url_for('seller_profile', username=order['buyer_profile_username']) }}">
+                                    <i class="fas fa-user me-1"></i>View Buyer Profile
+                                </a>
+                            {% endif %}
                             {% if order['buyer_phone_number'] %}
                                 <p class="small mb-2"><i class="fas fa-phone me-2 text-muted"></i><a href="tel:{{ order['buyer_phone_number'] }}">{{ order['buyer_phone_number'] }}</a></p>
                             {% endif %}

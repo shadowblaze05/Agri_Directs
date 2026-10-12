@@ -303,6 +303,7 @@ def init_db():
         password TEXT,
         role TEXT DEFAULT 'user',
         location TEXT,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
         reliability_score REAL DEFAULT NULL,
         reliability_status TEXT DEFAULT 'Not Yet Rated',
         completed_transactions INTEGER DEFAULT 0,
@@ -486,6 +487,7 @@ def init_db():
         'email': 'TEXT',
         'first_name': 'TEXT',
         'last_name': 'TEXT',
+        'is_active': 'BOOLEAN NOT NULL DEFAULT TRUE',
         'phone_number': 'TEXT',
         'profile_picture': 'TEXT',
         'bio': 'TEXT',
@@ -514,7 +516,7 @@ def init_db():
     if 'total_transactions' not in users_columns:
         cur.execute("ALTER TABLE users ADD COLUMN total_transactions INTEGER DEFAULT 0")
 
-    cur.execute("SELECT * FROM users WHERE username=?", ("admin",))
+    cur.execute("SELECT 1 FROM users WHERE username=?", ("admin",))
     if cur.fetchone() is None:
         cur.execute(
             "INSERT INTO users(username, password, role) VALUES (?, ?, ?)",
@@ -585,6 +587,28 @@ def init_db():
         used_at TEXT,
         attempt_count INTEGER NOT NULL DEFAULT 0,
         FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS slow_query_stats(
+        fingerprint TEXT PRIMARY KEY,
+        statement TEXT NOT NULL,
+        call_count INTEGER NOT NULL DEFAULT 0,
+        total_time_ms FLOAT NOT NULL DEFAULT 0,
+        max_time_ms FLOAT NOT NULL DEFAULT 0,
+        last_seen_at DATETIME NOT NULL
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS profile_reports(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reporter_username TEXT NOT NULL,
+        reported_username TEXT NOT NULL,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        reviewed_by TEXT,
+        reviewed_at DATETIME
     )
     """)
 
@@ -681,8 +705,10 @@ def init_db():
         cur.execute("ALTER TABLE inventory ADD COLUMN source TEXT DEFAULT 'harvest'")
         cur.execute("UPDATE inventory SET source = 'harvest' WHERE source IS NULL")
 
+    _create_query_indexes(cur)
+
     # Insert default user if not exists
-    cur.execute("SELECT * FROM users WHERE username=?", ("admin",))
+    cur.execute("SELECT 1 FROM users WHERE username=?", ("admin",))
     if not cur.fetchone():
         cur.execute("INSERT INTO users(username,password,role) VALUES (?,?,?)",
                     ("admin", generate_password_hash("admin"), 'admin'))
@@ -692,6 +718,46 @@ def init_db():
     conn.commit()
 
     conn.close()
+
+
+def _create_query_indexes(cur):
+    """Create indexes for frequently filtered, joined, and ordered columns."""
+    index_definitions = (
+        ("ix_users_email", "users", ("email",)),
+        ("ix_users_lower_email", "users", ("email",), "LOWER(email)"),
+        ("ix_marketplace_status_listing_date", "marketplace", ("status", "listing_date")),
+        ("ix_marketplace_user_status_listing_date", "marketplace", ("user_id", "status", "listing_date")),
+        ("ix_marketplace_buyer_status_order_date", "marketplace", ("buyer_username", "status", "order_date")),
+        ("ix_marketplace_username_rating", "marketplace", ("username", "buyer_rating")),
+        ("ix_marketplace_status_type_listing_date", "marketplace", ("status", "listing_type", "listing_date")),
+        ("ix_inventory_farmer_crop_date", "inventory", ("farmer", "crop_id", "date_received")),
+        ("ix_inventory_crop_date", "inventory", ("crop_id", "date_received")),
+        ("ix_inventory_source_date", "inventory", ("source", "date_received")),
+        ("ix_knowledge_posts_status_pin_created", "knowledge_posts", ("status", "is_pinned", "created_at")),
+        ("ix_knowledge_posts_category_status_created", "knowledge_posts", ("category_id", "status", "created_at")),
+        ("ix_knowledge_comments_post_created", "knowledge_comments", ("post_id", "created_at")),
+        ("ix_knowledge_replies_comment_created", "knowledge_replies", ("comment_id", "created_at")),
+        ("ix_notifications_username_read_created", "notifications", ("username", "is_read", "created_at")),
+        ("ix_messages_sender_recipient_time", "messages", ("sender", "recipient", "timestamp")),
+        ("ix_messages_recipient_sender_time", "messages", ("recipient", "sender", "timestamp")),
+        ("ix_password_reset_user_used_expiry", "password_reset_tokens", ("user_id", "used_at", "expires_at")),
+        ("ix_marketplace_images_listing", "marketplace_images", ("listing_id",)),
+        ("ix_cart_user_listing", "cart", ("user_id", "listing_id")),
+        ("ix_analytics_period_type_value", "analytics", ("period_type", "period_value")),
+    )
+    for definition in index_definitions:
+        index_name, table_name, columns = definition[:3]
+        expression = definition[3] if len(definition) == 4 else None
+        cur.execute(f"PRAGMA table_info({table_name})")
+        existing_columns = {row["name"] for row in cur.fetchall()}
+        if not set(columns).issubset(existing_columns):
+            continue
+        indexed_columns = expression or ", ".join(columns)
+        cur.execute(
+            f"CREATE INDEX IF NOT EXISTS {index_name} "
+            f"ON {table_name} ({indexed_columns})"
+        )
+
 
 def update_analytics():
 

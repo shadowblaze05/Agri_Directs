@@ -23,7 +23,14 @@ ALLOWED_PROFILE_IMAGE_FORMATS = {"png": "PNG", "jpg": "JPEG", "jpeg": "JPEG", "w
 
 
 def _profile_data(cursor, username):
-    cursor.execute("SELECT * FROM users WHERE username=?", (username,))
+    cursor.execute(
+        """SELECT username, first_name, last_name, email, phone_number,
+                  profile_picture, bio, role, is_verified, location_latitude,
+                  location_longitude, location_verified, profile_photo_captured_at,
+                  psgc_location, geotag_location
+           FROM users WHERE username=?""",
+        (username,),
+    )
     return cursor.fetchone()
 
 
@@ -79,7 +86,7 @@ def profile():
 
 
 def seller_profile(username):
-    """Show marketplace contact details for a seller without account controls."""
+    """Show public marketplace contact details without account controls."""
     if "user" not in session:
         return redirect("/login")
 
@@ -97,6 +104,41 @@ def seller_profile(username):
         reliability_summary=reliability_summary,
         is_public_profile=True,
     )
+
+
+def report_profile(username):
+    """Submit a report about a publicly viewable profile."""
+    if "user" not in session:
+        return redirect(url_for("login"))
+    if username == session["user"]:
+        flash("You cannot report your own profile.")
+        return redirect(url_for("profile"))
+
+    description = request.form.get("description", "").strip()
+    if len(description) < 10 or len(description) > 2000:
+        flash("Report details must be between 10 and 2,000 characters.")
+        return redirect(url_for("seller_profile", username=username))
+
+    conn = get_db()
+    cur = conn.cursor()
+    target = cur.execute(
+        "SELECT username FROM users WHERE username=?",
+        (username,),
+    ).fetchone()
+    if not target:
+        conn.close()
+        abort(404)
+
+    cur.execute(
+        """INSERT INTO profile_reports
+           (reporter_username, reported_username, description)
+           VALUES (?, ?, ?)""",
+        (session["user"], username, description),
+    )
+    conn.commit()
+    conn.close()
+    flash("Your report has been sent to the Agri-Direct administrators.")
+    return redirect(url_for("seller_profile", username=username))
 
 
 def update_profile():
@@ -257,10 +299,11 @@ def capture_profile_location():
 def register(application):
     application.add_url_rule('/profile', endpoint='profile', view_func=profile)
     application.add_url_rule('/profile/<username>', endpoint='seller_profile', view_func=seller_profile)
+    application.add_url_rule('/profile/<username>/report', endpoint='report_profile', view_func=report_profile, methods=['POST'])
     application.add_url_rule('/profile/update', endpoint='update_profile', view_func=update_profile, methods=['GET', 'POST'])
     application.add_url_rule('/profile/location', endpoint='capture_profile_location', view_func=capture_profile_location, methods=['POST'])
     for _name in __all__:
         setattr(core, _name, globals()[_name])
 
 
-__all__ = ['profile', 'seller_profile', 'update_profile', 'capture_profile_location']
+__all__ = ['profile', 'seller_profile', 'report_profile', 'update_profile', 'capture_profile_location']

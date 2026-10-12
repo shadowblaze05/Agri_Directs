@@ -26,6 +26,7 @@ class Config:
 
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SLOW_QUERY_THRESHOLD_MS = float(os.environ.get("SLOW_QUERY_THRESHOLD_MS", "500"))
 
     SECRET_KEY = os.environ.get("SECRET_KEY", "change-this-secret-key")
     JWT_SECRET = os.environ.get("JWT_SECRET", "change-this-jwt-secret")

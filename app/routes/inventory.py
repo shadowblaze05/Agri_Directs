@@ -245,7 +245,7 @@ def edit_inventory(item_id):
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT i.*, c.crops_name AS crop_name FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.id=?", (item_id,))
+    cur.execute("SELECT i.id, i.farmer, i.quantity, c.crops_name AS crop_name FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.id=?", (item_id,))
     item = cur.fetchone()
 
     if not item:
@@ -288,7 +288,7 @@ def delete_inventory(item_id):
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT i.*, c.crops_name AS crop_name FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.id=?", (item_id,))
+    cur.execute("SELECT i.id, i.farmer FROM inventory i WHERE i.id=?", (item_id,))
     item = cur.fetchone()
     if not item:
         conn.close()

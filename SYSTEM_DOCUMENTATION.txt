@@ -190,6 +190,7 @@ Environment variables used by the app include:
 - MAIL_USE_TLS
 - MAIL_USE_SSL
 - MAX_CROP_DISTANCE_METERS (default 15000; the maximum harvest/reference distance)
+- SLOW_QUERY_THRESHOLD_MS (default 500; SQL execution time in milliseconds at which a statement is recorded as slow)
 
 Configuration behavior:
 - app/config.py loads values from .env through python-dotenv.
@@ -223,6 +224,36 @@ Database backend:
 - PostgreSQL is the target database backend.
 - SQLite compatibility code is preserved only as a legacy transition layer.
 - The current project does not replace PostgreSQL with SQLite.
+
+Query performance, indexes, and slow-query monitoring:
+- Migration `0f3a9b7c2d61` adds indexes for frequently used application filters,
+  joins, and ordering: users email (including a lower(email) expression index);
+  marketplace status/listing date, user/status/listing date,
+  buyer/status/order date, username/rating, and status/type/listing date;
+  inventory farmer/crop/date, crop/date, and source/date; Knowledge Hub post
+  status/pinned/created date and category/status/created date, comments by
+  post/date, and replies by comment/date; notifications by username/read/date;
+  messages by sender/recipient/time in both conversation directions; password
+  reset tokens by user/used/expiry; marketplace images by listing; cart by
+  user/listing; analytics by period type/value; and audit events by
+  status/date or method/date.
+- Indexes target the observed query patterns; this is not an index on every
+  table column and does not guarantee that every query avoids a scan. Composite
+  indexes are most useful when a query filters or orders by their leading
+  columns. Unnecessary indexes consume storage and can slow writes, so evaluate
+  future index changes against production query plans and measured workload.
+- Apply pending schema changes, including the indexes and `slow_query_stats`
+  table, before deploying the updated application to an existing database:
+  `flask --app run.py db upgrade`. Confirm the database is at revision
+  `0f3a9b7c2d61` or a later revision.
+- SQLAlchemy execution monitoring compares cursor execution duration against
+  `SLOW_QUERY_THRESHOLD_MS` (500 ms by default). Matching statements are
+  warning-logged and aggregated by a normalized fingerprint; literal values
+  are redacted. The administrator-only `/admin/slow-queries` dashboard shows
+  call count, total, average and maximum execution time, and last-seen time.
+  Counts are cumulative per fingerprint; timings measure SQL execution only,
+  not total request time, database CPU, or disk I/O. Use database query plans
+  and production measurements to decide whether additional tuning is needed.
 
 Database names and connection selection:
 - app/config.py reads DATABASE_URL first. If it is unset, it builds a PostgreSQL
@@ -675,7 +706,7 @@ Registered browser routes:
 | Knowledge hub | /knowledge, /knowledge/<post_id>, /knowledge/like/<post_id> (POST), /knowledge/comment/<post_id> (POST), /knowledge/reply/<comment_id> (POST) |
 | Marketplace | /marketplace, /marketplace/add (GET/POST), /marketplace/buy/<listing_id> (POST), /marketplace/complete-order/<listing_id> (POST), /marketplace/confirm-receipt/<listing_id> (POST), /marketplace/my-purchases, /marketplace/rate/<listing_id> (POST), /marketplace/my-listings, /marketplace/delete/<listing_id> (POST), /marketplace/trade/<listing_id> (GET/POST), /api/listing/<listing_id>, /marketplace/product/<listing_id>, /marketplace/cart, /marketplace/cart/add/<listing_id> (POST), /marketplace/cart/update/<cart_id> (POST), /marketplace/cart/remove/<cart_id> (POST), /marketplace/cart/checkout (POST), /marketplace/edit/<listing_id> (GET/POST), /marketplace/delete-image/<image_id> (POST), /marketplace/set-thumbnail/<image_id> (POST), /marketplace/preorder/<listing_id> (POST), /marketplace/preorder/<order_id>/accept (POST), /marketplace/preorder/<order_id>/reject (POST), /marketplace/preorder/<order_id>/request-cancel (POST), /marketplace/preorder/<order_id>/approve-cancel (POST), /marketplace/my-preorders, /marketplace/my-preorder-requests, /marketplace/looking-for |
 | Profile | /profile, /profile/update (GET/POST), /profile/location (POST) |
-| Administration | /admin, /admin/users, /admin/catalog, /admin/inventory, /admin/geotag/<item_id>/review (POST), /admin/knowledge, /admin/knowledge/create (GET/POST), /admin/knowledge/edit/<post_id> (GET/POST), /admin/knowledge/delete/<post_id> (POST), /admin/knowledge-categories, /admin/users/create (POST), /admin/users/edit/<user_id> (POST), /admin/users/delete/<user_id> (POST), /admin/crop-categories/create (POST), /admin/crop-categories/edit/<category_id> (POST), /admin/crop-categories/delete/<category_id> (POST), /admin/crops/create (POST), /admin/crops/edit/<crop_id> (POST), /admin/crops/delete/<crop_id> (POST), /admin/knowledge-categories/create (POST), /admin/knowledge-categories/edit/<category_id> (POST), /admin/knowledge-categories/delete/<category_id> (POST) |
+| Administration | /admin, /admin/users, /admin/catalog, /admin/inventory, /admin/slow-queries, /admin/geotag/<item_id>/review (POST), /admin/knowledge, /admin/knowledge/create (GET/POST), /admin/knowledge/edit/<post_id> (GET/POST), /admin/knowledge/delete/<post_id> (POST), /admin/knowledge-categories, /admin/users/create (POST), /admin/users/edit/<user_id> (POST), /admin/users/delete/<user_id> (POST), /admin/crop-categories/create (POST), /admin/crop-categories/edit/<category_id> (POST), /admin/crop-categories/delete/<category_id> (POST), /admin/crops/create (POST), /admin/crops/edit/<crop_id> (POST), /admin/crops/delete/<crop_id> (POST), /admin/knowledge-categories/create (POST), /admin/knowledge-categories/edit/<category_id> (POST), /admin/knowledge-categories/delete/<category_id> (POST) |
 | Audit log | /admin/audit-logs |
 
 The audit log is administrator-only and records write requests across the app,

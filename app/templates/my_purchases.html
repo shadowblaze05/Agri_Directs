@@ -122,7 +122,8 @@
                         <div>
                             <h3 class="h5 fw-bold mb-1">{{ order['crop_name'] }}</h3>
                             <div class="text-muted small">
-                                <i class="fas fa-user me-1"></i>{{ order['seller_name'] }}
+                                <i class="fas fa-user me-1"></i>
+                                <a href="{{ url_for('seller_profile', username=order['seller_name']) }}">{{ order['seller_name'] }}</a>
                                 <span class="mx-2">·</span>
                                 {% if order['order_date'] %}Ordered {{ order['order_date'][:16] }}{% else %}Date unavailable{% endif %}
                             </div>

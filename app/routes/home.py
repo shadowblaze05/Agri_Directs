@@ -474,7 +474,7 @@ def dashboard():
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute("SELECT i.*, c.crops_name AS crop_name FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' ORDER BY i.date_received DESC LIMIT 20")
+    cur.execute("SELECT i.farmer, c.crops_name AS crop_name, i.quantity, i.location, i.date_received FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' ORDER BY i.date_received DESC LIMIT 20")
     data = cur.fetchall()
 
     update_analytics()
@@ -530,7 +530,7 @@ def dashboard_data():
     conn = get_db()
     cur = conn.cursor()
     
-    cur.execute("SELECT i.*, c.crops_name AS crop_name FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' ORDER BY i.date_received DESC LIMIT 20")
+    cur.execute("SELECT i.farmer, c.crops_name AS crop_name, i.quantity, i.location, i.date_received FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' ORDER BY i.date_received DESC LIMIT 20")
     data = cur.fetchall()
     
     conn.close()
@@ -1149,7 +1149,8 @@ def notifications():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT * FROM notifications
+        SELECT id, title, message, type, created_at, is_read, link
+        FROM notifications
         WHERE username=?
         ORDER BY created_at DESC
         LIMIT 20
@@ -1187,7 +1188,8 @@ def notification_center():
     conn = get_db()
     cur = conn.cursor()
     rows = cur.execute("""
-        SELECT * FROM notifications
+        SELECT id, title, message, type, created_at, is_read, link
+        FROM notifications
         WHERE username=?
         ORDER BY created_at DESC
         LIMIT 50

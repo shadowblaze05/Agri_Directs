@@ -66,7 +66,7 @@ def login():
         cur = conn.cursor()
 
         cur.execute(
-            "SELECT * FROM users WHERE username=? OR email=?",
+            "SELECT username, password, role, is_active FROM users WHERE username=? OR email=?",
             (identifier, identifier),
         )
         user = cur.fetchone()
@@ -74,6 +74,9 @@ def login():
 
         if user:
             if check_password_hash(user["password"], password):
+                if not user["is_active"]:
+                    flash("This account is inactive. Contact an administrator.")
+                    return render_template("login.html")
                 session["user"] = user["username"]
                 session["role"] = user["role"] if user["role"] else 'buyer'
                 logger.info(f"User {user['username']} logged in")
@@ -352,12 +355,17 @@ def get_token():
     
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM users WHERE username=?", (username,))
+    cur.execute(
+        "SELECT username, password, role, is_active FROM users WHERE username=?",
+        (username,),
+    )
     user = cur.fetchone()
     conn.close()
     
     if not user or not check_password_hash(user["password"], password):
         return jsonify({"error": "Invalid credentials"}), 401
+    if not user["is_active"]:
+        return jsonify({"error": "Account is inactive"}), 403
     g.audit_actor = user["username"]
     g.audit_role = user["role"] or "user"
     token = generate_jwt_token(username)

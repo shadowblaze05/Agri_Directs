@@ -64,10 +64,18 @@ def knowledge_post(post_id):
 
     cur.execute("SELECT comment_id, username, comment, created_at FROM knowledge_comments WHERE post_id=? ORDER BY created_at ASC", (post_id,))
     comments = cur.fetchall()
-    replies = {}
-    for comment in comments:
-        cur.execute("SELECT reply_id, username, reply, created_at FROM knowledge_replies WHERE comment_id=? ORDER BY created_at ASC", (comment["comment_id"],))
-        replies[comment["comment_id"]] = cur.fetchall()
+    replies = {comment["comment_id"]: [] for comment in comments}
+    cur.execute(
+        """SELECT comment_id, reply_id, username, reply, created_at
+           FROM knowledge_replies
+           WHERE comment_id IN (
+               SELECT comment_id FROM knowledge_comments WHERE post_id=?
+           )
+           ORDER BY comment_id, created_at ASC""",
+        (post_id,),
+    )
+    for reply in cur.fetchall():
+        replies[reply["comment_id"]].append(reply)
 
     cur.execute("SELECT COUNT(*) AS liked FROM knowledge_likes WHERE post_id=? AND username=?", (post_id, session.get("user")))
     liked = cur.fetchone()["liked"] > 0

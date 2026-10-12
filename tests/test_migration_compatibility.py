@@ -165,3 +165,28 @@ def test_delivery_address_migration_is_repeatable_for_legacy_marketplace_table(m
             "delivery_street",
             "delivery_landmark",
         } <= marketplace_columns
+
+
+def test_profile_report_migration_creates_report_table_and_review_index(monkeypatch):
+    engine = create_engine("sqlite://")
+    migration = load_migration("8c4d2a71f6b3_add_profile_reports.py")
+    with engine.begin() as connection:
+        run_upgrade(connection, migration, monkeypatch)
+
+        inspector = inspect(connection)
+        report_columns = {
+            column["name"] for column in inspector.get_columns("profile_reports")
+        }
+        report_indexes = {
+            index["name"] for index in inspector.get_indexes("profile_reports")
+        }
+        assert {
+            "reporter_username",
+            "reported_username",
+            "description",
+            "status",
+            "created_at",
+            "reviewed_by",
+            "reviewed_at",
+        } <= report_columns
+        assert "ix_profile_reports_status_created" in report_indexes

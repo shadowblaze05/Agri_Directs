@@ -15,6 +15,7 @@ def test_seller_transactions_page_shows_buyer_details_and_current_order_state(mo
         "buyer_first_name": "Buyer",
         "buyer_last_name": "Person",
         "buyer_username": "buyer",
+        "buyer_profile_username": "buyer",
         "buyer_email": "buyer@example.com",
         "buyer_phone_number": "+639123456789",
         "buyer_location": "Sample City",
@@ -67,6 +68,8 @@ def test_seller_transactions_page_shows_buyer_details_and_current_order_state(mo
     assert b"Transactions" in response.data
     assert b"Buyer Person" in response.data
     assert b"Contact Buyer" in response.data
+    assert b'href="/profile/buyer"' in response.data
+    assert b"View Buyer Profile" in response.data
     assert b'href="/messages?recipient=buyer"' in response.data
     assert b"buyer@example.com" in response.data
     assert b"+639123456789" in response.data
@@ -119,6 +122,7 @@ def test_buyer_purchases_page_renders_orders_in_their_current_stage(monkeypatch)
     assert b"My Purchases" in response.data
     assert b"Sweet Corn" in response.data
     assert b"Waiting for the seller to start packing" in response.data
+    assert b'href="/profile/farmer"' in response.data
 
 
 def test_cart_page_renders_marketplace_listing_thumbnail(monkeypatch):
@@ -138,9 +142,11 @@ def test_cart_page_renders_marketplace_listing_thumbnail(monkeypatch):
     class FakeCursor:
         def __init__(self):
             self.query = ""
+            self.queries = []
 
         def execute(self, query, _params=()):
             self.query = query
+            self.queries.append(query)
             return self
 
         def fetchone(self):
@@ -150,8 +156,11 @@ def test_cart_page_renders_marketplace_listing_thumbnail(monkeypatch):
             return [cart_item]
 
     class FakeConnection:
+        def __init__(self):
+            self.fake_cursor = FakeCursor()
+
         def cursor(self):
-            return FakeCursor()
+            return self.fake_cursor
 
         def close(self):
             return None
@@ -203,9 +212,11 @@ def test_product_page_contact_seller_link_opens_seller_messages(monkeypatch):
     class FakeCursor:
         def __init__(self):
             self.query = ""
+            self.queries = []
 
         def execute(self, query, _params=()):
             self.query = query
+            self.queries.append(query)
             return self
 
         def fetchone(self):
@@ -215,17 +226,21 @@ def test_product_page_contact_seller_link_opens_seller_messages(monkeypatch):
             return []
 
     class FakeConnection:
+        def __init__(self):
+            self.fake_cursor = FakeCursor()
+
         def cursor(self):
-            return FakeCursor()
+            return self.fake_cursor
 
         def close(self):
             return None
 
-    monkeypatch.setattr(marketplace_routes, "get_db", FakeConnection)
     monkeypatch.setattr(marketplace_routes, "promote_due_preorders", lambda: None)
     monkeypatch.setattr(marketplace_routes, "get_cart_count", lambda _username: 0)
     app_module.app.config.update(TESTING=True)
 
+    connection = FakeConnection()
+    monkeypatch.setattr(marketplace_routes, "get_db", lambda: connection)
     with app_module.app.test_client() as client:
         with client.session_transaction() as session:
             session["user"] = "buyer"
@@ -236,6 +251,7 @@ def test_product_page_contact_seller_link_opens_seller_messages(monkeypatch):
     assert b"Palo, Leyte, Eastern Visayas" in response.data
     assert b"Contact Seller" in response.data
     assert b"/messages?recipient=seller+name" in response.data
+    assert "FROM marketplace" in connection.fake_cursor.queries[2]
 
 
 def test_checkout_requires_delivery_address_before_database_access(monkeypatch):

@@ -4,7 +4,7 @@ import csv
 import io
 import math
 
-from flask import Response, abort, flash, redirect, render_template, request, session, stream_with_context, url_for
+from flask import Response, abort, current_app, flash, redirect, render_template, request, session, stream_with_context, url_for
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash
@@ -12,6 +12,8 @@ from werkzeug.security import generate_password_hash
 from .. import legacy as core
 from ..extensions import db
 from ..models.audit import AuditEvent
+from ..models.profile_report import ProfileReport
+from ..models.slow_query import SlowQueryStat
 from ..models.database import _save_upload_file, get_db
 from ..services.notification_service import notify_published_announcement
 
@@ -87,7 +89,10 @@ def create_admin_user():
 def edit_admin_user(user_id):
     conn = get_db()
     cur = conn.cursor()
-    user = cur.execute("SELECT id, username FROM users WHERE id=?", (user_id,)).fetchone()
+    user = cur.execute(
+        "SELECT id, username, is_active FROM users WHERE id=?",
+        (user_id,),
+    ).fetchone()
     if not user:
         conn.close()
         flash("User not found", "danger")
@@ -98,6 +103,15 @@ def edit_admin_user(user_id):
         conn.close()
         flash("Invalid account role", "danger")
         return _redirect_admin("admin_users")
+    is_active = request.form.get("is_active", str(int(user["is_active"])))
+    if is_active not in {"0", "1"}:
+        conn.close()
+        flash("Invalid account status", "danger")
+        return _redirect_admin("admin_users")
+    if user["username"] == session.get("user") and is_active == "0":
+        conn.close()
+        flash("You cannot deactivate your own administrator account", "danger")
+        return _redirect_admin("admin_users")
     password = request.form.get("password", "")
     fields = [
         _form_value("first_name") or user["username"],
@@ -106,7 +120,9 @@ def edit_admin_user(user_id):
         role,
         _form_value("location") or None,
     ]
-    query = """UPDATE users SET first_name=?, last_name=?, email=?, role=?, location=?"""
+    query = """UPDATE users SET first_name=?, last_name=?, email=?, role=?, location=?,
+                is_active=?"""
+    fields.append(is_active)
     if password:
         if len(password) < 6:
             conn.close()
@@ -188,17 +204,101 @@ def edit_crop_category(category_id):
 
 @_admin_required
 def delete_crop_category(category_id):
+    conn = get_db()
+    cur = conn.cursor()
+    crop_count = cur.execute(
+        "SELECT COUNT(*) AS count FROM crops WHERE category_id=?",
+        (category_id,),
+    ).fetchone()["count"]
+    conn.close()
+    if crop_count:
+        flash("Move or remove this category's crops before deleting it", "danger")
+        return _redirect_admin()
     return _delete_named_record("crop_categories", "id", category_id, "Crop category deleted")
+
+
+def _crop_category_id():
+    value = request.form.get("category_id", "").strip()
+    if not value:
+        return None
+    try:
+        category_id = int(value)
+    except ValueError:
+        return None
+
+    conn = get_db()
+    category = conn.cursor().execute(
+        "SELECT id FROM crop_categories WHERE id=?",
+        (category_id,),
+    ).fetchone()
+    conn.close()
+    return category_id if category else None
 
 
 @_admin_required
 def create_crop():
-    return _save_named_record("crops", "crops_name", "Crop created")
+    name = _form_value("name")
+    category_value = request.form.get("category_id", "").strip()
+    category_id = _crop_category_id()
+    if category_value and category_id is None:
+        flash("Select a valid crop category", "danger")
+        return _redirect_admin()
+    if not name:
+        flash("A name is required", "danger")
+        return _redirect_admin()
+
+    conn = get_db()
+    try:
+        conn.cursor().execute(
+            "INSERT INTO crops(crops_name, category_id) VALUES (?, ?)",
+            (name, category_id),
+        )
+        conn.commit()
+        flash("Crop created", "success")
+    except IntegrityError:
+        flash("That name already exists", "danger")
+    finally:
+        conn.close()
+    return _redirect_admin()
 
 
 @_admin_required
 def edit_crop(crop_id):
-    return _edit_named_record("crops", "crops_name", "id", crop_id, "Crop updated")
+    name = _form_value("name")
+    if not name:
+        flash("A name is required", "danger")
+        return _redirect_admin()
+
+    conn = get_db()
+    cur = conn.cursor()
+    crop = cur.execute(
+        "SELECT category_id FROM crops WHERE id=?",
+        (crop_id,),
+    ).fetchone()
+    if not crop:
+        conn.close()
+        flash("Crop not found", "danger")
+        return _redirect_admin()
+
+    category_value = request.form.get("category_id")
+    category_id = crop["category_id"] if category_value is None else _crop_category_id()
+    if category_value is not None and category_value.strip() and category_id is None:
+        conn.close()
+        flash("Select a valid crop category", "danger")
+        return _redirect_admin()
+
+    try:
+        cur.execute(
+            "UPDATE crops SET crops_name=?, category_id=? WHERE id=?",
+            (name, category_id, crop_id),
+        )
+        conn.commit()
+        flash("Crop updated", "success")
+    except IntegrityError:
+        flash("That name already exists", "danger")
+    finally:
+        conn.close()
+    return _redirect_admin()
 
 
 @_admin_required
@@ -363,7 +463,11 @@ def edit_knowledge_post(post_id):
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM knowledge_posts WHERE post_id=?", (post_id,))
+    cur.execute(
+        """SELECT post_id, title, content, category_id, image, video, status, is_pinned
+           FROM knowledge_posts WHERE post_id=?""",
+        (post_id,),
+    )
     post = cur.fetchone()
     cur.execute("SELECT category_id, category_name FROM knowledge_categories ORDER BY category_name")
     categories = cur.fetchall()
@@ -439,26 +543,15 @@ def admin():
         return redirect("/dashboard")
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("""SELECT i.*, c.crops_name AS crop_name
-                   FROM inventory i LEFT JOIN crops c ON c.id=i.crop_id
-                   ORDER BY date_received DESC""")
-    inventory = cur.fetchall()
-    cur.execute("""SELECT id, username, first_name, last_name, email, role, location,
-                   reliability_status, completed_transactions, cancelled_transactions,
-                   total_transactions FROM users ORDER BY role, username""")
-    users = cur.fetchall()
-    cur.execute("SELECT id, name, description FROM crop_categories ORDER BY name")
-    crop_categories = cur.fetchall()
-    cur.execute("SELECT id, crops_name, category_id FROM crops ORDER BY crops_name")
-    crops = cur.fetchall()
-    cur.execute("SELECT category_id, category_name FROM knowledge_categories ORDER BY category_name")
-    knowledge_categories = cur.fetchall()
     stats = {
         "users": cur.execute("SELECT COUNT(*) AS count FROM users").fetchone()["count"],
         "admins": cur.execute("SELECT COUNT(*) AS count FROM users WHERE role='admin'").fetchone()["count"],
         "crops": cur.execute("SELECT COUNT(*) AS count FROM crops").fetchone()["count"],
         "articles": cur.execute("SELECT COUNT(*) AS count FROM knowledge_posts").fetchone()["count"],
         "marketplace": cur.execute("SELECT COUNT(*) AS count FROM marketplace").fetchone()["count"],
+        "open_reports": cur.execute(
+            "SELECT COUNT(*) AS count FROM profile_reports WHERE status='open'"
+        ).fetchone()["count"],
     }
     conn.close()
     return render_template(
@@ -472,7 +565,7 @@ def admin_users():
     search = request.args.get("q", "").strip()
     conn = get_db()
     cur = conn.cursor()
-    query = """SELECT id, username, first_name, last_name, email, role, location,
+    query = """SELECT id, username, first_name, last_name, email, role, location, is_active,
                reliability_status, completed_transactions, cancelled_transactions,
                total_transactions FROM users"""
     params = []
@@ -483,7 +576,12 @@ def admin_users():
     query += " ORDER BY role, username"
     users = cur.execute(query, params).fetchall()
     conn.close()
-    return render_template("admin_users.html", users=users, search=search)
+    return render_template(
+        "admin_users.html",
+        users=users,
+        search=search,
+        active_user_count=sum(bool(user["is_active"]) for user in users),
+    )
 
 
 @_admin_required
@@ -493,20 +591,28 @@ def admin_catalog():
     cur = conn.cursor()
     pattern = f"%{search}%"
     crops = cur.execute(
-        """SELECT id, crops_name, category_id FROM crops
-           WHERE ? = '' OR crops_name LIKE ? ORDER BY crops_name""",
-        (search, pattern),
+        """SELECT crops.id, crops.crops_name, crops.category_id,
+                  COALESCE(crop_categories.name, 'Uncategorized') AS category_name
+           FROM crops
+           LEFT JOIN crop_categories ON crop_categories.id = crops.category_id
+           WHERE ? = '' OR crops.crops_name LIKE ? OR crop_categories.name LIKE ?
+           ORDER BY COALESCE(crop_categories.name, 'Uncategorized'), crops.crops_name""",
+        (search, pattern, pattern),
     ).fetchall()
     crop_categories = cur.execute(
         """SELECT id, name, description FROM crop_categories
            WHERE ? = '' OR name LIKE ? OR description LIKE ? ORDER BY name""",
         (search, pattern, pattern),
     ).fetchall()
+    all_crop_categories = cur.execute(
+        "SELECT id, name FROM crop_categories ORDER BY name"
+    ).fetchall()
     conn.close()
     return render_template(
         "admin_catalog.html",
         crops=crops,
         crop_categories=crop_categories,
+        all_crop_categories=all_crop_categories,
         search=search,
     )
 
@@ -516,7 +622,10 @@ def admin_inventory():
     search = request.args.get("q", "").strip()
     conn = get_db()
     cur = conn.cursor()
-    query = """SELECT i.*, c.crops_name AS crop_name
+    query = """SELECT i.id, i.quantity, i.farmer, i.date_received, i.source,
+                      i.photo_path, i.verification_status, i.distance_from_user,
+                      i.capture_time, i.verification_notes, i.reviewed_by,
+                      c.crops_name AS crop_name
                FROM inventory i LEFT JOIN crops c ON c.id=i.crop_id"""
     params = []
     if search:
@@ -534,7 +643,10 @@ def admin_marketplace():
     conn = get_db()
     cur = conn.cursor()
     listings = cur.execute(
-        """SELECT m.*, u.username AS seller_name
+        """SELECT m.id, m.user_id, m.username, m.crop_id, m.crop_name,
+                  m.amount, m.price, m.unit, m.status, m.buyer_username,
+                  m.listing_type, m.available_date, m.description, m.listing_date,
+                  u.username AS seller_name
            FROM marketplace m LEFT JOIN users u ON u.id=m.user_id
            WHERE ? = '' OR m.crop_name LIKE ? OR COALESCE(u.username, m.username, '') LIKE ?
              OR COALESCE(m.status, '') LIKE ?
@@ -951,6 +1063,60 @@ def admin_audit_logs():
     )
 
 
+@_admin_required
+def admin_slow_queries():
+    stats = db.session.execute(
+        select(
+            SlowQueryStat.statement,
+            SlowQueryStat.call_count,
+            SlowQueryStat.total_time_ms,
+            SlowQueryStat.max_time_ms,
+            SlowQueryStat.last_seen_at,
+        )
+        .order_by(SlowQueryStat.total_time_ms.desc())
+        .limit(100)
+    ).mappings().all()
+    totals = db.session.execute(
+        select(
+            func.coalesce(func.sum(SlowQueryStat.call_count), 0).label("calls"),
+            func.coalesce(func.sum(SlowQueryStat.total_time_ms), 0).label("total_time_ms"),
+        )
+    ).one()
+
+    return render_template(
+        "admin_slow_queries.html",
+        stats=stats,
+        total_calls=totals.calls,
+        total_time_ms=totals.total_time_ms,
+        threshold_ms=current_app.config["SLOW_QUERY_THRESHOLD_MS"],
+    )
+
+
+@_admin_required
+def admin_profile_reports():
+    reports = db.session.scalars(
+        select(ProfileReport).order_by(
+            ProfileReport.created_at.desc(),
+            ProfileReport.id.desc(),
+        )
+    ).all()
+    return render_template("admin_profile_reports.html", reports=reports)
+
+
+@_admin_required
+def review_profile_report(report_id):
+    report = db.session.get(ProfileReport, report_id)
+    if not report:
+        abort(404)
+    if report.status == "open":
+        report.status = "reviewed"
+        report.reviewed_by = session["user"]
+        report.reviewed_at = datetime.now(timezone.utc)
+        db.session.commit()
+        flash("Report marked as reviewed", "success")
+    return redirect(url_for("admin_profile_reports"))
+
+
 def page_not_found(e):
     return render_template('404.html'), 404
 
@@ -965,6 +1131,9 @@ def register(application):
     application.add_url_rule('/admin/knowledge/delete/<int:post_id>', endpoint='delete_knowledge_post', view_func=delete_knowledge_post, methods=['POST'])
     application.add_url_rule('/admin', endpoint='admin', view_func=admin)
     application.add_url_rule('/admin/audit-logs', endpoint='admin_audit_logs', view_func=admin_audit_logs)
+    application.add_url_rule('/admin/profile-reports', endpoint='admin_profile_reports', view_func=admin_profile_reports)
+    application.add_url_rule('/admin/profile-reports/<int:report_id>/review', endpoint='review_profile_report', view_func=review_profile_report, methods=['POST'])
+    application.add_url_rule('/admin/slow-queries', endpoint='admin_slow_queries', view_func=admin_slow_queries)
     application.add_url_rule('/admin/users', endpoint='admin_users', view_func=admin_users)
     application.add_url_rule('/admin/catalog', endpoint='admin_catalog', view_func=admin_catalog)
     application.add_url_rule('/admin/inventory', endpoint='admin_inventory', view_func=admin_inventory)
@@ -996,6 +1165,7 @@ __all__ = [
     'admin_knowledge', 'create_knowledge_post', 'edit_knowledge_post', 'delete_knowledge_post',
     'admin', 'admin_users', 'admin_catalog', 'admin_inventory', 'admin_marketplace',
     'admin_audit_logs',
+    'admin_profile_reports', 'review_profile_report',
     'create_admin_marketplace_listing', 'edit_admin_marketplace_listing', 'delete_admin_marketplace_listing',
     'admin_review_geotag', 'admin_knowledge_categories',
     'create_admin_user', 'edit_admin_user', 'delete_admin_user',

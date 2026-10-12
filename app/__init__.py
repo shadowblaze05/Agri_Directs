@@ -15,6 +15,7 @@ from .config import Config
 from .extensions import bcrypt, db, login_manager, mail, migrate
 from .models.database import update_analytics
 from .services.audit_service import record_request_event, should_audit_request
+from .services.slow_query_monitor import install_slow_query_monitor
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "database.db"
@@ -44,6 +45,12 @@ def create_app(config_overrides=None):
 
     db.init_app(app)
     migrate.init_app(app, db)
+    with app.app_context():
+        install_slow_query_monitor(
+            db.engine,
+            app.config["SLOW_QUERY_THRESHOLD_MS"],
+            app.logger,
+        )
     bcrypt.init_app(app)
     mail.init_app(app)
     login_manager.login_view = "login"
