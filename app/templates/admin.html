@@ -19,8 +19,10 @@
       ('Knowledge', 'Manage articles, drafts, and knowledge categories.', stats.articles, 'book-open', 'admin_knowledge'),
       ('Inventory', 'Review and moderate farmer inventory records.', 'View records', 'boxes-stacked', 'admin_inventory'),
       ('Marketplace', 'Create, edit, and remove marketplace listings.', stats.marketplace, 'store', 'admin_marketplace'),
+      ('Marketplace transactions', 'Review every marketplace order, including completed and in-progress transactions.', stats.marketplace_transactions, 'receipt', 'admin_marketplace_transactions'),
       ('Audit log', 'Search a traceable record of account, admin, and system activity.', 'Activity history', 'clipboard-list', 'admin_audit_logs'),
       ('Profile reports', 'Review problems reported about user profiles.', stats.open_reports, 'flag', 'admin_profile_reports'),
+      ('Listing photo alerts', 'Review listing thumbnail GPS captures outside the 10 km profile-location limit.', stats.open_listing_photo_alerts, 'location-crosshairs', 'admin_listing_photo_alerts'),
       ('Slow queries', 'Find database statements exceeding the configured execution-time threshold.', 'Query performance', 'gauge-high', 'admin_slow_queries')
     ] %}
     <div class="col-md-6 col-xl-3"><div class="card h-100 shadow-sm border-0"><div class="card-body"><i class="fas fa-{{ icon }} text-success fs-2 mb-3"></i><h2 class="h5">{{ title }}</h2><p class="text-muted small">{{ description }}</p><div class="fs-4 fw-bold mb-3">{{ count }}</div><a href="{{ url_for(endpoint) }}" class="btn btn-outline-success btn-sm">Open workspace <i class="fas fa-arrow-right ms-1"></i></a></div></div></div>

@@ -32,7 +32,8 @@ if _package_app is not None:
 else:
     app = Flask("app", template_folder="templates", static_folder="static")
     app.config.from_object(Config)
-    app.secret_key = os.environ.get("SECRET_KEY", "agridirect_secret")
+    Config.validate(app.config)
+    app.secret_key = app.config["SECRET_KEY"]
     db.init_app(app)
     migrate.init_app(app, db)
 
@@ -47,8 +48,8 @@ def create_app():
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-API_KEY = os.environ.get("API_KEY", "mysecurekey123")
-JWT_SECRET = os.environ.get("JWT_SECRET", "jwt_secret_key_agridirect")
+API_KEY = os.environ.get("API_KEY")
+JWT_SECRET = app.config["JWT_SECRET"]
 
 # Ensure upload folder exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -68,4 +69,4 @@ from .models.database import (
 
 if __name__ == "__main__":
     init_db()
-    app.run(debug=True)
+    app.run(debug=app.config["DEBUG"])

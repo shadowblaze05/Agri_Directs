@@ -168,7 +168,12 @@
             items.slice(0,5).forEach(it => {
                 const li = document.createElement('li');
                 li.className = 'list-group-item d-flex justify-content-between align-items-center';
-                li.innerHTML = `<span>${it.name}</span><span class="badge bg-success">${it.total}</span>`;
+                const name = document.createElement('span');
+                name.textContent = String(it.name ?? '');
+                const total = document.createElement('span');
+                total.className = 'badge bg-success';
+                total.textContent = String(it.total ?? '');
+                li.append(name, total);
                 list.appendChild(li);
             });
         }

@@ -21,6 +21,16 @@ def test_slow_query_capture_normalizes_sql_and_tracks_cost(tmp_path, monkeypatch
             bind=db.engine,
             tables=[SlowQueryStat.__table__, AuditEvent.__table__],
         )
+        with db.engine.begin() as connection:
+            connection.execute(text("""
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY, username TEXT UNIQUE,
+                    role TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT TRUE
+                )
+            """))
+            connection.execute(text(
+                "INSERT INTO users (username, role, is_active) VALUES ('admin', 'admin', 1)"
+            ))
 
     clock = iter((0.0, 1.0))
     monkeypatch.setattr(slow_query_monitor.time, "perf_counter", lambda: next(clock))

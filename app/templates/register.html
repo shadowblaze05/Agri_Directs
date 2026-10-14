@@ -153,14 +153,14 @@
                 <div class="mb-3">
                     <label class="form-label"><i class="fas fa-lock"></i> Password</label>
                     <input type="password" name="password" class="form-control" placeholder="Create a strong password" 
-                           required minlength="6" id="password" autocomplete="new-password">
+                           required minlength="12" maxlength="128" id="password" autocomplete="new-password">
                     
                     <div class="password-requirements">
                         <h6>Password Requirements:</h6>
                         <ul class="requirements-list">
-                            <li>✓ At least 6 characters</li>
-                            <li>✓ Mix of letters and numbers</li>
-                            <li>✓ Try to include special characters</li>
+                            <li>At least 12 characters (maximum 128)</li>
+                            <li>Uppercase and lowercase letters, a number, and a symbol (e.g. . ! @ #)</li>
+                            <li>Must not be common, sequential, or contain your username/email</li>
                         </ul>
                     </div>
                 </div>
@@ -168,7 +168,7 @@
                 <div class="mb-4">
                     <label class="form-label"><i class="fas fa-lock"></i> Confirm Password</label>
                     <input type="password" name="confirm_password" class="form-control" placeholder="Re-enter your password"
-                           required minlength="6" autocomplete="new-password">
+                           required minlength="12" maxlength="128" autocomplete="new-password">
                 </div>
 
                 <button type="submit" class="btn btn-register w-100 text-white">

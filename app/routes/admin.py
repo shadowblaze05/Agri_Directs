@@ -11,16 +11,43 @@ from werkzeug.security import generate_password_hash
 
 from .. import legacy as core
 from ..extensions import db
+from ..password_policy import password_policy_error
 from ..models.audit import AuditEvent
+from ..models.listing_photo_location_alert import ListingPhotoLocationAlert
 from ..models.profile_report import ProfileReport
 from ..models.slow_query import SlowQueryStat
 from ..models.database import _save_upload_file, get_db
 from ..services.notification_service import notify_published_announcement
+from ..services.auth_service import get_active_user_role
 
 # Route implementations use the shared compatibility context.
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
 
 ADMIN_EDITABLE_MARKETPLACE_STATUSES = {"available", "expired", "cancelled"}
+MARKETPLACE_TRANSACTION_FILTER = """(
+    COALESCE(TRIM(m.buyer_username), '') <> ''
+    OR LOWER(COALESCE(m.order_status, '')) NOT IN ('', 'available')
+    OR LOWER(COALESCE(m.preorder_status, '')) NOT IN ('', 'available')
+    OR LOWER(COALESCE(m.status, '')) = 'traded'
+)"""
+MARKETPLACE_TRANSACTION_COMPLETED = """(
+    LOWER(COALESCE(m.order_status, '')) = 'completed'
+    OR LOWER(COALESCE(m.preorder_status, '')) = 'completed'
+    OR LOWER(COALESCE(m.status, '')) = 'traded'
+    OR (COALESCE(m.delivery_confirmed, 0) = 1 AND COALESCE(m.buyer_confirmed, 0) = 1)
+)"""
+
+
+def _current_user_is_admin():
+    username = session.get("user")
+    if not username:
+        return False
+    role = get_active_user_role(username, get_db)
+    if role != "admin":
+        session.pop("role", None)
+        return False
+    session["role"] = "admin"
+    return True
 
 
 def _admin_required(view):
@@ -28,7 +55,7 @@ def _admin_required(view):
     def wrapped(*args, **kwargs):
         if "user" not in session:
             return redirect(url_for("login"))
-        if session.get("role") != "admin":
+        if not _current_user_is_admin():
             flash("Admin access required", "warning")
             return redirect(url_for("dashboard"))
         return view(*args, **kwargs)
@@ -53,8 +80,9 @@ def create_admin_user():
     if not username or not password:
         flash("Username and password are required", "danger")
         return _redirect_admin("admin_users")
-    if len(password) < 6:
-        flash("Password must be at least 6 characters", "danger")
+    password_error = password_policy_error(password, (username, email.split("@", 1)[0]))
+    if password_error:
+        flash(password_error, "danger")
         return _redirect_admin("admin_users")
     if role not in {"user", "admin"}:
         flash("Invalid account role", "danger")
@@ -90,7 +118,7 @@ def edit_admin_user(user_id):
     conn = get_db()
     cur = conn.cursor()
     user = cur.execute(
-        "SELECT id, username, is_active FROM users WHERE id=?",
+        "SELECT id, username, email, is_active FROM users WHERE id=?",
         (user_id,),
     ).fetchone()
     if not user:
@@ -124,9 +152,13 @@ def edit_admin_user(user_id):
                 is_active=?"""
     fields.append(is_active)
     if password:
-        if len(password) < 6:
+        password_error = password_policy_error(
+            password,
+            (user["username"], (_form_value("email") or user["email"] or "").split("@", 1)[0]),
+        )
+        if password_error:
             conn.close()
-            flash("Password must be at least 6 characters", "danger")
+            flash(password_error, "danger")
             return _redirect_admin("admin_users")
         query += ", password=?"
         fields.append(generate_password_hash(password))
@@ -365,7 +397,7 @@ def _delete_named_record(table, id_column, record_id, message, endpoint="admin_c
 def admin_knowledge():
     if "user" not in session:
         return redirect("/login")
-    if session.get("role") != "admin":
+    if not _current_user_is_admin():
         flash("Admin access required")
         return redirect("/dashboard")
 
@@ -407,7 +439,7 @@ def admin_knowledge():
 def create_knowledge_post():
     if "user" not in session:
         return redirect("/login")
-    if session.get("role") != "admin":
+    if not _current_user_is_admin():
         flash("Admin access required")
         return redirect("/dashboard")
 
@@ -427,8 +459,12 @@ def create_knowledge_post():
             flash("Title and content are required")
             return render_template("create_post.html", categories=categories)
 
-        image_path = _save_upload_file(request.files.get("image"), "images")
-        video_path = _save_upload_file(request.files.get("video"), "videos")
+        try:
+            image_path = _save_upload_file(request.files.get("image"), "images")
+            video_path = _save_upload_file(request.files.get("video"), "videos")
+        except ValueError as error:
+            flash(str(error), "danger")
+            return render_template("create_post.html", categories=categories), 400
 
         conn = get_db()
         cur = conn.cursor()
@@ -457,7 +493,7 @@ def create_knowledge_post():
 def edit_knowledge_post(post_id):
     if "user" not in session:
         return redirect("/login")
-    if session.get("role") != "admin":
+    if not _current_user_is_admin():
         flash("Admin access required")
         return redirect("/dashboard")
 
@@ -487,8 +523,12 @@ def edit_knowledge_post(post_id):
             flash("Title and content are required")
             return render_template("edit_post.html", post=post, categories=categories)
 
-        image_path = _save_upload_file(request.files.get("image"), "images") or post["image"]
-        video_path = _save_upload_file(request.files.get("video"), "videos") or post["video"]
+        try:
+            image_path = _save_upload_file(request.files.get("image"), "images") or post["image"]
+            video_path = _save_upload_file(request.files.get("video"), "videos") or post["video"]
+        except ValueError as error:
+            flash(str(error), "danger")
+            return render_template("edit_post.html", post=post, categories=categories), 400
 
         conn = get_db()
         cur = conn.cursor()
@@ -520,7 +560,7 @@ def edit_knowledge_post(post_id):
 def delete_knowledge_post(post_id):
     if "user" not in session:
         return redirect("/login")
-    if session.get("role") != "admin":
+    if not _current_user_is_admin():
         flash("Admin access required")
         return redirect("/dashboard")
 
@@ -538,7 +578,7 @@ def delete_knowledge_post(post_id):
 def admin():
     if "user" not in session:
         return redirect("/login")
-    if session.get("role") != "admin":
+    if not _current_user_is_admin():
         flash("Admin access required")
         return redirect("/dashboard")
     conn = get_db()
@@ -549,8 +589,14 @@ def admin():
         "crops": cur.execute("SELECT COUNT(*) AS count FROM crops").fetchone()["count"],
         "articles": cur.execute("SELECT COUNT(*) AS count FROM knowledge_posts").fetchone()["count"],
         "marketplace": cur.execute("SELECT COUNT(*) AS count FROM marketplace").fetchone()["count"],
+        "marketplace_transactions": cur.execute(
+            f"SELECT COUNT(*) AS count FROM marketplace m WHERE {MARKETPLACE_TRANSACTION_FILTER}"
+        ).fetchone()["count"],
         "open_reports": cur.execute(
             "SELECT COUNT(*) AS count FROM profile_reports WHERE status='open'"
+        ).fetchone()["count"],
+        "open_listing_photo_alerts": cur.execute(
+            "SELECT COUNT(*) AS count FROM listing_photo_location_alerts WHERE status='open'"
         ).fetchone()["count"],
     }
     conn.close()
@@ -562,17 +608,29 @@ def admin():
 
 @_admin_required
 def admin_users():
+    # The verification table is also used by password recovery. Ensure its
+    # current schema before computing pending account status.
+    from .auth import _ensure_password_reset_table
+
+    _ensure_password_reset_table()
     search = request.args.get("q", "").strip()
     conn = get_db()
     cur = conn.cursor()
     query = """SELECT id, username, first_name, last_name, email, role, location, is_active,
+               CASE WHEN COALESCE(users.is_verified, FALSE)=FALSE AND EXISTS (
+                   SELECT 1 FROM password_reset_tokens t WHERE t.user_id=users.id
+                   AND t.purpose='email_verification' AND t.used_at IS NULL
+               ) THEN 1 ELSE 0 END AS pending_verification,
+               (SELECT t.expires_at FROM password_reset_tokens t WHERE t.user_id=users.id
+                AND t.purpose='email_verification' AND t.used_at IS NULL
+                ORDER BY t.created_at DESC LIMIT 1) AS verification_expires_at,
                reliability_status, completed_transactions, cancelled_transactions,
                total_transactions FROM users"""
     params = []
     if search:
         query += """ WHERE username LIKE ? OR email LIKE ? OR first_name LIKE ?
                      OR last_name LIKE ? OR role LIKE ? OR location LIKE ?"""
-        params = [f"%{search}%"] * 6
+        params.extend([f"%{search}%"] * 6)
     query += " ORDER BY role, username"
     users = cur.execute(query, params).fetchall()
     conn.close()
@@ -580,7 +638,15 @@ def admin_users():
         "admin_users.html",
         users=users,
         search=search,
-        active_user_count=sum(bool(user["is_active"]) for user in users),
+        active_user_count=sum(
+            bool(user["is_active"]) and not bool(user["pending_verification"])
+            for user in users
+        ),
+        pending_user_count=sum(bool(user["pending_verification"]) for user in users),
+        inactive_user_count=sum(
+            not bool(user["is_active"]) and not bool(user["pending_verification"])
+            for user in users
+        ),
     )
 
 
@@ -662,6 +728,64 @@ def admin_marketplace():
         users=users,
         crops=crops,
         search=search,
+    )
+
+
+@_admin_required
+def admin_marketplace_transactions():
+    search = request.args.get("q", "").strip()
+    completion_filter = request.args.get("completion", "").strip().lower()
+    if completion_filter not in {"", "completed", "incomplete"}:
+        completion_filter = ""
+
+    conn = get_db()
+    cur = conn.cursor()
+    completion_sql = (
+        f"CASE WHEN {MARKETPLACE_TRANSACTION_COMPLETED} "
+        "THEN 'completed' ELSE 'incomplete' END"
+    )
+    totals = cur.execute(
+        f"""SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN {MARKETPLACE_TRANSACTION_COMPLETED} THEN 1 ELSE 0 END) AS completed
+            FROM marketplace m
+            WHERE {MARKETPLACE_TRANSACTION_FILTER}"""
+    ).fetchone()
+    transactions = cur.execute(
+        f"""SELECT * FROM (
+                SELECT m.id, m.crop_name, m.username,
+                       COALESCE(u.username, m.username) AS seller_name,
+                       m.buyer_username, m.amount, m.preorder_quantity, m.unit, m.price,
+                       m.listing_type, m.order_status, m.preorder_status, m.status,
+                       m.order_date, m.delivery_date, m.delivery_confirmed,
+                       m.buyer_confirmed, m.buyer_rating,
+                       {completion_sql} AS completion_state,
+                       COALESCE(m.preorder_quantity, m.amount) AS transaction_quantity
+                FROM marketplace m
+                LEFT JOIN users u ON u.id = m.user_id
+                WHERE {MARKETPLACE_TRANSACTION_FILTER}
+            ) marketplace_transactions
+            WHERE (? = '' OR CAST(id AS TEXT) LIKE ? OR COALESCE(crop_name, '') LIKE ?
+                   OR COALESCE(seller_name, '') LIKE ? OR COALESCE(buyer_username, '') LIKE ?
+                   OR COALESCE(order_status, '') LIKE ? OR COALESCE(preorder_status, '') LIKE ?)
+              AND (? = '' OR completion_state = ?)
+            ORDER BY COALESCE(order_date, '') DESC, id DESC""",
+        (
+            search, f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%",
+            f"%{search}%", f"%{search}%", completion_filter, completion_filter,
+        ),
+    ).fetchall()
+    conn.close()
+
+    total_count = totals["total"] or 0
+    completed_count = totals["completed"] or 0
+    return render_template(
+        "admin_marketplace_transactions.html",
+        transactions=transactions,
+        search=search,
+        completion_filter=completion_filter,
+        total_count=total_count,
+        completed_count=completed_count,
+        incomplete_count=total_count - completed_count,
     )
 
 
@@ -1117,6 +1241,31 @@ def review_profile_report(report_id):
     return redirect(url_for("admin_profile_reports"))
 
 
+@_admin_required
+def admin_listing_photo_alerts():
+    alerts = db.session.scalars(
+        select(ListingPhotoLocationAlert).order_by(
+            ListingPhotoLocationAlert.created_at.desc(),
+            ListingPhotoLocationAlert.id.desc(),
+        )
+    ).all()
+    return render_template("admin_listing_photo_alerts.html", alerts=alerts)
+
+
+@_admin_required
+def review_listing_photo_alert(alert_id):
+    alert = db.session.get(ListingPhotoLocationAlert, alert_id)
+    if not alert:
+        abort(404)
+    if alert.status == "open":
+        alert.status = "reviewed"
+        alert.reviewed_by = session["user"]
+        alert.reviewed_at = datetime.now(timezone.utc)
+        db.session.commit()
+        flash("Listing photo alert marked as reviewed", "success")
+    return redirect(url_for("admin_listing_photo_alerts"))
+
+
 def page_not_found(e):
     return render_template('404.html'), 404
 
@@ -1133,11 +1282,14 @@ def register(application):
     application.add_url_rule('/admin/audit-logs', endpoint='admin_audit_logs', view_func=admin_audit_logs)
     application.add_url_rule('/admin/profile-reports', endpoint='admin_profile_reports', view_func=admin_profile_reports)
     application.add_url_rule('/admin/profile-reports/<int:report_id>/review', endpoint='review_profile_report', view_func=review_profile_report, methods=['POST'])
+    application.add_url_rule('/admin/listing-photo-alerts', endpoint='admin_listing_photo_alerts', view_func=admin_listing_photo_alerts)
+    application.add_url_rule('/admin/listing-photo-alerts/<int:alert_id>/review', endpoint='review_listing_photo_alert', view_func=review_listing_photo_alert, methods=['POST'])
     application.add_url_rule('/admin/slow-queries', endpoint='admin_slow_queries', view_func=admin_slow_queries)
     application.add_url_rule('/admin/users', endpoint='admin_users', view_func=admin_users)
     application.add_url_rule('/admin/catalog', endpoint='admin_catalog', view_func=admin_catalog)
     application.add_url_rule('/admin/inventory', endpoint='admin_inventory', view_func=admin_inventory)
     application.add_url_rule('/admin/marketplace', endpoint='admin_marketplace', view_func=admin_marketplace)
+    application.add_url_rule('/admin/marketplace/transactions', endpoint='admin_marketplace_transactions', view_func=admin_marketplace_transactions)
     application.add_url_rule('/admin/marketplace/create', endpoint='create_admin_marketplace_listing', view_func=create_admin_marketplace_listing, methods=['POST'])
     application.add_url_rule('/admin/marketplace/edit/<int:listing_id>', endpoint='edit_admin_marketplace_listing', view_func=edit_admin_marketplace_listing, methods=['POST'])
     application.add_url_rule('/admin/marketplace/delete/<int:listing_id>', endpoint='delete_admin_marketplace_listing', view_func=delete_admin_marketplace_listing, methods=['POST'])
@@ -1163,9 +1315,10 @@ def register(application):
 
 __all__ = [
     'admin_knowledge', 'create_knowledge_post', 'edit_knowledge_post', 'delete_knowledge_post',
-    'admin', 'admin_users', 'admin_catalog', 'admin_inventory', 'admin_marketplace',
+    'admin', 'admin_users', 'admin_catalog', 'admin_inventory', 'admin_marketplace', 'admin_marketplace_transactions',
     'admin_audit_logs',
     'admin_profile_reports', 'review_profile_report',
+    'admin_listing_photo_alerts', 'review_listing_photo_alert',
     'create_admin_marketplace_listing', 'edit_admin_marketplace_listing', 'delete_admin_marketplace_listing',
     'admin_review_geotag', 'admin_knowledge_categories',
     'create_admin_user', 'edit_admin_user', 'delete_admin_user',

@@ -625,7 +625,14 @@
                 const li = document.createElement('li');
                 li.className = 'list-group-item d-flex justify-content-between align-items-center';
                 li.style.cssText = 'font-size: 0.8rem; padding: 0.25rem 0.5rem;';
-                li.innerHTML = `<span style="overflow: hidden; text-overflow: ellipsis;">${item.name}</span><span class="badge bg-success rounded-pill" style="font-size: 0.7rem; margin-left: 0.5rem;">${item.total}</span>`;
+                const name = document.createElement('span');
+                name.style.cssText = 'overflow: hidden; text-overflow: ellipsis;';
+                name.textContent = String(item.name ?? '');
+                const total = document.createElement('span');
+                total.className = 'badge bg-success rounded-pill';
+                total.style.cssText = 'font-size: 0.7rem; margin-left: 0.5rem;';
+                total.textContent = String(item.total ?? '');
+                li.append(name, total);
                 list.appendChild(li);
             });
         }
@@ -976,10 +983,13 @@
                         messages.forEach(msg => {
                             const messageDiv = document.createElement('div');
                             messageDiv.className = `message ${msg.sender === '{{ session.get('user', 'User') }}' ? 'sent' : 'received'}`;
-                            messageDiv.innerHTML = `
-                                <strong>${msg.sender}:</strong> ${msg.message}
-                                <small class="text-muted d-block">${new Date(msg.timestamp).toLocaleTimeString()}</small>
-                            `;
+                            const sender = document.createElement('strong');
+                            sender.textContent = `${String(msg.sender ?? '')}: `;
+                            const body = document.createTextNode(String(msg.message ?? ''));
+                            const timestamp = document.createElement('small');
+                            timestamp.className = 'text-muted d-block';
+                            timestamp.textContent = new Date(msg.timestamp).toLocaleTimeString();
+                            messageDiv.append(sender, body, timestamp);
                             chatMessages.appendChild(messageDiv);
                         });
                         

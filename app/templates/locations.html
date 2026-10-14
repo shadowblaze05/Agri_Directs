@@ -179,8 +179,14 @@
             const markers = [];
             userLocations.forEach(user => {
                 if (Number.isFinite(user.lat) && Number.isFinite(user.lng)) {
+                    const popup = document.createElement('div');
+                    const username = document.createElement('strong');
+                    username.textContent = String(user.username || 'User');
+                    const location = document.createElement('div');
+                    location.textContent = `Location: ${String(user.location || 'Not provided')}`;
+                    popup.append(username, location);
                     const marker = L.marker([user.lat, user.lng]).addTo(map)
-                        .bindPopup(`<b>${user.username}</b><br>Location: ${user.location}`);
+                        .bindPopup(popup);
                     markers.push(marker);
                 }
             });
@@ -206,7 +212,12 @@
             items.slice(0,5).forEach(it => {
                 const li = document.createElement('li');
                 li.className = 'list-group-item d-flex justify-content-between align-items-center';
-                li.innerHTML = `<span>${it.name}</span><span class="badge bg-success">${it.total}</span>`;
+                const name = document.createElement('span');
+                name.textContent = String(it.name ?? '');
+                const total = document.createElement('span');
+                total.className = 'badge bg-success';
+                total.textContent = String(it.total ?? '');
+                li.append(name, total);
                 list.appendChild(li);
             });
         }

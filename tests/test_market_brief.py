@@ -25,6 +25,9 @@ def _inventory_connection():
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
     connection.executescript("""
+        CREATE TABLE users (username TEXT PRIMARY KEY, role TEXT, is_active INTEGER);
+        INSERT INTO users VALUES
+            ('farmer', 'user', 1), ('admin', 'admin', 1);
         CREATE TABLE crops (id INTEGER PRIMARY KEY, crops_name TEXT);
         CREATE TABLE inventory (
             crop_id INTEGER,

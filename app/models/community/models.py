@@ -13,6 +13,8 @@ class Message(Model):
     recipient = Column(String(128))
     message = Column(Text)
     timestamp = Column(String(32))
+    attachment_url = Column(Text)
+    attachment_type = Column(String(16))
 
 
 class Notification(Model):

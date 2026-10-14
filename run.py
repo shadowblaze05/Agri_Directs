@@ -14,10 +14,10 @@ if __name__ == "__main__":
         print(
             "\nUnable to connect to PostgreSQL.\n"
             "Set DATABASE_URL before starting the app, for example:\n\n"
-            '$env:DATABASE_URL = "postgresql://postgres:Shadow12345@localhost:5432/AgriDirects"\n'
+            '$env:DATABASE_URL = "postgresql+psycopg2://agridirect_app:YOUR_PASSWORD@localhost:5432/AgriDirect"\n'
             "py run.py\n\n"
             f"PostgreSQL error: {exc}\n",
             file=sys.stderr,
         )
         raise SystemExit(1)
-    app.run(debug=True)
+    app.run(debug=False, use_reloader=False)

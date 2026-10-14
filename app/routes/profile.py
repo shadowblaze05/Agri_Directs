@@ -16,6 +16,7 @@ from ..services.geotag_service import (
     reverse_geocode_coordinates,
     validate_coordinates,
 )
+from ..services.upload_service import save_sanitized_public_image
 
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
 
@@ -257,7 +258,12 @@ def capture_profile_location():
     filename = f"{uuid.uuid4().hex}.{extension}"
     profile_dir = os.path.join(core.app.static_folder, "uploads", "profiles")
     os.makedirs(profile_dir, exist_ok=True)
-    image.save(os.path.join(profile_dir, filename))
+    save_sanitized_public_image(
+        image,
+        os.path.join(profile_dir, filename),
+        expected_format,
+        core.app.config["MAX_PROFILE_PHOTO_SIZE_BYTES"],
+    )
     captured_at_iso = captured_at.astimezone(timezone.utc).isoformat()
     verified_at = now.isoformat()
     conn = get_db()

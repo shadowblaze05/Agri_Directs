@@ -266,6 +266,7 @@ def test_api_harvest_uses_token_owner_and_manual_review_without_photo(client, mo
                     "location_latitude": 0,
                     "location_longitude": 0,
                     "location_verified": True,
+                    "is_active": True,
                 }
             elif "INSERT INTO inventory(" in query:
                 self.inserted_values = params
@@ -315,7 +316,54 @@ def test_api_harvest_uses_token_owner_and_manual_review_without_photo(client, mo
     assert response.get_json()["proximity_status"] == "within_range"
 
 
-def test_admin_review_is_not_available_to_regular_users(client):
+def test_api_harvest_rejects_deactivated_token_owner(client, monkeypatch):
+    class FakeCursor:
+        rowcount = 0
+
+        def execute(self, _query, _params=()):
+            return self
+
+        def fetchone(self):
+            return {"is_active": False}
+
+    class FakeConnection:
+        def __init__(self):
+            self.fake_cursor = FakeCursor()
+
+        def cursor(self):
+            return self.fake_cursor
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(auth_routes, "get_db", lambda: FakeConnection())
+    token = generate_jwt_token("deactivated-farmer")
+    response = client.post(
+        "/api/harvest",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"crop_name": "Rice", "quantity": 10, "location": "Farm"},
+    )
+
+    assert response.status_code == 403
+    assert response.get_json()["error"] == "The authenticated account is inactive"
+
+
+def test_admin_review_is_not_available_to_regular_users(client, monkeypatch):
+    class FakeCursor:
+        def execute(self, _query, _params=()):
+            return self
+
+        def fetchone(self):
+            return {"role": "user", "is_active": True}
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(admin_routes, "get_db", lambda: FakeConnection())
     with client.session_transaction() as session:
         session["user"] = "farmer"
         session["role"] = "user"
@@ -472,6 +520,7 @@ def test_incomplete_profile_cannot_upload_harvest(client, monkeypatch):
                 "location_latitude": None,
                 "location_longitude": None,
                 "location_verified": False,
+                "is_active": True,
             }
 
     class FakeConnection:
@@ -511,6 +560,7 @@ def test_incomplete_profile_cannot_submit_jwt_harvest(client, monkeypatch):
                 "location_latitude": None,
                 "location_longitude": None,
                 "location_verified": False,
+                "is_active": True,
             }
 
     class FakeConnection:
@@ -657,6 +707,66 @@ def test_marketplace_thumbnail_requires_verified_profile_and_ten_km_radius(clien
             marketplace_routes._validate_listing_thumbnail_capture(form, user, thumbnail)
 
 
+def test_listing_thumbnail_location_is_server_checked_at_capture(client, monkeypatch):
+    recorded_alerts = []
+
+    class FakeCursor:
+        def execute(self, query, params):
+            if "FROM users" in query:
+                assert "location_latitude, location_longitude" in query
+                assert params == ("farmer",)
+                self.result = {
+                    "location_verified": True,
+                    "location_latitude": 0,
+                    "location_longitude": 0,
+                }
+            elif query.startswith("SELECT id FROM listing_photo_location_alerts"):
+                self.result = None
+            elif query.startswith("INSERT INTO listing_photo_location_alerts"):
+                recorded_alerts.append(params)
+                self.result = None
+            else:
+                raise AssertionError(f"Unexpected SQL: {query}")
+            return self
+
+        def fetchone(self):
+            return self.result
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def close(self):
+            return None
+
+        def commit(self):
+            return None
+
+    monkeypatch.setattr(marketplace_routes, "get_db", FakeConnection)
+    with client.session_transaction() as session:
+        session["user"] = "farmer"
+
+    payload = {
+        "thumbnail_latitude": "0",
+        "thumbnail_longitude": "0.08",
+        "thumbnail_captured_at": _recent_timestamp(),
+    }
+    response = client.post("/marketplace/validate-thumbnail-location", json=payload)
+
+    assert response.status_code == 200
+    assert response.json["valid"] is True
+    assert response.json["distance_km"] < 10
+
+    payload["thumbnail_longitude"] = "0.1"
+    response = client.post("/marketplace/validate-thumbnail-location", json=payload)
+
+    assert response.status_code == 400
+    assert "within 10 km" in response.json["error"]
+    assert len(recorded_alerts) == 1
+    assert recorded_alerts[0][0] == "farmer"
+    assert recorded_alerts[0][1] > 10_000
+
+
 def test_listing_form_uses_camera_for_thumbnail_and_upload_for_gallery(client, monkeypatch):
     class FakeCursor:
         def execute(self, query, _params=()):
@@ -699,6 +809,8 @@ def test_listing_form_uses_camera_for_thumbnail_and_upload_for_gallery(client, m
     assert b'name="images"' in response.data
     assert b"Set as Thumbnail" not in response.data
     assert b"within 10 km" in response.data
+    assert b"/marketplace/validate-thumbnail-location" in response.data
+    assert b"verified by the server" in response.data
 
 
 def test_admin_marketplace_lists_and_creates_listings(client, monkeypatch):
@@ -710,7 +822,9 @@ def test_admin_marketplace_lists_and_creates_listings(client, monkeypatch):
             self.update_sql = None
 
         def execute(self, query, params=()):
-            if "FROM marketplace m LEFT JOIN users" in query:
+            if query.startswith("SELECT role, is_active FROM users"):
+                self.result = {"role": "admin", "is_active": True}
+            elif "FROM marketplace m LEFT JOIN users" in query:
                 self.result = [{
                     "id": 8,
                     "crop_id": 3,
@@ -841,7 +955,9 @@ def test_admin_marketplace_protects_ordered_listings_from_deletion(client, monke
         deleted = False
 
         def execute(self, query, _params=()):
-            if query.startswith("SELECT crop_name, buyer_username, status"):
+            if query.startswith("SELECT role, is_active FROM users"):
+                self.result = {"role": "admin", "is_active": True}
+            elif query.startswith("SELECT crop_name, buyer_username, status"):
                 self.result = {
                     "crop_name": "Rice",
                     "buyer_username": "buyer",
@@ -900,6 +1016,9 @@ def test_admin_inventory_renders_review_interface(client, monkeypatch):
 
         def fetchall(self):
             return [record]
+
+        def fetchone(self):
+            return {"role": "admin", "is_active": True}
 
     class FakeConnection:
         def cursor(self):
@@ -991,6 +1110,8 @@ def test_admin_can_record_geotag_review(client, monkeypatch):
             return self
 
         def fetchone(self):
+            if self.executed[-1][0].startswith("SELECT role, is_active FROM users"):
+                return {"role": "admin", "is_active": True}
             return {"verification_notes": "GPS missing", "source": "harvest"}
 
     class FakeConnection:

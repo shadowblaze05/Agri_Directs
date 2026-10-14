@@ -17,6 +17,18 @@ def make_audit_app(database_uri):
     )
     with application.app_context():
         db.metadata.create_all(bind=db.engine, tables=[AuditEvent.__table__])
+        with db.engine.begin() as connection:
+            connection.execute(text("""
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY, username TEXT UNIQUE,
+                    role TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT TRUE
+                )
+            """))
+            connection.execute(text(
+                "INSERT INTO users (username, role, is_active) VALUES "
+                "('farm-admin', 'admin', 1), ('admin', 'admin', 1), "
+                "('ordinary-user', 'user', 1)"
+            ))
 
     @application.route("/audit-test/mutate", methods=["POST"])
     def audit_test_mutate():

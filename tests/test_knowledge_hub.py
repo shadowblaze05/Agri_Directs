@@ -7,20 +7,29 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app as app_module
+from app.extensions import db
+from app.models.audit import AuditEvent
+from app.models.database import get_db, init_db
 
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    db_path = tmp_path / "test.db"
-    monkeypatch.setattr(app_module, "DB_PATH", str(db_path))
-    app_module.init_db()
-    app_module.app.config.update(TESTING=True)
-    with app_module.app.test_client() as client:
+    application = app_module.create_app({
+        "TESTING": True,
+        "APP_ENV": "testing",
+        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{(tmp_path / 'knowledge-hub.db').as_posix()}",
+        "INITIAL_ADMIN_USERNAME": "admin",
+        "INITIAL_ADMIN_PASSWORD": "Test!GardenBloom9",
+    })
+    with application.app_context():
+        init_db()
+        db.metadata.create_all(bind=db.engine, tables=[AuditEvent.__table__])
+    with application.test_client() as client:
         yield client
 
 
 def test_admin_can_create_publish_post_and_users_can_interact(client):
-    login = client.post("/login", data={"username": "admin", "password": "admin"}, follow_redirects=True)
+    login = client.post("/login", data={"username": "admin", "password": "Test!GardenBloom9"}, follow_redirects=True)
     assert login.status_code == 200
 
     create_response = client.post(
@@ -60,16 +69,18 @@ def test_admin_can_create_publish_post_and_users_can_interact(client):
 
 
 def test_pinning_published_update_notifies_users_once(client):
-    connection = app_module.get_db()
-    cursor = connection.cursor()
-    cursor.execute(
-        "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
-        ("farmer-one", "unused", "user"),
-    )
-    connection.commit()
-    connection.close()
+    application = client.application
+    with application.app_context():
+        connection = get_db()
+        cursor = connection.cursor()
+        cursor.execute(
+            "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+            ("farmer-one", "unused", "user"),
+        )
+        connection.commit()
+        connection.close()
 
-    client.post("/login", data={"username": "admin", "password": "admin"})
+    client.post("/login", data={"username": "admin", "password": "Test!GardenBloom9"})
     response = client.post(
         "/admin/knowledge/create",
         data={
@@ -83,17 +94,18 @@ def test_pinning_published_update_notifies_users_once(client):
     )
     assert response.status_code == 200
 
-    connection = app_module.get_db()
-    cursor = connection.cursor()
-    post = cursor.execute(
-        "SELECT post_id, is_pinned FROM knowledge_posts WHERE title=?",
-        ("Weather advisory",),
-    ).fetchone()
-    notification_count = cursor.execute(
-        "SELECT COUNT(*) AS count FROM notifications WHERE username=? AND type=?",
-        ("farmer-one", "announcement"),
-    ).fetchone()["count"]
-    connection.close()
+    with application.app_context():
+        connection = get_db()
+        cursor = connection.cursor()
+        post = cursor.execute(
+            "SELECT post_id, is_pinned FROM knowledge_posts WHERE title=?",
+            ("Weather advisory",),
+        ).fetchone()
+        notification_count = cursor.execute(
+            "SELECT COUNT(*) AS count FROM notifications WHERE username=? AND type=?",
+            ("farmer-one", "announcement"),
+        ).fetchone()["count"]
+        connection.close()
     assert post["is_pinned"] == 1
     assert notification_count == 1
 
@@ -110,11 +122,12 @@ def test_pinning_published_update_notifies_users_once(client):
     )
     assert response.status_code == 200
 
-    connection = app_module.get_db()
-    cursor = connection.cursor()
-    notification_count = cursor.execute(
-        "SELECT COUNT(*) AS count FROM notifications WHERE username=? AND type=?",
-        ("farmer-one", "announcement"),
-    ).fetchone()["count"]
-    connection.close()
+    with application.app_context():
+        connection = get_db()
+        cursor = connection.cursor()
+        notification_count = cursor.execute(
+            "SELECT COUNT(*) AS count FROM notifications WHERE username=? AND type=?",
+            ("farmer-one", "announcement"),
+        ).fetchone()["count"]
+        connection.close()
     assert notification_count == 1

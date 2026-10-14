@@ -4,6 +4,7 @@ from .analytics.models import Analytics
 from .agriculture.models import Crop, Harvest, Inventory, CropCategory
 from .auth.models import User
 from .audit import AuditEvent
+from .listing_photo_location_alert import ListingPhotoLocationAlert
 from .profile_report import ProfileReport
 from .slow_query import SlowQueryStat
 from .community.models import Message, Notification
@@ -38,6 +39,7 @@ __all__ = [
     "Inventory",
     "User",
     "AuditEvent",
+    "ListingPhotoLocationAlert",
     "ProfileReport",
     "SlowQueryStat",
     "Message",

@@ -1,14 +1,19 @@
 import calendar
 from datetime import datetime, timedelta
+import os
 import time
+import uuid
 
-from flask import flash, jsonify, redirect, render_template, request, session, url_for
+from flask import current_app, flash, jsonify, redirect, render_template, request, send_from_directory, session, url_for
 from .. import legacy as core
 from ..algorithms.market_analysis import build_market_analysis
 from ..legacy import logger
 from ..models.database import get_db, update_analytics
 from ..services.geo_service import geocode_location
 from ..services.market_intelligence import analyze_market_intelligence
+from ..services.auth_service import get_active_user_role
+from ..services.upload_service import save_sanitized_public_image, save_video_upload
+from werkzeug.utils import secure_filename
 
 # Route implementations use the shared compatibility context.
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
@@ -16,11 +21,23 @@ globals().update({key: value for key, value in core.__dict__.items() if not key.
 _PROCESS_STARTED_MONOTONIC = time.monotonic()
 
 
+def _refresh_session_role():
+    role = get_active_user_role(session.get("user"), get_db)
+    if role is None:
+        session.clear()
+        return None
+    session["role"] = role
+    return role
+
+
 def _market_intelligence_access(admin_only=True):
     """Require sign-in and, when requested, administrator access."""
     if "user" not in session:
         return redirect(url_for("login"))
-    if admin_only and session.get("role") != "admin":
+    role = _refresh_session_role()
+    if role is None:
+        return redirect(url_for("login"))
+    if admin_only and role != "admin":
         flash("Market Intelligence is available to administrators only.")
         return redirect(url_for("portal_home"))
     return None
@@ -470,44 +487,90 @@ def dashboard():
 
     if "user" not in session:
         return redirect("/login")
+    current_role = _refresh_session_role()
+    if current_role is None:
+        return redirect("/login")
 
     conn = get_db()
     cur = conn.cursor()
+    is_admin = current_role == "admin"
+    inventory_scope = "" if is_admin else " AND i.farmer = ?"
+    scope_params = () if is_admin else (session["user"],)
 
-    cur.execute("SELECT i.farmer, c.crops_name AS crop_name, i.quantity, i.location, i.date_received FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' ORDER BY i.date_received DESC LIMIT 20")
+    cur.execute(
+        "SELECT i.farmer, c.crops_name AS crop_name, i.quantity, i.location, i.date_received "
+        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
+        "WHERE (i.source IS NULL OR i.source = 'harvest')" + inventory_scope +
+        " ORDER BY i.date_received DESC LIMIT 20",
+        scope_params,
+    )
     data = cur.fetchall()
 
     update_analytics()
 
-    cur.execute("""SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' GROUP BY i.crop_id, c.crops_name ORDER BY total DESC""")
+    cur.execute(
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
+        "WHERE (i.source IS NULL OR i.source = 'harvest')" + inventory_scope +
+        " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC",
+        scope_params,
+    )
     crops = cur.fetchall()
 
-    cur.execute("SELECT location, SUM(quantity) as total FROM inventory WHERE (source IS NULL OR source = 'harvest') AND location IS NOT NULL AND location != '' GROUP BY location ORDER BY total DESC")
+    location_scope = "" if is_admin else " AND farmer = ?"
+    cur.execute(
+        "SELECT location, SUM(quantity) AS total FROM inventory "
+        "WHERE (source IS NULL OR source = 'harvest') AND location IS NOT NULL AND location != ''" +
+        location_scope + " GROUP BY location ORDER BY total DESC",
+        scope_params,
+    )
     locations = cur.fetchall()
     location_count = len(locations)
 
-    latest_analytics = cur.execute("""
-        SELECT total_harvest, top_location, top_location_volume
-        FROM analytics
-        WHERE period_type = ?
-        ORDER BY period_value DESC
-        LIMIT 1
-    """, ("Monthly",)).fetchone()
-
-    analytics_history = cur.execute("""
-        SELECT period_value, total_harvest, top_crop, top_crop_volume, top_location, top_location_volume
-        FROM analytics
-        WHERE period_type = ?
-        ORDER BY period_value DESC
-        LIMIT 5
-    """, ("Monthly",)).fetchall()
+    if is_admin:
+        latest_analytics = cur.execute("""
+            SELECT total_harvest, top_location, top_location_volume
+            FROM analytics
+            WHERE period_type = ?
+            ORDER BY period_value DESC
+            LIMIT 1
+        """, ("Monthly",)).fetchone()
+        analytics_history = cur.execute("""
+            SELECT period_value, total_harvest, top_crop, top_crop_volume, top_location, top_location_volume
+            FROM analytics
+            WHERE period_type = ?
+            ORDER BY period_value DESC
+            LIMIT 5
+        """, ("Monthly",)).fetchall()
+    else:
+        latest_analytics = None
+        analytics_history = []
+        cur.execute(
+            "SELECT COALESCE(SUM(quantity), 0) AS total FROM inventory "
+            "WHERE (source IS NULL OR source = 'harvest') AND farmer = ?",
+            (session["user"],),
+        )
+        personal_total = cur.fetchone()["total"] or 0
+        cur.execute(
+            "SELECT location, SUM(quantity) AS total FROM inventory "
+            "WHERE (source IS NULL OR source = 'harvest') AND location IS NOT NULL "
+            "AND location != '' AND farmer = ? GROUP BY location ORDER BY total DESC LIMIT 1",
+            (session["user"],),
+        )
+        personal_top_location = cur.fetchone()
 
     conn.close()
     market_brief = _market_brief_context(_market_analysis_context())
 
-    total = latest_analytics["total_harvest"] if latest_analytics else sum(row['quantity'] for row in data)
-    top_location_name = latest_analytics["top_location"] if latest_analytics else None
-    top_location_volume = latest_analytics["top_location_volume"] if latest_analytics else 0
+    total = latest_analytics["total_harvest"] if latest_analytics else (
+        personal_total if not is_admin else sum(row['quantity'] for row in data)
+    )
+    top_location_name = latest_analytics["top_location"] if latest_analytics else (
+        personal_top_location["location"] if not is_admin and personal_top_location else None
+    )
+    top_location_volume = latest_analytics["top_location_volume"] if latest_analytics else (
+        personal_top_location["total"] if not is_admin and personal_top_location else 0
+    )
     crop_count = len(crops)
 
     return render_template("dashboard.html",
@@ -526,11 +589,23 @@ def dashboard_data():
     """Return only the inventory table HTML for real-time updates"""
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    current_role = _refresh_session_role()
+    if current_role is None:
+        return jsonify({"error": "Unauthorized"}), 401
     
     conn = get_db()
     cur = conn.cursor()
     
-    cur.execute("SELECT i.farmer, c.crops_name AS crop_name, i.quantity, i.location, i.date_received FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' ORDER BY i.date_received DESC LIMIT 20")
+    is_admin = current_role == "admin"
+    scope = "" if is_admin else " AND i.farmer = ?"
+    params = () if is_admin else (session["user"],)
+    cur.execute(
+        "SELECT i.farmer, c.crops_name AS crop_name, i.quantity, i.location, i.date_received "
+        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
+        "WHERE (i.source IS NULL OR i.source = 'harvest')" + scope +
+        " ORDER BY i.date_received DESC LIMIT 20",
+        params,
+    )
     data = cur.fetchall()
     
     conn.close()
@@ -566,6 +641,9 @@ def api_stats():
     """Get inventory statistics"""
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    current_role = _refresh_session_role()
+    if current_role is None:
+        return jsonify({"error": "Unauthorized"}), 401
 
     monthly_offset = request.args.get("monthly_offset", "0")
     yearly_offset = request.args.get("yearly_offset", "0")
@@ -595,24 +673,46 @@ def api_stats():
 
     conn = get_db()
     cur = conn.cursor()
+    is_admin = current_role == "admin"
+    owner = session["user"]
+    aliased_owner_filter = "" if is_admin else " AND i.farmer = ?"
+    plain_owner_filter = "" if is_admin else " AND farmer = ?"
+    owner_params = () if is_admin else (owner,)
 
     # Total quantity
-    cur.execute("SELECT SUM(quantity) as total FROM inventory WHERE source IS NULL OR source = 'harvest'")
+    cur.execute(
+        "SELECT COALESCE(SUM(quantity), 0) AS total FROM inventory "
+        "WHERE (source IS NULL OR source = 'harvest')" + plain_owner_filter,
+        owner_params,
+    )
     total = cur.fetchone()["total"] or 0
 
     # Crop summary
-    cur.execute("SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' GROUP BY i.crop_id, c.crops_name ORDER BY total DESC")
+    cur.execute(
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
+        "WHERE (i.source IS NULL OR i.source = 'harvest')" + aliased_owner_filter +
+        " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC",
+        owner_params,
+    )
     crops = cur.fetchall()
 
     # Top crop
     top_crop = crops[0]["crop_name"] if crops else "N/A"
 
     # Number of entries
-    cur.execute("SELECT COUNT(*) as count FROM inventory")
+    cur.execute(
+        "SELECT COUNT(*) AS count FROM inventory" + plain_owner_filter,
+        owner_params,
+    )
     entry_count = cur.fetchone()["count"]
 
     # Unique location count (using location entries from inventory)
-    cur.execute("SELECT COUNT(DISTINCT location) as location_count FROM inventory WHERE location IS NOT NULL AND location != ''")
+    cur.execute(
+        "SELECT COUNT(DISTINCT location) AS location_count FROM inventory "
+        "WHERE location IS NOT NULL AND location != ''" + plain_owner_filter,
+        owner_params,
+    )
     location_count = cur.fetchone()["location_count"] or 0
 
     now = datetime.now()
@@ -628,38 +728,60 @@ def api_stats():
     previous_year_end = datetime(selected_year - 1, 12, 31, 23, 59, 59)
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.date_received >= ? AND i.date_received <= ? GROUP BY i.crop_id, c.crops_name ORDER BY total DESC LIMIT 10",
-        (selected_month_start.strftime("%Y-%m-%d %H:%M:%S"), selected_month_end.strftime("%Y-%m-%d %H:%M:%S"))
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
+        "WHERE i.date_received >= ? AND i.date_received <= ?" + aliased_owner_filter +
+        " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC LIMIT 10",
+        (selected_month_start.strftime("%Y-%m-%d %H:%M:%S"),
+         selected_month_end.strftime("%Y-%m-%d %H:%M:%S")) + owner_params,
     )
     top_monthly = [{"name": row["crop_name"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
-        "SELECT location, SUM(quantity) as total FROM inventory WHERE location IS NOT NULL AND location != '' AND date_received >= ? AND date_received <= ? GROUP BY location ORDER BY total DESC LIMIT 10",
-        (selected_month_start.strftime("%Y-%m-%d %H:%M:%S"), selected_month_end.strftime("%Y-%m-%d %H:%M:%S"))
+        "SELECT location, SUM(quantity) AS total FROM inventory "
+        "WHERE location IS NOT NULL AND location != '' AND date_received >= ? AND date_received <= ?" +
+        plain_owner_filter + " GROUP BY location ORDER BY total DESC LIMIT 10",
+        (selected_month_start.strftime("%Y-%m-%d %H:%M:%S"),
+         selected_month_end.strftime("%Y-%m-%d %H:%M:%S")) + owner_params,
     )
     top_monthly_locations = [{"name": row["location"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.date_received >= ? AND i.date_received <= ? GROUP BY i.crop_id, c.crops_name ORDER BY total DESC LIMIT 10",
-        (selected_year_start.strftime("%Y-%m-%d %H:%M:%S"), selected_year_end.strftime("%Y-%m-%d %H:%M:%S"))
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
+        "WHERE i.date_received >= ? AND i.date_received <= ?" + aliased_owner_filter +
+        " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC LIMIT 10",
+        (selected_year_start.strftime("%Y-%m-%d %H:%M:%S"),
+         selected_year_end.strftime("%Y-%m-%d %H:%M:%S")) + owner_params,
     )
     top_yearly = [{"name": row["crop_name"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
-        "SELECT location, SUM(quantity) as total FROM inventory WHERE location IS NOT NULL AND location != '' AND date_received >= ? AND date_received <= ? GROUP BY location ORDER BY total DESC LIMIT 10",
-        (selected_year_start.strftime("%Y-%m-%d %H:%M:%S"), selected_year_end.strftime("%Y-%m-%d %H:%M:%S"))
+        "SELECT location, SUM(quantity) AS total FROM inventory "
+        "WHERE location IS NOT NULL AND location != '' AND date_received >= ? AND date_received <= ?" +
+        plain_owner_filter + " GROUP BY location ORDER BY total DESC LIMIT 10",
+        (selected_year_start.strftime("%Y-%m-%d %H:%M:%S"),
+         selected_year_end.strftime("%Y-%m-%d %H:%M:%S")) + owner_params,
     )
     top_yearly_locations = [{"name": row["location"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.date_received >= ? AND i.date_received <= ? GROUP BY i.crop_id, c.crops_name",
-        (selected_month_start.strftime("%Y-%m-%d %H:%M:%S"), selected_month_end.strftime("%Y-%m-%d %H:%M:%S"))
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
+        "WHERE i.date_received >= ? AND i.date_received <= ?" + aliased_owner_filter +
+        " GROUP BY i.crop_id, c.crops_name",
+        (selected_month_start.strftime("%Y-%m-%d %H:%M:%S"),
+         selected_month_end.strftime("%Y-%m-%d %H:%M:%S")) + owner_params,
     )
     current_month = {row["crop_name"]: row["total"] for row in cur.fetchall()}
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.date_received >= ? AND i.date_received <= ? GROUP BY i.crop_id, c.crops_name",
-        (previous_month_start.strftime("%Y-%m-%d %H:%M:%S"), previous_month_end.strftime("%Y-%m-%d %H:%M:%S"))
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
+        "WHERE i.date_received >= ? AND i.date_received <= ?" + aliased_owner_filter +
+        " GROUP BY i.crop_id, c.crops_name",
+        (previous_month_start.strftime("%Y-%m-%d %H:%M:%S"),
+         previous_month_end.strftime("%Y-%m-%d %H:%M:%S")) + owner_params,
     )
     previous_month = {row["crop_name"]: row["total"] for row in cur.fetchall()}
 
@@ -838,13 +960,25 @@ def send_message():
 def total_harvest():
     if "user" not in session:
         return redirect(url_for("login"))
+    current_role = _refresh_session_role()
+    if current_role is None:
+        return redirect(url_for("login"))
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT SUM(quantity) AS total FROM inventory")
+    is_admin = current_role == "admin"
+    owner_filter = "" if is_admin else " WHERE farmer = ?"
+    owner_params = () if is_admin else (session["user"],)
+    cur.execute("SELECT COALESCE(SUM(quantity), 0) AS total FROM inventory" + owner_filter, owner_params)
     total = cur.fetchone()["total"] or 0
 
-    cur.execute("SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id GROUP BY i.crop_id, c.crops_name ORDER BY total DESC")
+    crop_owner_filter = "" if is_admin else " WHERE i.farmer = ?"
+    cur.execute(
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "FROM inventory i JOIN crops c ON c.id=i.crop_id" + crop_owner_filter +
+        " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC",
+        owner_params,
+    )
     crop_totals = cur.fetchall()
 
     conn.close()
@@ -853,20 +987,28 @@ def total_harvest():
 def top_crop():
     if "user" not in session:
         return redirect(url_for("login"))
+    current_role = _refresh_session_role()
+    if current_role is None:
+        return redirect(url_for("login"))
 
     conn = get_db()
     cur = conn.cursor()
+    is_admin = current_role == "admin"
+    owner_filter = "" if is_admin else " AND i.farmer = ?"
+    owner_params = () if is_admin else (session["user"],)
 
     # Get Top 5 crops
-    cur.execute("""
+    cur.execute(f"""
         SELECT c.crops_name AS crop_name,
                SUM(i.quantity) AS total
         FROM inventory i
         JOIN crops c ON c.id=i.crop_id
-        GROUP BY i.crop_id, c.crops_name
+                WHERE 1=1
+                    {owner_filter}
+                GROUP BY i.crop_id, c.crops_name
         ORDER BY total DESC
         LIMIT 5
-    """)
+    """, owner_params)
 
     top_crops = cur.fetchall()
 
@@ -883,31 +1025,48 @@ def top_crop():
 def locations():
     if "user" not in session:
         return redirect(url_for("login"))
+    current_role = _refresh_session_role()
+    if current_role is None:
+        return redirect(url_for("login"))
 
     conn = get_db()
     cur = conn.cursor()
+    is_admin = current_role == "admin"
+    inventory_owner_filter = "" if is_admin else " AND farmer = ?"
+    owner_params = () if is_admin else (session["user"],)
 
     # All locations
-    cur.execute("""
+    cur.execute(f"""
         SELECT location,
                SUM(quantity) AS total
         FROM inventory
         WHERE location IS NOT NULL
           AND location != ''
+            {inventory_owner_filter}
         GROUP BY location
         ORDER BY total DESC
-    """)
+        """, owner_params)
 
     locations_data = cur.fetchall()
     location_count = len(locations_data)
 
     # User locations
-    cur.execute("""
+    is_admin = session.get("role") == "admin"
+    if is_admin:
+        cur.execute("""
         SELECT username, location
         FROM users
         WHERE location IS NOT NULL
           AND location != ''
-    """)
+        """)
+    else:
+        cur.execute("""
+        SELECT username, location
+        FROM users
+        WHERE location IS NOT NULL
+          AND location != ''
+          AND username = ?
+        """, (session["user"],))
 
     user_locations_raw = cur.fetchall()
 
@@ -1033,7 +1192,7 @@ def get_messages(person):
     
     # Get all messages between user and this person
     cur.execute("""
-    SELECT sender, message, timestamp
+    SELECT sender, message, timestamp, attachment_url, attachment_type
     FROM messages
     WHERE (sender=? AND recipient=?) OR (sender=? AND recipient=?)
     ORDER BY timestamp ASC
@@ -1045,7 +1204,10 @@ def get_messages(person):
     # Return row values explicitly. ``CompatRow`` is dict-like, so ``list(msg)``
     # would return its keys ("sender", "message", "timestamp") instead.
     return jsonify([
-        [message["sender"], message["message"], message["timestamp"]]
+        [
+            message["sender"], message["message"], message["timestamp"],
+            message["attachment_url"], message["attachment_type"]
+        ]
         for message in messages
     ])
 
@@ -1054,25 +1216,70 @@ def send_chat_message():
     if "user" not in session:
         return jsonify({"status": "error", "message": "Unauthorized"}), 401
     
-    data = request.get_json()
     sender = session["user"]
-    recipient = str(data.get("recipient", "")).strip()
-    message_text = str(data.get("message", "")).strip()
+    recipient = str(request.form.get("recipient", "")).strip()
+    message_text = str(request.form.get("message", "")).strip()
+    attachment = request.files.get("attachment")
+    attachment_url = None
+    attachment_type = None
     
-    if not recipient or not message_text:
-        return jsonify({"status": "error", "message": "Missing recipient or message"}), 400
+    if not recipient or (not message_text and not (attachment and attachment.filename)):
+        return jsonify({"status": "error", "message": "Recipient and a message or attachment are required"}), 400
     
     if recipient == sender:
         return jsonify({"status": "error", "message": "Cannot message yourself"}), 400
+
+    if attachment and attachment.filename:
+        safe_filename = secure_filename(attachment.filename)
+        extension = safe_filename.rsplit(".", 1)[-1].lower() if "." in safe_filename else ""
+        image_extensions = {"jpg", "jpeg", "png", "gif", "webp"}
+        video_extensions = {"mp4", "webm", "mov", "m4v"}
+        if extension in image_extensions:
+            attachment_type = "image"
+            valid_mimetype = attachment.mimetype.startswith("image/")
+        elif extension in video_extensions:
+            attachment_type = "video"
+            valid_mimetype = attachment.mimetype.startswith("video/")
+        else:
+            return jsonify({"status": "error", "message": "Only image and video files are supported"}), 400
+
+        if not valid_mimetype:
+            return jsonify({"status": "error", "message": "The uploaded file type does not match its extension"}), 400
+
+        attachment.stream.seek(0, os.SEEK_END)
+        attachment_size = attachment.stream.tell()
+        attachment.stream.seek(0)
+        max_size = current_app.config.get("MAX_CHAT_ATTACHMENT_SIZE_BYTES", 50 * 1024 * 1024)
+        if attachment_size > max_size:
+            return jsonify({"status": "error", "message": "Attachments must be 50 MB or smaller"}), 413
+
+        filename = f"{uuid.uuid4().hex}.{extension}"
+        upload_folder = os.path.join(current_app.config["UPLOAD_FOLDER"], "messages")
+        os.makedirs(upload_folder, exist_ok=True)
+        attachment_path = os.path.join(upload_folder, filename)
+        if attachment_type == "image":
+            image_formats = {"jpg": "JPEG", "jpeg": "JPEG", "png": "PNG", "gif": "GIF", "webp": "WEBP"}
+            save_sanitized_public_image(
+                attachment,
+                attachment_path,
+                image_formats[extension],
+                max_size,
+            )
+        else:
+            save_video_upload(attachment, attachment_path, extension, max_size)
+        attachment_url = url_for("message_attachment", filename=filename)
     
     conn = get_db()
     cur = conn.cursor()
     
     try:
         cur.execute("""
-        INSERT INTO messages(sender, recipient, message, timestamp)
-        VALUES(?, ?, ?, ?)
-        """, (sender, recipient, message_text, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+        INSERT INTO messages(sender, recipient, message, timestamp, attachment_url, attachment_type)
+        VALUES(?, ?, ?, ?, ?, ?)
+        """, (
+            sender, recipient, message_text, datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            attachment_url, attachment_type
+        ))
 
         # Resolve recipient to stored username (case-insensitive) to avoid mismatches
         try:
@@ -1126,11 +1333,39 @@ def send_chat_message():
         conn.commit()
         logger.info(f"Message sent from {sender} to {recipient}")
         return jsonify({"status": "success"})
-    except Exception as e:
-        logger.error(f"Error sending message: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+    except Exception as error:
+        logger.error("Message send failed (%s)", type(error).__name__)
+        return jsonify({"status": "error", "message": "Unable to send message. Please try again."}), 500
     finally:
         conn.close()
+
+
+def message_attachment(filename):
+    """Serve a message attachment only to participants in its conversation."""
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    filename = secure_filename(filename)
+    if not filename:
+        return jsonify({"error": "Attachment not found"}), 404
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT id FROM messages WHERE attachment_url=? AND (sender=? OR recipient=?) LIMIT 1",
+            (url_for("message_attachment", filename=filename), session["user"], session["user"]),
+        )
+        if not cur.fetchone():
+            return jsonify({"error": "Attachment not found"}), 404
+    finally:
+        conn.close()
+
+    return send_from_directory(
+        os.path.join(current_app.config["UPLOAD_FOLDER"], "messages"),
+        filename,
+        as_attachment=False,
+    )
 
 def api_current_user():
     """Get current user info"""
@@ -1209,9 +1444,9 @@ def notifications_mark_read():
         cur.execute("UPDATE notifications SET is_read=1 WHERE username=? AND is_read=0", (session['user'],))
         conn.commit()
         return jsonify({'status': 'success'})
-    except Exception as e:
-        logger.error(f"Failed to mark notifications read: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+    except Exception as error:
+        logger.error("Notification update failed (%s)", type(error).__name__)
+        return jsonify({'status': 'error', 'message': 'Unable to update notifications.'}), 500
     finally:
         conn.close()
 
@@ -1243,6 +1478,7 @@ def register(application):
     application.add_url_rule('/users/search', endpoint='users_search', view_func=users_search)
     application.add_url_rule('/messages/<person>', endpoint='get_messages', view_func=get_messages)
     application.add_url_rule('/messages/send', endpoint='send_chat_message', view_func=send_chat_message, methods=['POST'])
+    application.add_url_rule('/messages/attachments/<filename>', endpoint='message_attachment', view_func=message_attachment)
     application.add_url_rule('/api/current-user', endpoint='api_current_user', view_func=api_current_user)
     application.add_url_rule('/notifications', endpoint='notifications', view_func=notifications)
     application.add_url_rule('/notifications/unread-count', endpoint='notifications_unread_count', view_func=notifications_unread_count)
@@ -1252,4 +1488,4 @@ def register(application):
         setattr(core, _name, globals()[_name])
 
 
-__all__ = ['home', 'portal_home', 'about', 'crop_types', 'market_intelligence', 'market_intelligence_price_monitoring', 'market_intelligence_crop_recommendations', 'market_intelligence_demand_forecasting', 'market_intelligence_supply_balance', 'dashboard', 'dashboard_data', 'api_market_insights', 'api_forecast', 'api_stats', 'get_users', 'bot_response', 'get_messagess', 'send_message', 'total_harvest', 'top_crop', 'locations', 'messages_page', 'get_conversations', 'users_search', 'get_messages', 'send_chat_message', 'api_current_user', 'notifications', 'notifications_unread_count', 'notification_center', 'notifications_mark_read']
+__all__ = ['home', 'portal_home', 'about', 'crop_types', 'market_intelligence', 'market_intelligence_price_monitoring', 'market_intelligence_crop_recommendations', 'market_intelligence_demand_forecasting', 'market_intelligence_supply_balance', 'dashboard', 'dashboard_data', 'api_market_insights', 'api_forecast', 'api_stats', 'get_users', 'bot_response', 'get_messagess', 'send_message', 'total_harvest', 'top_crop', 'locations', 'messages_page', 'get_conversations', 'users_search', 'get_messages', 'send_chat_message', 'message_attachment', 'api_current_user', 'notifications', 'notifications_unread_count', 'notification_center', 'notifications_mark_read']

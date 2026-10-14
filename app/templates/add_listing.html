@@ -283,7 +283,8 @@
                             {% endif %}
                         </p>
 
-                        <form method="POST" enctype="multipart/form-data">
+                        <form id="listingForm" method="POST" enctype="multipart/form-data"
+                              data-requires-thumbnail="{{ 'false' if listing else 'true' }}">
                             <!-- Crop Selection -->
                             <div class="row">
                                 <div class="col-md-6 mb-3">
@@ -403,7 +404,7 @@
                             <!-- Camera-verified thumbnail and optional gallery images -->
                             <div class="mb-3" id="imageUploadGroup">
                                 <label class="form-label" for="startListingCamera">{% if listing %}Camera thumbnail replacement (optional){% else %}Camera thumbnail *{% endif %}</label>
-                                <p class="small text-muted">Take the cover photo live from your camera. We use browser GPS at capture time and check that it is within 10 km of your verified profile location.</p>
+                                <p class="small text-muted">Take the cover photo live from your camera. The server checks its GPS against your verified profile location before accepting the photo; it must be within 10 km.</p>
                                 {% if not profile_location_verified %}
                                 <div class="alert alert-warning py-2">Verify your profile photo and GPS location before {% if listing %}capturing a replacement thumbnail{% else %}creating a listing thumbnail{% endif %}. <a href="{{ url_for('update_profile') }}" class="alert-link">Update your profile</a>.</div>
                                 {% endif %}
@@ -501,6 +502,33 @@
             });
         }
 
+        function clearListingThumbnailCapture() {
+            document.getElementById('thumbnailInput').files = new DataTransfer().files;
+            document.getElementById('thumbnailLatitude').value = '';
+            document.getElementById('thumbnailLongitude').value = '';
+            document.getElementById('thumbnailCapturedAt').value = '';
+            document.getElementById('thumbnailPreviewContainer').innerHTML = '';
+            document.getElementById('listingForm').dataset.thumbnailLocationVerified = 'false';
+        }
+
+        document.querySelector('form[enctype="multipart/form-data"]')?.addEventListener('submit', event => {
+            const form = event.currentTarget;
+            const listingType = document.querySelector('input[name="listing_type"]:checked')?.value;
+            const thumbnailInput = document.getElementById('thumbnailInput');
+            const message = document.getElementById('thumbnailCaptureMessage');
+            const hasNewThumbnail = thumbnailInput.files.length > 0;
+            if (form.dataset.requiresThumbnail === 'true' &&
+                listingType !== 'looking_for' && !hasNewThumbnail) {
+                event.preventDefault();
+                message.textContent = 'Capture and verify a thumbnail photo within 10 km of your profile location before creating this listing.';
+                message.classList.add('text-danger');
+            } else if (hasNewThumbnail && form.dataset.thumbnailLocationVerified !== 'true') {
+                event.preventDefault();
+                message.textContent = 'Wait for the server to verify the thumbnail location before submitting.';
+                message.classList.add('text-danger');
+            }
+        });
+
         document.getElementById('startListingCamera')?.addEventListener('click', async () => {
             const message = document.getElementById('thumbnailCaptureMessage');
             const startButton = document.getElementById('startListingCamera');
@@ -573,6 +601,8 @@
                 return;
             }
             captureButton.disabled = true;
+            clearListingThumbnailCapture();
+            message.classList.remove('text-danger', 'text-success');
             message.textContent = 'Capturing photo and requesting GPS permission...';
             try {
                 const scale = Math.min(1, 1600 / width, 1200 / height);
@@ -584,18 +614,35 @@
                 const photoBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
                 if (!photoBlob) throw new Error('Could not create the camera photo. Try again.');
                 const position = await waitForListingGps();
+                const capturedAt = new Date(position.timestamp).toISOString();
+                const response = await fetch('/marketplace/validate-thumbnail-location', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        thumbnail_latitude: String(position.coords.latitude),
+                        thumbnail_longitude: String(position.coords.longitude),
+                        thumbnail_captured_at: capturedAt
+                    })
+                });
+                const validation = await response.json();
+                if (!response.ok || validation.valid !== true) {
+                    throw new Error(validation.error || 'The server could not verify this photo location.');
+                }
                 const photo = new File([photoBlob], 'listing-thumbnail.jpg', { type: 'image/jpeg' });
                 const transfer = new DataTransfer();
                 transfer.items.add(photo);
                 document.getElementById('thumbnailInput').files = transfer.files;
                 document.getElementById('thumbnailLatitude').value = String(position.coords.latitude);
                 document.getElementById('thumbnailLongitude').value = String(position.coords.longitude);
-                document.getElementById('thumbnailCapturedAt').value = new Date(position.timestamp).toISOString();
+                document.getElementById('thumbnailCapturedAt').value = capturedAt;
+                document.getElementById('listingForm').dataset.thumbnailLocationVerified = 'true';
                 document.getElementById('thumbnailPreviewContainer').innerHTML =
                     '<img src="' + URL.createObjectURL(photoBlob) + '" alt="Camera thumbnail preview" style="width:160px;height:120px;object-fit:cover;border-radius:8px;border:3px solid #2d5016"><span class="thumbnail-label" style="width:160px">Camera thumbnail</span>';
-                message.textContent = 'Photo and GPS captured. The server will verify it is within 10 km of your profile location.';
+                message.textContent = `Photo and GPS verified by the server (${validation.distance_km.toFixed(2)} km from your profile location).`;
+                message.classList.add('text-success');
             } catch (error) {
                 message.textContent = error.message || 'Could not capture the camera thumbnail.';
+                message.classList.add('text-danger');
                 captureButton.disabled = false;
             }
         });

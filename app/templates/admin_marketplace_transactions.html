@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Marketplace transactions | Admin</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+</head>
+<body class="admin-page">
+  <nav class="navbar navbar-dark admin-navbar px-4 py-3">
+    <a class="navbar-brand fw-bold" href="{{ url_for('admin') }}">Agri-Direct / Admin</a>
+    <a href="{{ url_for('admin') }}" class="btn btn-outline-light btn-sm">Overview</a>
+  </nav>
+  <main class="container py-4">
+    <a class="breadcrumb-link" href="{{ url_for('admin') }}">Admin Console</a>
+    <div class="page-heading mt-2 mb-4">
+      <h1 class="h3 mb-1">Marketplace transactions</h1>
+      <p class="text-muted mb-0">All placed orders and pre-orders, from open through completed or cancelled.</p>
+    </div>
+
+    <div class="row g-3 mb-4">
+      <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="small text-muted">All transactions</div><div class="fs-3 fw-bold">{{ total_count }}</div></div></div></div>
+      <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="small text-muted">Completed</div><div class="fs-3 fw-bold text-success">{{ completed_count }}</div></div></div></div>
+      <div class="col-sm-4"><div class="card h-100"><div class="card-body"><div class="small text-muted">Incomplete</div><div class="fs-3 fw-bold text-warning">{{ incomplete_count }}</div></div></div></div>
+    </div>
+
+    <form class="row g-2 mb-3" method="get">
+      <div class="col-md">
+        <label class="visually-hidden" for="transaction-search">Search transactions</label>
+        <input id="transaction-search" name="q" value="{{ search }}" class="form-control" placeholder="Search order, crop, seller, buyer, or status">
+      </div>
+      <div class="col-md-3">
+        <label class="visually-hidden" for="completion-filter">Completion status</label>
+        <select id="completion-filter" name="completion" class="form-select">
+          <option value="" {% if not completion_filter %}selected{% endif %}>All completion states</option>
+          <option value="completed" {% if completion_filter == 'completed' %}selected{% endif %}>Completed</option>
+          <option value="incomplete" {% if completion_filter == 'incomplete' %}selected{% endif %}>Incomplete</option>
+        </select>
+      </div>
+      <div class="col-auto"><button class="btn btn-success" type="submit"><i class="fas fa-search me-1"></i>Search</button></div>
+      {% if search or completion_filter %}<div class="col-auto"><a class="btn btn-outline-secondary" href="{{ url_for('admin_marketplace_transactions') }}">Clear</a></div>{% endif %}
+    </form>
+
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead><tr><th>Order</th><th>Seller / buyer</th><th>Item</th><th>Amount</th><th>Progress</th><th>Confirmation</th></tr></thead>
+          <tbody>
+            {% for transaction in transactions %}
+              {% set status = transaction['preorder_status'] or transaction['order_status'] or transaction['status'] or 'in progress' %}
+              <tr>
+                <td><strong>#{{ transaction['id'] }}</strong><br><small class="text-muted">{{ transaction['order_date'] or 'Date unavailable' }}</small></td>
+                <td><div>{{ transaction['seller_name'] or transaction['username'] or 'Unknown seller' }}</div><small class="text-muted">Buyer: {{ transaction['buyer_username'] or 'Not recorded' }}</small></td>
+                <td><strong>{{ transaction['crop_name'] or 'Unnamed crop' }}</strong><br><small class="text-muted">{{ transaction['listing_type'] or 'standard' }}</small></td>
+                <td>{{ transaction['transaction_quantity'] or transaction['amount'] or 0 }} {{ transaction['unit'] or 'kg' }}<br><small class="text-muted">PHP {{ '%.2f'|format((transaction['price'] or 0) * (transaction['transaction_quantity'] or transaction['amount'] or 0)) }}</small></td>
+                <td><span class="badge text-bg-light border">{{ status|replace('_', ' ')|title }}</span><br><span class="badge {{ 'text-bg-success' if transaction['completion_state'] == 'completed' else 'text-bg-warning' }} mt-1">{{ transaction['completion_state']|title }}</span></td>
+                <td><small>Delivery: {{ 'Confirmed' if transaction['delivery_confirmed'] else 'Pending' }}<br>Buyer: {{ 'Confirmed' if transaction['buyer_confirmed'] else 'Pending' }}</small></td>
+              </tr>
+            {% else %}
+              <tr><td colspan="6" class="empty-state">No marketplace transactions match these filters.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

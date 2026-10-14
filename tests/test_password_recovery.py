@@ -102,7 +102,19 @@ def test_password_recovery_uses_emailed_code_and_changes_password_in_app(tmp_pat
 
         response = client.post(
             "/reset-password",
-            data={"password": "new-password-123", "confirm_password": "new-password-123"},
+            data={"password": "123456", "confirm_password": "123456"},
+        )
+        assert response.status_code == 200
+        assert b"at least 12 characters" in response.data
+        with client.session_transaction() as user_session:
+            assert user_session.get("password_reset_user_id") == 1
+
+        response = client.post(
+            "/reset-password",
+            data={
+                "password": "New!Harvest7Moon",
+                "confirm_password": "New!Harvest7Moon",
+            },
         )
         assert response.status_code == 302
         assert response.headers["Location"].endswith("/login")
@@ -111,8 +123,33 @@ def test_password_recovery_uses_emailed_code_and_changes_password_in_app(tmp_pat
             password_hash = db.session.execute(
                 text("SELECT password FROM users WHERE id = 1")
             ).scalar_one()
-            assert check_password_hash(password_hash, "new-password-123")
+            assert check_password_hash(password_hash, "New!Harvest7Moon")
 
         response = client.get("/reset-password")
         assert response.status_code == 302
         assert response.headers["Location"].endswith("/forgot-password")
+
+
+def test_password_reset_response_is_generic_when_delivery_fails(tmp_path, monkeypatch):
+    application = make_password_recovery_app(
+        f"sqlite:///{(tmp_path / 'password-recovery-delivery.sqlite').as_posix()}"
+    )
+
+    def fail_delivery(_message):
+        raise RuntimeError("SMTP failure details")
+
+    monkeypatch.setattr(auth_routes.mail, "send", fail_delivery)
+    with application.test_client() as client:
+        existing = client.post(
+            "/forgot-password",
+            data={"email": "farmer@example.test"},
+            follow_redirects=False,
+        )
+        unknown = client.post(
+            "/forgot-password",
+            data={"email": "missing@example.test"},
+            follow_redirects=False,
+        )
+
+    assert existing.status_code == unknown.status_code == 302
+    assert existing.headers["Location"] == unknown.headers["Location"]

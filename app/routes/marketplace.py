@@ -6,10 +6,10 @@ from ..legacy import logger
 from ..algorithms.reliability_score import seller_reliability_status
 from ..models.database import get_db
 from ..services.geotag_service import (
-    calculate_distance_meters,
     validate_coordinates,
     verify_crop_location,
 )
+from ..services.upload_service import save_sanitized_public_image
 
 import os
 import uuid
@@ -20,6 +20,13 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_IMAGES = 5
 MAX_LISTING_PHOTO_DISTANCE_METERS = 10_000
 MARKETPLACE_IMAGE_FORMATS = {'png': 'PNG', 'jpg': 'JPEG', 'jpeg': 'JPEG', 'gif': 'GIF', 'webp': 'WEBP'}
+
+
+class ListingThumbnailOutOfRange(ValueError):
+    def __init__(self, message, distance_meters, captured_at):
+        super().__init__(message)
+        self.distance_meters = distance_meters
+        self.captured_at = captured_at
 
 
 def _validate_marketplace_image(uploaded_file):
@@ -53,18 +60,18 @@ def _save_marketplace_image(uploaded_file, extension):
     filename = f"{uuid.uuid4().hex}.{extension}"
     upload_folder = os.path.join(current_app.root_path, 'static', 'uploads', 'marketplace')
     os.makedirs(upload_folder, exist_ok=True)
-    uploaded_file.save(os.path.join(upload_folder, filename))
+    save_sanitized_public_image(
+        uploaded_file,
+        os.path.join(upload_folder, filename),
+        MARKETPLACE_IMAGE_FORMATS[extension],
+        current_app.config['MAX_CROP_PHOTO_SIZE_BYTES'],
+    )
     return filename
 
 
-def _validate_listing_thumbnail_capture(form, user, thumbnail):
-    if not thumbnail or not thumbnail.filename:
-        raise ValueError("Capture a camera photo for the listing thumbnail.")
+def _validate_listing_thumbnail_location(form, user):
     if not user["location_verified"]:
         raise ValueError("Verify your profile location with a camera photo and GPS before creating a listing.")
-    extension = _validate_marketplace_image(thumbnail)
-    if extension not in {'jpg', 'jpeg', 'png', 'webp'}:
-        raise ValueError("The camera thumbnail must be a PNG, JPG, JPEG, or WEBP image.")
     try:
         latitude, longitude = validate_coordinates(
             form.get("thumbnail_latitude"),
@@ -92,23 +99,83 @@ def _validate_listing_thumbnail_capture(form, user, thumbnail):
         raise ValueError("Your verified profile location is invalid. Update it before creating a listing.") from error
     if status != "within_range":
         distance_km = f"{distance / 1000:.2f}" if distance is not None else "unknown"
-        raise ValueError(
+        captured_at_iso = captured_at.astimezone(timezone.utc).isoformat()
+        raise ListingThumbnailOutOfRange(
             f"The listing thumbnail must be within 10 km of your verified profile location "
-            f"(captured distance: {distance_km} km)."
+            f"(captured distance: {distance_km} km).",
+            distance,
+            captured_at_iso,
         )
-    distance = calculate_distance_meters(
-        user["location_latitude"],
-        user["location_longitude"],
-        latitude,
-        longitude,
+    return latitude, longitude, distance, captured_at.astimezone(timezone.utc).isoformat()
+
+
+def _record_out_of_range_listing_photo(username, error):
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        existing_alert = cur.execute(
+            "SELECT id FROM listing_photo_location_alerts "
+            "WHERE username=? AND thumbnail_captured_at=? AND distance_meters=?",
+            (username, error.captured_at, error.distance_meters),
+        ).fetchone()
+        if not existing_alert:
+            cur.execute(
+                "INSERT INTO listing_photo_location_alerts "
+                "(username, distance_meters, thumbnail_captured_at) VALUES (?, ?, ?)",
+                (username, error.distance_meters, error.captured_at),
+            )
+            conn.commit()
+    finally:
+        conn.close()
+
+
+def _validate_listing_thumbnail_capture(form, user, thumbnail):
+    if not thumbnail or not thumbnail.filename:
+        raise ValueError("Capture a camera photo for the listing thumbnail.")
+    extension = _validate_marketplace_image(thumbnail)
+    if extension not in {'jpg', 'jpeg', 'png', 'webp'}:
+        raise ValueError("The camera thumbnail must be a PNG, JPG, JPEG, or WEBP image.")
+    latitude, longitude, distance, captured_at = _validate_listing_thumbnail_location(
+        form, user
     )
-    return (
-        extension,
-        latitude,
-        longitude,
-        distance,
-        captured_at.astimezone(timezone.utc).isoformat(),
-    )
+    return extension, latitude, longitude, distance, captured_at
+
+
+def validate_listing_thumbnail_location():
+    if "user" not in session:
+        return jsonify({"error": "Sign in before validating a listing photo."}), 401
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Listing photo coordinates are required."}), 400
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT location_verified, location_latitude, location_longitude "
+            "FROM users WHERE username=?",
+            (session["user"],),
+        )
+        user = cur.fetchone()
+        if not user:
+            return jsonify({"error": "User not found."}), 404
+
+        try:
+            _, _, distance, _ = _validate_listing_thumbnail_location(data, user)
+        except ListingThumbnailOutOfRange as error:
+            _record_out_of_range_listing_photo(session["user"], error)
+            return jsonify({"error": str(error)}), 400
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+
+        return jsonify({
+            "valid": True,
+            "distance_meters": round(distance, 2),
+            "distance_km": round(distance / 1000, 2),
+        })
+    finally:
+        conn.close()
 
 
 def allowed_file(filename):
@@ -310,6 +377,8 @@ def add_marketplace_listing():
                 if len(additional_images) > MAX_IMAGES:
                     raise ValueError(f"You can add up to {MAX_IMAGES} additional photos.")
             except ValueError as error:
+                if isinstance(error, ListingThumbnailOutOfRange):
+                    _record_out_of_range_listing_photo(session["user"], error)
                 conn.close()
                 flash(str(error), "danger")
                 return redirect(request.url)
@@ -1743,6 +1812,8 @@ def edit_marketplace_listing(listing_id):
                     request.form, user, thumbnail
                 )
             except ValueError as error:
+                if isinstance(error, ListingThumbnailOutOfRange):
+                    _record_out_of_range_listing_photo(session["user"], error)
                 conn.close()
                 flash(str(error), "danger")
                 return redirect(request.url)
@@ -2300,6 +2371,12 @@ def looking_for_listings():
 def register(application):
     application.add_url_rule('/marketplace', endpoint='marketplace', view_func=marketplace)
     application.add_url_rule('/marketplace/add', endpoint='add_marketplace_listing', view_func=add_marketplace_listing, methods=['GET', 'POST'])
+    application.add_url_rule(
+        '/marketplace/validate-thumbnail-location',
+        endpoint='validate_listing_thumbnail_location',
+        view_func=validate_listing_thumbnail_location,
+        methods=['POST'],
+    )
     application.add_url_rule('/marketplace/buy/<int:listing_id>', endpoint='buy_marketplace_item', view_func=buy_marketplace_item, methods=['POST'])
     application.add_url_rule('/marketplace/complete-order/<int:listing_id>', endpoint='complete_marketplace_order', view_func=complete_marketplace_order, methods=['POST'])
     application.add_url_rule('/marketplace/order-status/<int:listing_id>', endpoint='update_marketplace_order_status', view_func=update_marketplace_order_status, methods=['POST'])
@@ -2381,6 +2458,7 @@ def register(application):
 __all__ = [
     'marketplace',
     'add_marketplace_listing',
+    'validate_listing_thumbnail_location',
     'buy_marketplace_item',
     'complete_marketplace_order',
     'confirm_marketplace_receipt',

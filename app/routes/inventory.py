@@ -342,12 +342,13 @@ def upload():
         processed_any = False
 
         if file and file.filename:
-            if not file.filename.endswith('.csv'):
+            safe_original_filename = secure_filename(file.filename)
+            if not safe_original_filename.lower().endswith('.csv'):
                 flash("Only CSV files are allowed")
                 conn.close()
                 return redirect(request.url)
 
-            filename = secure_filename(file.filename)
+            filename = f"{uuid.uuid4().hex}.csv"
             path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
             file.save(path)
 
@@ -355,7 +356,7 @@ def upload():
                 with open(path, newline='', encoding='utf-8') as csvfile:
                     reader = csv.DictReader(csvfile)
 
-                    for row in reader:
+                    for row_number, row in enumerate(reader, start=2):
                         try:
                             cleaned_row = {k.strip(): (v.strip() if v else '') for k, v in row.items()}
                             crop = cleaned_row.get("crop_name", "").strip()
@@ -382,7 +383,7 @@ def upload():
                             try:
                                 quantity = int(quantity_str)
                             except ValueError:
-                                logger.error(f"Invalid quantity: {quantity_str}")
+                                logger.warning("CSV upload contained an invalid quantity at row %s", row_number)
                                 flash(f"Error: Invalid quantity '{quantity_str}' in CSV row")
                                 continue
 
@@ -421,9 +422,13 @@ def upload():
                             ))
                             processed_any = True
 
-                        except Exception as e:
-                            logger.error(f"Error processing row: {row}, {e}")
-                            flash(f"Error processing CSV row: {row}")
+                        except Exception as error:
+                            logger.error(
+                                "CSV upload row %s failed (%s)",
+                                row_number,
+                                type(error).__name__,
+                            )
+                            flash(f"CSV row {row_number} could not be processed.")
 
                 if processed_any:
                     conn.commit()
@@ -433,11 +438,18 @@ def upload():
                 else:
                     flash("CSV upload completed, but no valid records were added.")
 
-            except Exception as e:
-                flash(f"Error processing file: {str(e)}")
-                logger.error(f"Upload error: {str(e)}")
+            except Exception as error:
+                flash("The CSV file could not be processed.")
+                logger.error("CSV upload failed (%s)", type(error).__name__)
                 conn.close()
                 return redirect(request.url)
+            finally:
+                try:
+                    os.remove(path)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    logger.warning("Temporary CSV cleanup failed")
 
         elif crop_id:
             if not manual_quantity:

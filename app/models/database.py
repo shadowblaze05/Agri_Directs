@@ -9,18 +9,19 @@ import importlib
 import logging
 import os
 import re
-import sys
+import uuid
 from collections import defaultdict
 from contextlib import nullcontext
 from datetime import datetime
 
-from flask import has_app_context
-from sqlalchemy import text
+from flask import current_app, has_app_context
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 
 from ..extensions import db
+from ..password_policy import password_policy_error
 from ..algorithms.market_analysis import build_market_analysis
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -119,7 +120,16 @@ class PostgreSQLCursor:
                     )
                     params = (legacy_params[0],) + legacy_params
 
-        translated_sql, pragma_params = self._translate_sql(sql)
+        if db.engine.dialect.name == "postgresql":
+            translated_sql, pragma_params = self._translate_sql(sql)
+        else:
+            translated_sql = re.sub(
+                r"SUBSTRING\(([\w.]+)\s+FROM\s+(\d+)\s+FOR\s+(\d+)\)",
+                r"SUBSTR(\1, \2, \3)",
+                sql,
+                flags=re.IGNORECASE,
+            )
+            pragma_params = None
         effective_params = pragma_params if pragma_params is not None else params
         translated_sql, named_params = self._named_parameters(translated_sql, effective_params)
         with _with_app_context():
@@ -185,13 +195,14 @@ class SQLAlchemyConnection:
 
     def commit(self):
         with _with_app_context():
-            db.session.execute(
-                text(
-                    "UPDATE inventory "
-                    "SET crop_name = (SELECT crops.crops_name FROM crops WHERE crops.id = inventory.crop_id) "
-                    "WHERE crop_name IS NULL AND crop_id IS NOT NULL"
+            if inspect(db.engine).has_table("inventory") and inspect(db.engine).has_table("crops"):
+                db.session.execute(
+                    text(
+                        "UPDATE inventory "
+                        "SET crop_name = (SELECT crops.crops_name FROM crops WHERE crops.id = inventory.crop_id) "
+                        "WHERE crop_name IS NULL AND crop_id IS NOT NULL"
+                    )
                 )
-            )
             db.session.flush()
             db.session.commit()
 
@@ -204,18 +215,35 @@ class SQLAlchemyConnection:
 
 
 def _save_upload_file(uploaded_file, subfolder):
+    from ..services.upload_service import save_sanitized_public_image, save_video_upload
+
     if not uploaded_file or uploaded_file.filename == "":
         return None
 
-    upload_dir = os.path.join(BASE_DIR, "static", "uploads", "knowledge", subfolder)
-    os.makedirs(upload_dir, exist_ok=True)
     filename = secure_filename(uploaded_file.filename)
-    if not filename:
-        return None
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    image_formats = {"png": "PNG", "jpg": "JPEG", "jpeg": "JPEG", "gif": "GIF", "webp": "WEBP"}
+    video_extensions = {"mp4", "m4v", "mov", "webm"}
+    if subfolder == "images" and extension not in image_formats:
+        raise ValueError("Knowledge Hub images must be PNG, JPG, JPEG, GIF, or WEBP.")
+    if subfolder == "videos" and extension not in video_extensions:
+        raise ValueError("Knowledge Hub videos must be MP4, M4V, MOV, or WEBM.")
+    if subfolder not in {"images", "videos"}:
+        raise ValueError("Unsupported Knowledge Hub upload category.")
 
-    file_path = os.path.join(upload_dir, filename)
-    uploaded_file.save(file_path)
-    return f"/static/uploads/knowledge/{subfolder}/{filename}"
+    upload_dir = os.path.join(current_app.static_folder, "uploads", "knowledge", subfolder)
+    os.makedirs(upload_dir, exist_ok=True)
+    if not filename:
+        raise ValueError("The uploaded filename is invalid.")
+
+    stored_filename = f"{uuid.uuid4().hex}.{extension}"
+    file_path = os.path.join(upload_dir, stored_filename)
+    maximum_size = current_app.config["MAX_KNOWLEDGE_MEDIA_SIZE_BYTES"]
+    if subfolder == "images":
+        save_sanitized_public_image(uploaded_file, file_path, image_formats[extension], maximum_size)
+    else:
+        save_video_upload(uploaded_file, file_path, extension, maximum_size)
+    return f"/static/uploads/knowledge/{subfolder}/{stored_filename}"
 
 
 def _seed_default_crops(cur):
@@ -272,10 +300,15 @@ def _migrate_harvest_to_inventory(cur):
 
 
 def init_db():
+    if not has_app_context():
+        with _with_app_context():
+            return init_db()
+
     conn = get_db()
     cur = conn.cursor()
 
-    if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
+    database_uri = str(current_app.config.get("SQLALCHEMY_DATABASE_URI", ""))
+    if current_app.config.get("APP_ENV") == "testing" and database_uri.startswith("sqlite:"):
         for table_name in (
             "knowledge_replies",
             "knowledge_comments",
@@ -516,13 +549,6 @@ def init_db():
     if 'total_transactions' not in users_columns:
         cur.execute("ALTER TABLE users ADD COLUMN total_transactions INTEGER DEFAULT 0")
 
-    cur.execute("SELECT 1 FROM users WHERE username=?", ("admin",))
-    if cur.fetchone() is None:
-        cur.execute(
-            "INSERT INTO users(username, password, role) VALUES (?, ?, ?)",
-            ("admin", generate_password_hash("admin"), "admin"),
-        )
-    
     cur.execute("""
     CREATE TABLE IF NOT EXISTS analytics(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -555,9 +581,17 @@ def init_db():
         sender TEXT,
         recipient TEXT,
         message TEXT,
-        timestamp TEXT
+        timestamp TEXT,
+        attachment_url TEXT,
+        attachment_type TEXT
     )
     """)
+    cur.execute("PRAGMA table_info(messages)")
+    message_columns = [row[1] for row in cur.fetchall()]
+    if "attachment_url" not in message_columns:
+        cur.execute("ALTER TABLE messages ADD COLUMN attachment_url TEXT")
+    if "attachment_type" not in message_columns:
+        cur.execute("ALTER TABLE messages ADD COLUMN attachment_type TEXT")
     
     # Create notifications table (used by the notifications endpoint)
     cur.execute("""
@@ -586,6 +620,7 @@ def init_db():
         created_at TEXT,
         used_at TEXT,
         attempt_count INTEGER NOT NULL DEFAULT 0,
+        purpose TEXT NOT NULL DEFAULT 'password_reset',
         FOREIGN KEY (user_id) REFERENCES users(id)
     )
     """)
@@ -611,6 +646,22 @@ def init_db():
         reviewed_at DATETIME
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS listing_photo_location_alerts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        distance_meters REAL NOT NULL,
+        thumbnail_captured_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        reviewed_by TEXT,
+        reviewed_at DATETIME
+    )
+    """)
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS ix_listing_photo_alerts_status_created "
+        "ON listing_photo_location_alerts(status, created_at)"
+    )
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS knowledge_categories(
@@ -707,11 +758,31 @@ def init_db():
 
     _create_query_indexes(cur)
 
-    # Insert default user if not exists
-    cur.execute("SELECT 1 FROM users WHERE username=?", ("admin",))
+    cur.execute("SELECT 1 FROM users WHERE role='admin' LIMIT 1")
     if not cur.fetchone():
-        cur.execute("INSERT INTO users(username,password,role) VALUES (?,?,?)",
-                    ("admin", generate_password_hash("admin"), 'admin'))
+        bootstrap_username = str(current_app.config.get("INITIAL_ADMIN_USERNAME", "")).strip()
+        bootstrap_password = current_app.config.get("INITIAL_ADMIN_PASSWORD", "")
+        bootstrap_password_error = password_policy_error(
+            bootstrap_password,
+            (bootstrap_username,),
+        ) if bootstrap_password else None
+        if bootstrap_username and len(bootstrap_username) <= 128 and not bootstrap_password_error:
+            cur.execute(
+                "INSERT INTO users(username,password,role) VALUES (?,?,?)",
+                (bootstrap_username, generate_password_hash(bootstrap_password), "admin"),
+            )
+        elif bootstrap_username and bootstrap_password and bootstrap_password_error:
+            conn.close()
+            raise RuntimeError(
+                f"INITIAL_ADMIN_PASSWORD does not meet the password policy: "
+                f"{bootstrap_password_error}"
+            )
+        elif current_app.config.get("APP_ENV") == "production":
+            conn.close()
+            raise RuntimeError(
+                "No administrator exists. Set INITIAL_ADMIN_USERNAME and "
+                "INITIAL_ADMIN_PASSWORD for the initial production bootstrap."
+            )
 
     update_analytics()
 
