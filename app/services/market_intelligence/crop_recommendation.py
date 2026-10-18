@@ -37,8 +37,13 @@ def topsis_method(dataset, weights, criterion_type, graph=True, verbose=True):
 
     positive_distance = np.linalg.norm(weighted - positive_ideal, axis=1)
     negative_distance = np.linalg.norm(weighted - negative_ideal, axis=1)
-    scores = negative_distance / (positive_distance + negative_distance)
-    scores = np.nan_to_num(scores, nan=0.0)
+    distance_sum = positive_distance + negative_distance
+    scores = np.divide(
+        negative_distance,
+        distance_sum,
+        out=np.full_like(distance_sum, 0.5),
+        where=distance_sum > 0,
+    )
     return scores
 
 

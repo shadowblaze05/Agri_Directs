@@ -170,6 +170,23 @@
             });
         }
 
+        function renderStatsError(listIds, retry) {
+            listIds.forEach(listId => {
+                const list = document.getElementById(listId);
+                list.innerHTML = '';
+                const item = document.createElement('li');
+                item.className = 'list-group-item text-danger';
+                item.textContent = 'Unable to load statistics. ';
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'btn btn-link btn-sm p-0';
+                button.textContent = 'Try again';
+                button.addEventListener('click', retry);
+                item.appendChild(button);
+                list.appendChild(item);
+            });
+        }
+
         function createSmallChart(canvasId, labels, values, existingChartRef) {
             const canvas = document.getElementById(canvasId);
             if (!canvas) return null;
@@ -191,7 +208,10 @@
             const m = parseInt(document.getElementById('monthly-offset').value || '0',10);
             const y = parseInt(document.getElementById('yearly-offset').value || '0',10);
             fetch(`/api/stats?monthly_offset=${m}&yearly_offset=${y}`)
-                .then(r=>r.json())
+                .then(r=>{
+                    if (!r.ok) throw new Error('Failed to load statistics');
+                    return r.json();
+                })
                 .then(data=>{
                     document.getElementById('monthly-date-range').textContent = data.selected_month_label + ' vs ' + data.previous_month_label;
                     document.getElementById('yearly-date-range').textContent = data.selected_year_label + ' vs ' + data.previous_year_label;
@@ -200,7 +220,10 @@
                     renderList('crop-monthly-list', data.top_monthly);
                     renderList('crop-yearly-list', data.top_yearly);
                 })
-                .catch(err=>console.error('Error loading stats',err));
+                .catch(err=>{
+                    console.error('Error loading stats',err);
+                    renderStatsError(['crop-monthly-list', 'crop-yearly-list'], fetchAndRender);
+                });
         }
 
         document.addEventListener('DOMContentLoaded', function(){

@@ -3,20 +3,108 @@ let currentConversation = null;
 let allConversations = [];
 let messageRefreshInterval = null;
 let searchTimeout = null;
+let hasLoadedConversations = false;
+let messagesLoadedFor = null;
+let messagesAttemptedFor = null;
+let renderedMessagesFor = null;
+let renderedMessagesSignature = null;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     loadConversations();
+    loadNotifications();
     setupEventListeners();
     // Refresh conversations every 3 seconds
     setInterval(loadConversations, 3000);
+    setInterval(loadNotifications, 10000);
 });
+
+async function loadNotifications() {
+    const notificationList = document.getElementById('notification-list');
+    const notificationCount = document.getElementById('notification-count');
+    if (!notificationList || !notificationCount) return;
+
+    try {
+        const [notificationsResponse, countResponse] = await Promise.all([
+            fetch('/notifications'),
+            fetch('/notifications/unread-count')
+        ]);
+        if (!notificationsResponse.ok || !countResponse.ok) {
+            throw new Error('Failed to load notifications');
+        }
+
+        const notifications = await notificationsResponse.json();
+        const countData = await countResponse.json();
+        const unreadCount = Number(countData.unread_count || 0);
+        notificationCount.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+        notificationCount.classList.toggle('d-none', unreadCount === 0);
+
+        notificationList.replaceChildren();
+        const heading = document.createElement('li');
+        heading.className = 'dropdown-header';
+        heading.textContent = 'Notifications';
+        notificationList.append(heading);
+
+        if (!notifications.length) {
+            const emptyItem = document.createElement('li');
+            const emptyMessage = document.createElement('span');
+            emptyMessage.className = 'dropdown-item text-muted';
+            emptyMessage.textContent = 'No notifications';
+            emptyItem.append(emptyMessage);
+            notificationList.append(emptyItem);
+        } else {
+            notifications.slice(0, 5).forEach((notification) => {
+                const item = document.createElement('li');
+                const link = document.createElement('a');
+                const href = notification.link;
+                link.className = 'dropdown-item text-wrap';
+                link.href = typeof href === 'string' && href.startsWith('/') && !href.startsWith('//')
+                    ? href
+                    : '/notifications-center';
+                if (!notification.is_read) link.classList.add('fw-bold');
+                const title = document.createElement('span');
+                title.className = 'd-block';
+                title.textContent = notification.title || 'Update';
+                const message = document.createElement('small');
+                message.className = 'text-muted';
+                message.textContent = notification.message || '';
+                link.append(title, message);
+                item.append(link);
+                notificationList.append(item);
+            });
+        }
+
+        const footer = document.createElement('li');
+        const allNotifications = document.createElement('a');
+        allNotifications.className = 'dropdown-item text-center text-success';
+        allNotifications.href = '/notifications-center';
+        allNotifications.textContent = 'View all notifications';
+        footer.append(allNotifications);
+        notificationList.append(footer);
+    } catch (error) {
+        console.error('Failed to load notifications:', error);
+    }
+}
 
 // Setup event listeners
 function setupEventListeners() {
     const messageInput = document.getElementById('message-input');
     const sendBtn = document.getElementById('send-btn');
     const searchInput = document.getElementById('conversation-search');
+    const attachmentInput = document.getElementById('attachment-input');
+    const attachmentButton = document.getElementById('attachment-btn');
+    const clearAttachmentButton = document.getElementById('clear-attachment-btn');
+
+    if (attachmentButton && attachmentInput) {
+        attachmentButton.addEventListener('click', () => attachmentInput.click());
+        attachmentInput.addEventListener('change', updateSelectedAttachment);
+    }
+    if (clearAttachmentButton && attachmentInput) {
+        clearAttachmentButton.addEventListener('click', () => {
+            attachmentInput.value = '';
+            updateSelectedAttachment();
+        });
+    }
 
     if (sendBtn) {
         sendBtn.addEventListener('click', sendMessage);
@@ -41,15 +129,44 @@ function setupEventListeners() {
 
 // Load conversation list
 async function loadConversations() {
+    const container = document.getElementById('conversation-list');
+    if (!container) return;
+
+    if (!hasLoadedConversations) {
+        container.innerHTML = `
+            <div class="page-state skeleton" style="min-height: 120px; padding: 1.25rem;" role="status" aria-live="polite">
+                <div class="state-icon"><i class="fas fa-spinner fa-spin"></i></div>
+                <h6 class="state-title">Loading conversations</h6>
+                <p class="state-description">Checking recent messages.</p>
+            </div>
+        `;
+    }
+
     try {
         const response = await fetch('/messages/conversations');
         if (!response.ok) throw new Error('Failed to load conversations');
 
         const conversations = await response.json();
         allConversations = conversations;
-        renderConversationList(conversations);
+        hasLoadedConversations = true;
+        const searchInput = document.getElementById('conversation-search');
+        if (searchInput?.value.trim()) {
+            filterConversations();
+        } else {
+            renderConversationList(conversations);
+        }
     } catch (error) {
         console.error('Error loading conversations:', error);
+        if (!hasLoadedConversations) {
+            container.innerHTML = `
+                <div class="page-state" style="min-height: 120px; padding: 1.25rem;" role="alert">
+                    <div class="state-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    <h6 class="state-title">Unable to load conversations</h6>
+                    <p class="state-description">Check your connection and try again.</p>
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="loadConversations()">Try again</button>
+                </div>
+            `;
+        }
     }
 }
 
@@ -59,64 +176,148 @@ function renderConversationList(conversations) {
 
     if (!conversations || conversations.length === 0) {
         container.innerHTML = `
-            <div class="text-center text-muted p-3">
-                <p><i class="fas fa-inbox"></i></p>
-                <small>No conversations yet</small>
+            <div class="page-state" style="min-height: 120px; padding: 1.25rem;">
+                <div class="state-icon"><i class="fas fa-inbox"></i></div>
+                <h6 class="state-title">No conversations yet</h6>
+                <p class="state-description">Start a chat to begin messaging.</p>
             </div>
         `;
         return;
     }
 
-    container.innerHTML = conversations.map(conv => {
-        const isActive = currentConversation === conv.person ? 'active' : '';
-        const initials = conv.person.substring(0, 2).toUpperCase();
-        const preview = conv.last_message ? conv.last_message.substring(0, 40) + '...' : 'No messages';
-        const timestamp = formatTime(conv.last_timestamp);
+    container.replaceChildren();
+    conversations.forEach((conv) => {
+        const person = String(conv.person || 'Unknown user');
+        const conversation = document.createElement('div');
+        conversation.className = `conversation ${currentConversation === person ? 'active' : ''}`;
+        conversation.setAttribute('role', 'button');
+        conversation.setAttribute('tabindex', '0');
 
-        return `
-            <div class="conversation ${isActive}" onclick="openConversation('${conv.person}')">
-                <div class="conversation-avatar">${initials}</div>
-                <div class="conversation-info">
-                    <div class="conversation-name">${conv.person}</div>
-                    <div class="conversation-preview">${preview}</div>
-                </div>
-                <div class="conversation-time">${timestamp}</div>
-            </div>
-        `;
-    }).join('');
+        const avatar = document.createElement('div');
+        avatar.className = 'conversation-avatar';
+        avatar.textContent = person.substring(0, 2).toUpperCase();
+
+        const info = document.createElement('div');
+        info.className = 'conversation-info';
+        const name = document.createElement('div');
+        name.className = 'conversation-name';
+        name.textContent = person;
+        const preview = document.createElement('div');
+        preview.className = 'conversation-preview';
+        const lastMessage = typeof conv.last_message === 'string' ? conv.last_message : '';
+        preview.textContent = lastMessage ? `${lastMessage.substring(0, 40)}...` : 'No messages';
+        info.append(name, preview);
+
+        const timestamp = document.createElement('div');
+        timestamp.className = 'conversation-time';
+        timestamp.textContent = formatTime(conv.last_timestamp);
+
+        const activate = () => openConversation(person);
+        conversation.addEventListener('click', activate);
+        conversation.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                activate();
+            }
+        });
+        conversation.append(avatar, info, timestamp);
+        container.appendChild(conversation);
+    });
 }
 
 // Open a conversation
 async function openConversation(person) {
+    if (currentConversation !== person) {
+        messagesLoadedFor = null;
+        messagesAttemptedFor = null;
+        renderedMessagesFor = null;
+        renderedMessagesSignature = null;
+    }
     currentConversation = person;
+    document.querySelector('.chat-page')?.classList.add('has-active-conversation');
     renderConversationList(allConversations);
     updateChatHeader(person);
     loadMessages(person);
     setupMessageRefresh(person);
 }
 
+function showConversationList() {
+    document.querySelector('.chat-page')?.classList.remove('has-active-conversation');
+}
+
 // Update chat header with conversation info
 function updateChatHeader(person) {
     const chatHeader = document.getElementById('chat-header');
-    chatHeader.innerHTML = `
-        <div class="chat-header-info">
-            <div class="chat-header-name"><i class="fas fa-user-circle"></i> ${person}</div>
-            <div class="chat-header-status">Active now</div>
-        </div>
-    `;
+    chatHeader.replaceChildren();
+
+    const backButton = document.createElement('button');
+    backButton.className = 'mobile-conversations-back';
+    backButton.type = 'button';
+    backButton.setAttribute('aria-label', 'All conversations');
+    const backIcon = document.createElement('i');
+    backIcon.className = 'fas fa-arrow-left';
+    const backLabel = document.createElement('span');
+    backLabel.textContent = 'Conversations';
+    backButton.append(backIcon, backLabel);
+    backButton.addEventListener('click', showConversationList);
+
+    const info = document.createElement('div');
+    info.className = 'chat-header-info';
+    const name = document.createElement('div');
+    name.className = 'chat-header-name';
+    const userIcon = document.createElement('i');
+    userIcon.className = 'fas fa-user-circle';
+    name.append(userIcon, document.createTextNode(` ${String(person)}`));
+    const status = document.createElement('div');
+    status.className = 'chat-header-status';
+    status.textContent = 'Active now';
+    info.append(name, status);
+    chatHeader.append(backButton, info);
 }
 
 // Load messages for a conversation
 async function loadMessages(person) {
+    const container = document.getElementById('messages-area');
+    const messagesContainer = document.getElementById('messages-container');
+    if (currentConversation === person && messagesAttemptedFor !== person) {
+        messagesContainer.style.display = 'flex';
+        container.innerHTML = `
+            <div class="page-state skeleton" role="status" aria-live="polite">
+                <div class="state-icon"><i class="fas fa-spinner fa-spin"></i></div>
+                <h6 class="state-title">Loading messages</h6>
+                <p class="state-description">Opening this conversation.</p>
+            </div>
+        `;
+        messagesAttemptedFor = person;
+    }
+
     try {
         const response = await fetch(`/messages/${person}`);
         if (!response.ok) throw new Error('Failed to load messages');
 
         const messages = await response.json();
-        renderMessages(messages, person);
-        scrollToBottom();
+        if (currentConversation !== person) return;
+        messagesLoadedFor = person;
+        const signature = JSON.stringify(messages);
+        if (renderedMessagesFor !== person || renderedMessagesSignature !== signature) {
+            renderMessages(messages, person);
+            renderedMessagesFor = person;
+            renderedMessagesSignature = signature;
+            scrollToBottom();
+        }
     } catch (error) {
         console.error('Error loading messages:', error);
+        if (currentConversation === person && messagesLoadedFor !== person) {
+            messagesContainer.style.display = 'flex';
+            container.innerHTML = `
+                <div class="page-state" role="alert">
+                    <div class="state-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    <h6 class="state-title">Unable to load messages</h6>
+                    <p class="state-description">Check your connection and try again.</p>
+                    <button type="button" class="btn btn-sm btn-outline-success" onclick="loadMessages(currentConversation)">Try again</button>
+                </div>
+            `;
+        }
     }
 }
 
@@ -142,18 +343,39 @@ function renderMessages(messages, person) {
         const isSender = msg[0]; // sender
         const messageText = msg[1]; // message
         const timestamp = msg[2]; // timestamp
+        const attachmentUrl = typeof msg[3] === 'string' && msg[3].startsWith('/messages/attachments/')
+            ? msg[3]
+            : '';
+        const attachmentType = msg[4];
         const formattedTime = formatMessageTime(timestamp);
         const isMe = isSender === getCurrentUsername();
+        let attachmentMarkup = '';
+        if (attachmentUrl && attachmentType === 'image') {
+            attachmentMarkup = `<img class="message-attachment" src="${escapeHtml(attachmentUrl)}" alt="Photo attachment" loading="lazy">`;
+        } else if (attachmentUrl && attachmentType === 'video') {
+            attachmentMarkup = `<video class="message-attachment" src="${escapeHtml(attachmentUrl)}" controls preload="metadata"></video>`;
+        }
 
         return `
             <div class="message ${isMe ? "me" : "them"}">
             <div class="message-content">
-                <div class="message-bubble">${escapeHtml(messageText)}</div>
+                ${messageText ? `<div class="message-bubble">${escapeHtml(messageText)}</div>` : ''}
+                ${attachmentMarkup}
                 <div class="message-time">${formattedTime}</div>
             </div>
             </div>
         `;
     }).join('');
+}
+
+function updateSelectedAttachment() {
+    const attachmentInput = document.getElementById('attachment-input');
+    const attachmentRow = document.getElementById('selected-attachment');
+    const attachmentName = document.getElementById('selected-attachment-name');
+    if (!attachmentInput || !attachmentRow || !attachmentName) return;
+    const file = attachmentInput.files[0];
+    attachmentName.textContent = file ? file.name : '';
+    attachmentRow.hidden = !file;
 }
 
 // Send a message
@@ -165,33 +387,35 @@ async function sendMessage() {
 
     const input = document.getElementById('message-input');
     const message = input.value.trim();
+    const attachmentInput = document.getElementById('attachment-input');
+    const attachment = attachmentInput?.files[0];
 
-    if (!message) {
+    if (!message && !attachment) {
         return;
     }
 
     try {
+        const body = new FormData();
+        body.append('recipient', currentConversation);
+        body.append('message', message);
+        if (attachment) body.append('attachment', attachment);
+
         const response = await fetch('/messages/send', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                recipient: currentConversation,
-                message: message
-            })
+            body
         });
 
-        if (!response.ok) throw new Error('Failed to send message');
-
         const result = await response.json();
-        if (result.status === 'success') {
-            input.value = '';
-            loadMessages(currentConversation);
+        if (!response.ok || result.status !== 'success') {
+            throw new Error(result.message || 'Failed to send message');
         }
+        input.value = '';
+        if (attachmentInput) attachmentInput.value = '';
+        updateSelectedAttachment();
+        loadMessages(currentConversation);
     } catch (error) {
         console.error('Error sending message:', error);
-        alert('Failed to send message');
+        alert(error.message || 'Failed to send message');
     }
 }
 
@@ -231,10 +455,13 @@ async function filterConversations() {
             return { person: u, last_message: null, last_timestamp: null };
         });
 
+        if (searchInput.value.trim().toLowerCase() !== searchTerm) return;
         renderConversationList(results);
     } catch (e) {
         console.error('User search error', e);
-        renderConversationList([]);
+        if (searchInput.value.trim().toLowerCase() === searchTerm) {
+            renderConversationList([]);
+        }
     }
 }
 

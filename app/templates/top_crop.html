@@ -168,8 +168,30 @@
             items.slice(0,5).forEach(it => {
                 const li = document.createElement('li');
                 li.className = 'list-group-item d-flex justify-content-between align-items-center';
-                li.innerHTML = `<span>${it.name}</span><span class="badge bg-success">${it.total}</span>`;
+                const name = document.createElement('span');
+                name.textContent = String(it.name ?? '');
+                const total = document.createElement('span');
+                total.className = 'badge bg-success';
+                total.textContent = String(it.total ?? '');
+                li.append(name, total);
                 list.appendChild(li);
+            });
+        }
+
+        function renderStatsError(listIds, retry) {
+            listIds.forEach(listId => {
+                const list = document.getElementById(listId);
+                list.innerHTML = '';
+                const item = document.createElement('li');
+                item.className = 'list-group-item text-danger';
+                item.textContent = 'Unable to load statistics. ';
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'btn btn-link btn-sm p-0';
+                button.textContent = 'Try again';
+                button.addEventListener('click', retry);
+                item.appendChild(button);
+                list.appendChild(item);
             });
         }
 
@@ -194,14 +216,20 @@
             const m = parseInt(document.getElementById('monthly-offset').value || '0',10);
             const y = parseInt(document.getElementById('yearly-offset').value || '0',10);
             fetch(`/api/stats?monthly_offset=${m}&yearly_offset=${y}`)
-                .then(r=>r.json())
+                .then(r=>{
+                    if (!r.ok) throw new Error('Failed to load statistics');
+                    return r.json();
+                })
                 .then(data=>{
                     topMonthlyChart = createSmallChart('top-monthly-chart', data.top_monthly.map(i=>i.name), data.top_monthly.map(i=>i.total), topMonthlyChart);
                     topYearlyChart = createSmallChart('top-yearly-chart', data.top_yearly.map(i=>i.name), data.top_yearly.map(i=>i.total), topYearlyChart);
                     renderTopList('top-monthly-list', data.top_monthly);
                     renderTopList('top-yearly-list', data.top_yearly);
                 })
-                .catch(err=>console.error('Error loading stats',err));
+                .catch(err=>{
+                    console.error('Error loading stats',err);
+                    renderStatsError(['top-monthly-list', 'top-yearly-list'], fetchAndRenderTop);
+                });
         }
 
         document.addEventListener('DOMContentLoaded', function(){

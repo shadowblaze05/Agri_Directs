@@ -44,6 +44,7 @@ def load_transaction_records():
         SELECT c.crops_name AS crop_name, i.quantity, i.date_received, i.location
         FROM inventory i
         LEFT JOIN crops c ON c.id = i.crop_id
+        WHERE i.source IS NULL OR i.source = 'harvest'
         ORDER BY i.date_received DESC
         """
     )

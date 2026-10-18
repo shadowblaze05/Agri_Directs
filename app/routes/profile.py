@@ -9,12 +9,14 @@ from PIL import Image, UnidentifiedImageError
 import requests
 
 from .. import legacy as core
+from ..algorithms.reliability_score import seller_reliability_status
 from ..models.database import get_db
 from ..services.geotag_service import (
     resolve_psgc_location,
     reverse_geocode_coordinates,
     validate_coordinates,
 )
+from ..services.upload_service import save_sanitized_public_image
 
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
 
@@ -22,8 +24,33 @@ ALLOWED_PROFILE_IMAGE_FORMATS = {"png": "PNG", "jpg": "JPEG", "jpeg": "JPEG", "w
 
 
 def _profile_data(cursor, username):
-    cursor.execute("SELECT * FROM users WHERE username=?", (username,))
+    cursor.execute(
+        """SELECT username, first_name, last_name, email, phone_number,
+                  profile_picture, bio, role, is_verified, location_latitude,
+                  location_longitude, location_verified, profile_photo_captured_at,
+                  psgc_location, geotag_location
+           FROM users WHERE username=?""",
+        (username,),
+    )
     return cursor.fetchone()
+
+
+def _seller_reliability(cursor, username):
+    cursor.execute(
+        "SELECT AVG(buyer_rating) AS average_rating, COUNT(buyer_rating) AS rating_count "
+        "FROM marketplace WHERE username=? AND buyer_rating IS NOT NULL",
+        (username,),
+    )
+    summary = cursor.fetchone() or {}
+    if not isinstance(summary, dict):
+        summary = {}
+    average_rating = summary.get("average_rating")
+    rating_count = summary.get("rating_count") or 0
+    return {
+        "score": round(average_rating, 2) if average_rating is not None else None,
+        "rating_count": rating_count,
+        "status": seller_reliability_status(average_rating),
+    }
 
 
 def profile():
@@ -34,6 +61,7 @@ def profile():
     conn = get_db()
     cur = conn.cursor()
     user = _profile_data(cur, session["user"])
+    reliability_summary = _seller_reliability(cur, session["user"])
     cur.execute(
         "SELECT COUNT(DISTINCT crop_id) AS crop_count, COALESCE(SUM(quantity), 0) AS total_quantity "
         "FROM inventory WHERE farmer=?", (session["user"],)
@@ -51,6 +79,7 @@ def profile():
     return render_template(
         "profile.html",
         user=user,
+        reliability_summary=reliability_summary,
         inventory_summary=inventory_summary,
         recent_inventory=recent_inventory,
         missing_profile_requirements=missing_requirements,
@@ -58,18 +87,59 @@ def profile():
 
 
 def seller_profile(username):
-    """Show marketplace contact details for a seller without account controls."""
+    """Show public marketplace contact details without account controls."""
     if "user" not in session:
         return redirect("/login")
 
     conn = get_db()
     cur = conn.cursor()
     user = _profile_data(cur, username)
+    reliability_summary = _seller_reliability(cur, username) if user else None
     conn.close()
     if not user:
         abort(404)
 
-    return render_template("profile.html", user=user, is_public_profile=True)
+    return render_template(
+        "profile.html",
+        user=user,
+        reliability_summary=reliability_summary,
+        is_public_profile=True,
+    )
+
+
+def report_profile(username):
+    """Submit a report about a publicly viewable profile."""
+    if "user" not in session:
+        return redirect(url_for("login"))
+    if username == session["user"]:
+        flash("You cannot report your own profile.")
+        return redirect(url_for("profile"))
+
+    description = request.form.get("description", "").strip()
+    if len(description) < 10 or len(description) > 2000:
+        flash("Report details must be between 10 and 2,000 characters.")
+        return redirect(url_for("seller_profile", username=username))
+
+    conn = get_db()
+    cur = conn.cursor()
+    target = cur.execute(
+        "SELECT username FROM users WHERE username=?",
+        (username,),
+    ).fetchone()
+    if not target:
+        conn.close()
+        abort(404)
+
+    cur.execute(
+        """INSERT INTO profile_reports
+           (reporter_username, reported_username, description)
+           VALUES (?, ?, ?)""",
+        (session["user"], username, description),
+    )
+    conn.commit()
+    conn.close()
+    flash("Your report has been sent to the Agri-Direct administrators.")
+    return redirect(url_for("seller_profile", username=username))
 
 
 def update_profile():
@@ -188,7 +258,12 @@ def capture_profile_location():
     filename = f"{uuid.uuid4().hex}.{extension}"
     profile_dir = os.path.join(core.app.static_folder, "uploads", "profiles")
     os.makedirs(profile_dir, exist_ok=True)
-    image.save(os.path.join(profile_dir, filename))
+    save_sanitized_public_image(
+        image,
+        os.path.join(profile_dir, filename),
+        expected_format,
+        core.app.config["MAX_PROFILE_PHOTO_SIZE_BYTES"],
+    )
     captured_at_iso = captured_at.astimezone(timezone.utc).isoformat()
     verified_at = now.isoformat()
     conn = get_db()
@@ -230,10 +305,11 @@ def capture_profile_location():
 def register(application):
     application.add_url_rule('/profile', endpoint='profile', view_func=profile)
     application.add_url_rule('/profile/<username>', endpoint='seller_profile', view_func=seller_profile)
+    application.add_url_rule('/profile/<username>/report', endpoint='report_profile', view_func=report_profile, methods=['POST'])
     application.add_url_rule('/profile/update', endpoint='update_profile', view_func=update_profile, methods=['GET', 'POST'])
     application.add_url_rule('/profile/location', endpoint='capture_profile_location', view_func=capture_profile_location, methods=['POST'])
     for _name in __all__:
         setattr(core, _name, globals()[_name])
 
 
-__all__ = ['profile', 'seller_profile', 'update_profile', 'capture_profile_location']
+__all__ = ['profile', 'seller_profile', 'report_profile', 'update_profile', 'capture_profile_location']

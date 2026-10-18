@@ -108,3 +108,46 @@ body.admin-page {
     font-weight: 600;
     text-decoration: none;
 }
+
+.admin-page .audit-stat-icon {
+    color: #5b8f4a;
+    font-size: 1.5rem;
+}
+
+.admin-page .audit-filters,
+.admin-page .audit-table-card {
+    overflow: hidden;
+}
+
+.admin-page .audit-context summary {
+    color: var(--agri-green);
+    cursor: pointer;
+    font-size: .875rem;
+    font-weight: 600;
+}
+
+.admin-page .audit-context dl {
+    min-width: 15rem;
+    max-width: 24rem;
+}
+
+.admin-page .audit-context dd {
+    overflow-wrap: anywhere;
+}
+
+.admin-page .audit-user-agent {
+    max-height: 5rem;
+    overflow-y: auto;
+}
+
+@media (max-width: 575.98px) {
+    .admin-page .audit-filters .input-group {
+        flex-wrap: wrap;
+    }
+
+    .admin-page .audit-filters .input-group .form-control {
+        min-width: 100%;
+        border-radius: .375rem !important;
+        margin-bottom: .5rem;
+    }
+}

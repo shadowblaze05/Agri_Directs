@@ -193,6 +193,40 @@
         .breadcrumb-item a:hover {
             text-decoration: underline;
         }
+        @media (max-width: 991.98px) {
+            .main-content { margin-left: 0; }
+            .sidebar { display: none; }
+            .navbar-brand { margin-left: 0 !important; }
+        }
+        @media (max-width: 767.98px) {
+            .carousel-inner img { height: 360px; }
+            .product-details { padding: 22px; }
+            .price-large { font-size: 2.1rem; }
+        }
+        @media (max-width: 575.98px) {
+            .product-image-container { padding: 12px; }
+            .carousel-inner img { height: 280px; }
+            .product-details { padding: 18px; }
+            .product-details h1 { font-size: 1.65rem; }
+            .product-details > .row.mb-3 > div { width: 100%; }
+            .product-details > .row.mb-3 > div + div { margin-top: .5rem; }
+            .product-details .row.g-2.mb-3 > .col-4,
+            .product-details .row.g-2.mb-3 > .col-8 {
+                width: 100%;
+            }
+            .product-details .row.g-2.mb-3 > .col-8 {
+                flex-direction: column;
+                align-items: stretch !important;
+                gap: .5rem;
+            }
+            .product-details .row.g-2.mb-3 > .col-8 > .btn {
+                margin: 0 !important;
+                min-height: 44px;
+            }
+            .thumbnail-wrapper img { width: 64px; height: 64px; }
+            .carousel-control-prev,
+            .carousel-control-next { width: 16%; }
+        }
     </style>
 </head>
 <body>
@@ -429,9 +463,15 @@
                             </h6>
                             <p class="mb-1"><strong>{{ listing.seller_name }}</strong></p>
                             {% if listing.location %}
-                            <p class="text-muted small mb-0">
+                            <p class="text-muted small mb-2">
                                 <i class="fas fa-map-marker-alt"></i> {{ listing.location }}
                             </p>
+                            {% endif %}
+                            {% if listing.listing_type != 'looking_for' and listing.seller_name != session.get('user') %}
+                            <a href="{{ url_for('messages_page', recipient=listing.seller_name) }}"
+                               class="btn btn-outline-success btn-sm">
+                                <i class="fas fa-comments me-1"></i>Contact Seller
+                            </a>
                             {% endif %}
                         </div>
                     </div>

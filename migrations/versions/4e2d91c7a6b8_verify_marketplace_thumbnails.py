@@ -10,16 +10,35 @@ branch_labels = None
 depends_on = None
 
 
+def _add_column_if_missing(table_name, column):
+    existing_columns = {
+        existing["name"] for existing in sa.inspect(op.get_bind()).get_columns(table_name)
+    }
+    if column.name not in existing_columns:
+        op.add_column(table_name, column)
+        return True
+    return False
+
+
 def upgrade():
-    op.add_column(
+    added_verification_column = _add_column_if_missing(
         "marketplace",
         sa.Column("thumbnail_verified", sa.Integer(), nullable=False, server_default="0"),
     )
-    op.add_column("marketplace", sa.Column("thumbnail_latitude", sa.Float(), nullable=True))
-    op.add_column("marketplace", sa.Column("thumbnail_longitude", sa.Float(), nullable=True))
-    op.add_column("marketplace", sa.Column("thumbnail_distance_meters", sa.Float(), nullable=True))
-    op.add_column("marketplace", sa.Column("thumbnail_captured_at", sa.String(length=32), nullable=True))
-    op.execute("UPDATE marketplace SET main_image = NULL WHERE thumbnail_verified = 0")
+    _add_column_if_missing(
+        "marketplace", sa.Column("thumbnail_latitude", sa.Float(), nullable=True)
+    )
+    _add_column_if_missing(
+        "marketplace", sa.Column("thumbnail_longitude", sa.Float(), nullable=True)
+    )
+    _add_column_if_missing(
+        "marketplace", sa.Column("thumbnail_distance_meters", sa.Float(), nullable=True)
+    )
+    _add_column_if_missing(
+        "marketplace", sa.Column("thumbnail_captured_at", sa.String(length=32), nullable=True)
+    )
+    if added_verification_column:
+        op.execute("UPDATE marketplace SET main_image = NULL WHERE thumbnail_verified = 0")
 
 
 def downgrade():

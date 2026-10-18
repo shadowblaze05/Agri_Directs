@@ -23,6 +23,7 @@ class KnowledgePost(Model):
     image = Column(String(500))
     video = Column(String(500))
     status = Column(String(32), default="Published")
+    is_pinned = Column(Integer, nullable=False, default=0, server_default="0")
     views = Column(Integer, default=0)
     created_at = Column(DateTime, server_default=func.current_timestamp())
     updated_at = Column(DateTime)

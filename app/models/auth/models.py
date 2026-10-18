@@ -81,6 +81,12 @@ class User(Model):
         nullable=False
     )
 
+    is_active = Column(
+        Boolean,
+        default=True,
+        nullable=False
+    )
+
     location = Column(
         String(255),
         nullable=True

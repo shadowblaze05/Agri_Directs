@@ -93,7 +93,6 @@
       }
       .profile-card {
         padding: 24px;
-        height: 100%;
       }
       .section-title {
         font-size: 1rem;
@@ -244,9 +243,9 @@
         <div class="page-header">
           <div class="row align-items-center">
             <div class="col">
-              <h2><i class="fas fa-user-circle"></i> {{ 'Seller Profile' if is_public_profile else 'My Profile' }}</h2>
+              <h2><i class="fas fa-user-circle"></i> {{ (user.role|title ~ ' Profile') if is_public_profile else 'My Profile' }}</h2>
               <p class="text-muted mb-0">
-                    {{ 'Seller information and contact details.' if is_public_profile else 'Manage your personal details and farm information.' }}
+                    {{ 'Profile information and contact details.' if is_public_profile else 'Manage your personal details and farm information.' }}
               </p>
             </div>
             <div class="col-auto">
@@ -310,12 +309,8 @@
                   <div>{{ user.phone_number or 'Not provided' }}</div>
                 </div>
                 <div class="col-12">
-                  <div class="detail-label">PSGC Location</div>
-                  <div>{{ user.psgc_location or 'No PSGC match yet.' }}</div>
-                  <div class="detail-label mt-3">GPS-derived Place</div>
-                  <div>
-                    {{ user.geotag_location or 'Capture a profile photo with GPS to save this place.' }}
-                  </div>
+                  <div class="detail-label">Location</div>
+                  <div>{{ user.psgc_location or 'Not available' }}</div>
                 </div>
                 <div class="col-12">
                   <div class="detail-label">About</div>
@@ -369,10 +364,22 @@
           <aside class="col-lg-4">
             {% if is_public_profile %}
             <section class="profile-card mb-4">
+              <h2 class="section-title mb-2">Farmer reliability</h2>
+              {% if reliability_summary.score is not none %}
+              <div class="stat-value">{{ '%.1f'|format(reliability_summary.score) }}/5</div>
+              <p class="mb-0">
+                <span class="badge {{ 'bg-success' if reliability_summary.status == 'High Reliability' else 'bg-warning text-dark' if reliability_summary.status == 'Medium Reliability' else 'bg-danger' if reliability_summary.status == 'Low Reliability' else 'bg-secondary' }}">{{ reliability_summary.status }}</span>
+                <small class="text-muted">Based on {{ reliability_summary.rating_count }} buyer rating{{ '' if reliability_summary.rating_count == 1 else 's' }}.</small>
+              </p>
+              {% else %}
+              <p class="text-muted mb-0">Not yet rated by marketplace buyers.</p>
+              {% endif %}
+            </section>
+            <section class="profile-card mb-4">
               <h2 class="section-title mb-3">Contact {{ user.first_name or user.username }}</h2>
               {% if user.email %}
               <a class="btn btn-success w-100 mb-2" href="mailto:{{ user.email }}">
-                <i class="fas fa-envelope me-1"></i> Email seller
+                <i class="fas fa-envelope me-1"></i> Email
               </a>
               {% endif %}
               {% if user.phone_number %}
@@ -381,10 +388,39 @@
               </a>
               {% endif %}
               <a class="btn btn-outline-success w-100" href="/messages?recipient={{ user.username }}">
-                <i class="fas fa-comments me-1"></i> Message seller
+                <i class="fas fa-comments me-1"></i> Message
               </a>
             </section>
+            {% if user.username != session.get('user') %}
+            <section class="profile-card mb-4">
+              <h2 class="section-title mb-3">Report this profile</h2>
+              <p class="small text-muted">Tell the administrators what went wrong. Reports are reviewed privately.</p>
+              <button class="btn btn-outline-danger w-100" type="button" data-bs-toggle="collapse" data-bs-target="#profileReportForm" aria-expanded="false" aria-controls="profileReportForm">
+                <i class="fas fa-flag me-1"></i> Report profile
+              </button>
+              <div class="collapse mt-3" id="profileReportForm">
+                <form method="post" action="{{ url_for('report_profile', username=user.username) }}">
+                  <label class="form-label" for="profile-report-description">Describe the problem</label>
+                  <textarea class="form-control mb-2" id="profile-report-description" name="description" rows="4" minlength="10" maxlength="2000" required></textarea>
+                  <button class="btn btn-danger w-100" type="submit">Submit report</button>
+                </form>
+              </div>
+            </section>
+            {% endif %}
             {% else %}
+            <section class="profile-card mb-4">
+              <h2 class="section-title mb-2">Farmer reliability</h2>
+              {% if reliability_summary.score is not none %}
+              <div class="stat-value">{{ '%.1f'|format(reliability_summary.score) }}/5</div>
+              <p class="mb-0">
+                <span class="badge {{ 'bg-success' if reliability_summary.status == 'High Reliability' else 'bg-warning text-dark' if reliability_summary.status == 'Medium Reliability' else 'bg-danger' if reliability_summary.status == 'Low Reliability' else 'bg-secondary' }}">{{ reliability_summary.status }}</span>
+                <small class="text-muted">Based on {{ reliability_summary.rating_count }} buyer rating{{ '' if reliability_summary.rating_count == 1 else 's' }}.</small>
+              </p>
+              {% else %}
+              <p class="text-muted mb-0">Not yet rated by marketplace buyers.</p>
+              {% endif %}
+              <p class="small text-muted mt-2 mb-0">This score is the average of ratings submitted after confirmed marketplace orders.</p>
+            </section>
             <section class="profile-card mb-4" aria-labelledby="location-verification-heading">
               <h2 id="location-verification-heading" class="section-title mb-2">
                 <i class="fas fa-location-dot me-2"></i>Camera-verified profile location
@@ -400,8 +436,7 @@
               <a class="btn btn-outline-success btn-sm" href="{{ url_for('update_profile') }}">
                 <i class="fas fa-camera me-1"></i>{{ 'Update profile photo and location' if user.profile_picture else 'Capture profile photo and location' }}
               </a>
-              <p class="small mt-3 mb-1"><strong>GPS-derived place:</strong> {{ user.geotag_location or 'Not captured yet' }}</p>
-              <p class="small mb-0"><strong>PSGC location:</strong> {{ user.psgc_location or 'No match found yet' }}</p>
+              <p class="small mt-3 mb-0"><strong>Location:</strong> {{ user.psgc_location or 'Not available' }}</p>
             </section>
             <section class="profile-card mb-4">
               <h2 class="section-title mb-3">Farm Activity</h2>
@@ -424,7 +459,7 @@
               <h2 class="section-title mb-3">Profile Status</h2>
               <p class="small text-muted mb-3">
                 Harvest submission requires your first and last name, email, and a camera-captured
-                profile photo with a GPS-derived farm location. Phone number and bio are optional.
+                profile photo and location capture. Phone number and bio are optional.
               </p>
               {% if missing_profile_requirements %}
                 <div class="alert alert-warning py-2 small">

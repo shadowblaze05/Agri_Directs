@@ -17,6 +17,131 @@ h1, h2 {
     background: darkgreen;
 }
 
+.page-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    min-height: 180px;
+    padding: 2rem 1.25rem;
+    border-radius: 12px;
+    background: linear-gradient(180deg, #ffffff 0%, #f7faf7 100%);
+    border: 1px solid rgba(45, 80, 22, 0.08);
+    color: #4b5563;
+    text-align: center;
+}
+
+.page-state .state-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: #edf7ee;
+    color: #2d5016;
+    font-size: 1.25rem;
+}
+
+.page-state .state-title {
+    margin: 0;
+    color: #1f2937;
+    font-weight: 700;
+}
+
+.page-state .state-description {
+    margin: 0;
+    max-width: 480px;
+    color: #6b7280;
+    line-height: 1.5;
+}
+
+.page-state.skeleton {
+    background: linear-gradient(90deg, #f5f5f5 25%, #ececec 50%, #f5f5f5 75%);
+    background-size: 200% 100%;
+    animation: statePulse 1.4s ease infinite;
+    border: 1px solid rgba(17, 24, 39, 0.04);
+}
+
+.page-state .skeleton-line {
+    display: block;
+    width: 180px;
+    height: 12px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.3);
+}
+
+.page-state .skeleton-line.short {
+    width: 100px;
+}
+
+@keyframes statePulse {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.notification-list-empty {
+    padding: 1.25rem 0.75rem;
+}
+
+.toast-status {
+    position: fixed;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 1100;
+    display: none;
+    max-width: 320px;
+    padding: 0.75rem 1rem;
+    border-radius: 10px;
+    background: rgba(17, 24, 39, 0.92);
+    color: white;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.18);
+}
+
+.toast-status.show {
+    display: block;
+}
+
+@media (min-width: 576px) and (max-width: 991.98px) {
+    .sidebar {
+        width: 68px !important;
+        padding: 80px 5px 12px !important;
+        overflow-x: hidden !important;
+    }
+
+    .sidebar .nav-link {
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 52px;
+        min-height: 48px;
+        margin: 4px auto !important;
+        padding: 8px 4px !important;
+        border-radius: 8px !important;
+        font-size: 0 !important;
+        white-space: nowrap;
+    }
+
+    .sidebar .nav-link i {
+        width: auto !important;
+        margin: 0 !important;
+        font-size: 1.15rem !important;
+        line-height: 1;
+    }
+
+    .main-content {
+        width: calc(100% - 68px) !important;
+        max-width: calc(100% - 68px) !important;
+        min-width: 0 !important;
+        margin-left: 68px !important;
+    }
+
+    .navbar-custom .navbar-brand {
+        margin-left: 0 !important;
+    }
+}
+
 @media (max-width: 575.98px) {
     html,
     body {
@@ -26,7 +151,7 @@ h1, h2 {
     }
 
     body {
-        padding-bottom: calc(64px + env(safe-area-inset-bottom)) !important;
+        padding-bottom: calc(56px + env(safe-area-inset-bottom)) !important;
     }
 
     .sidebar {
@@ -37,7 +162,7 @@ h1, h2 {
         bottom: 0 !important;
         left: 0 !important;
         width: 100% !important;
-        height: calc(64px + env(safe-area-inset-bottom)) !important;
+        height: calc(56px + env(safe-area-inset-bottom)) !important;
         min-height: 0 !important;
         padding: 0 0 env(safe-area-inset-bottom) !important;
         overflow: hidden !important;
@@ -52,7 +177,7 @@ h1, h2 {
         flex-wrap: nowrap !important;
         align-items: stretch;
         width: 100%;
-        height: 64px;
+        height: 56px;
         overflow-x: auto;
         overflow-y: hidden;
         scrollbar-width: none;
@@ -69,21 +194,21 @@ h1, h2 {
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 0.2rem;
-        min-width: 66px;
-        min-height: 58px;
+        gap: 0;
+        min-width: 50px;
+        min-height: 52px;
         margin: 0 !important;
         padding: 0.35rem 0.45rem !important;
         border-radius: 0 !important;
         color: rgba(255, 255, 255, 0.86) !important;
-        font-size: 0.62rem !important;
+        font-size: 0 !important;
         line-height: 1.1;
         text-align: center !important;
         white-space: nowrap;
     }
 
     .sidebar .nav-link i {
-        font-size: 1rem !important;
+        font-size: 1.15rem !important;
         line-height: 1;
     }
 
@@ -105,7 +230,7 @@ h1, h2 {
         width: 100% !important;
         max-width: 100% !important;
         min-width: 0 !important;
-        min-height: calc(100vh - 124px);
+        min-height: calc(100vh - 116px);
         margin: 60px 0 0 !important;
         padding: 12px !important;
     }
@@ -153,7 +278,7 @@ h1, h2 {
     }
 
     .chat-page {
-        height: calc(100dvh - 134px) !important;
+        height: calc(100dvh - 126px) !important;
         min-height: 0 !important;
     }
 }

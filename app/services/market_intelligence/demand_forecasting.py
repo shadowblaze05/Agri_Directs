@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Iterable
 
+import numpy as np
 import pandas as pd
+from statsmodels.tools.sm_exceptions import ConvergenceWarning, EstimationWarning
 from statsmodels.tsa.arima.model import ARIMA
 
 
@@ -29,14 +32,24 @@ class DemandForecastingService:
             return 0.0, "insufficient-data"
         if len(values) == 1:
             return float(values[-1]), "fallback-linear"
+        if all(value == values[0] for value in values[1:]):
+            return max(0.0, values[-1]), "fallback-linear"
 
         try:
             series = pd.Series(values, dtype=float)
-            model = ARIMA(series, order=(1, 0, 0))
-            result = model.fit()
-            forecast_value = float(result.forecast(steps=1)[0])
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", (EstimationWarning, ConvergenceWarning))
+                model = ARIMA(series, order=(1, 0, 0))
+                result = model.fit()
+                forecast_value = float(result.forecast(steps=1)[0])
             return max(0.0, forecast_value), "arima"
-        except Exception:
+        except (
+            ConvergenceWarning,
+            EstimationWarning,
+            np.linalg.LinAlgError,
+            ValueError,
+            FloatingPointError,
+        ):
             slope = 0.0
             if len(values) > 1:
                 slope = (values[-1] - values[-2]) / max(1.0, abs(values[-2]))

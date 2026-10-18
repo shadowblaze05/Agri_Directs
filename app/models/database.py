@@ -9,18 +9,19 @@ import importlib
 import logging
 import os
 import re
-import sys
+import uuid
 from collections import defaultdict
 from contextlib import nullcontext
 from datetime import datetime
 
-from flask import has_app_context
-from sqlalchemy import text
+from flask import current_app, has_app_context
+from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 
 from ..extensions import db
+from ..password_policy import password_policy_error
 from ..algorithms.market_analysis import build_market_analysis
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -119,7 +120,16 @@ class PostgreSQLCursor:
                     )
                     params = (legacy_params[0],) + legacy_params
 
-        translated_sql, pragma_params = self._translate_sql(sql)
+        if db.engine.dialect.name == "postgresql":
+            translated_sql, pragma_params = self._translate_sql(sql)
+        else:
+            translated_sql = re.sub(
+                r"SUBSTRING\(([\w.]+)\s+FROM\s+(\d+)\s+FOR\s+(\d+)\)",
+                r"SUBSTR(\1, \2, \3)",
+                sql,
+                flags=re.IGNORECASE,
+            )
+            pragma_params = None
         effective_params = pragma_params if pragma_params is not None else params
         translated_sql, named_params = self._named_parameters(translated_sql, effective_params)
         with _with_app_context():
@@ -185,13 +195,14 @@ class SQLAlchemyConnection:
 
     def commit(self):
         with _with_app_context():
-            db.session.execute(
-                text(
-                    "UPDATE inventory "
-                    "SET crop_name = (SELECT crops.crops_name FROM crops WHERE crops.id = inventory.crop_id) "
-                    "WHERE crop_name IS NULL AND crop_id IS NOT NULL"
+            if inspect(db.engine).has_table("inventory") and inspect(db.engine).has_table("crops"):
+                db.session.execute(
+                    text(
+                        "UPDATE inventory "
+                        "SET crop_name = (SELECT crops.crops_name FROM crops WHERE crops.id = inventory.crop_id) "
+                        "WHERE crop_name IS NULL AND crop_id IS NOT NULL"
+                    )
                 )
-            )
             db.session.flush()
             db.session.commit()
 
@@ -204,18 +215,35 @@ class SQLAlchemyConnection:
 
 
 def _save_upload_file(uploaded_file, subfolder):
+    from ..services.upload_service import save_sanitized_public_image, save_video_upload
+
     if not uploaded_file or uploaded_file.filename == "":
         return None
 
-    upload_dir = os.path.join(BASE_DIR, "static", "uploads", "knowledge", subfolder)
-    os.makedirs(upload_dir, exist_ok=True)
     filename = secure_filename(uploaded_file.filename)
-    if not filename:
-        return None
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    image_formats = {"png": "PNG", "jpg": "JPEG", "jpeg": "JPEG", "gif": "GIF", "webp": "WEBP"}
+    video_extensions = {"mp4", "m4v", "mov", "webm"}
+    if subfolder == "images" and extension not in image_formats:
+        raise ValueError("Knowledge Hub images must be PNG, JPG, JPEG, GIF, or WEBP.")
+    if subfolder == "videos" and extension not in video_extensions:
+        raise ValueError("Knowledge Hub videos must be MP4, M4V, MOV, or WEBM.")
+    if subfolder not in {"images", "videos"}:
+        raise ValueError("Unsupported Knowledge Hub upload category.")
 
-    file_path = os.path.join(upload_dir, filename)
-    uploaded_file.save(file_path)
-    return f"/static/uploads/knowledge/{subfolder}/{filename}"
+    upload_dir = os.path.join(current_app.static_folder, "uploads", "knowledge", subfolder)
+    os.makedirs(upload_dir, exist_ok=True)
+    if not filename:
+        raise ValueError("The uploaded filename is invalid.")
+
+    stored_filename = f"{uuid.uuid4().hex}.{extension}"
+    file_path = os.path.join(upload_dir, stored_filename)
+    maximum_size = current_app.config["MAX_KNOWLEDGE_MEDIA_SIZE_BYTES"]
+    if subfolder == "images":
+        save_sanitized_public_image(uploaded_file, file_path, image_formats[extension], maximum_size)
+    else:
+        save_video_upload(uploaded_file, file_path, extension, maximum_size)
+    return f"/static/uploads/knowledge/{subfolder}/{stored_filename}"
 
 
 def _seed_default_crops(cur):
@@ -272,13 +300,30 @@ def _migrate_harvest_to_inventory(cur):
 
 
 def init_db():
+    if not has_app_context():
+        with _with_app_context():
+            return init_db()
+
     conn = get_db()
     cur = conn.cursor()
 
-    if "pytest" in sys.modules or os.environ.get("PYTEST_CURRENT_TEST"):
-        cur.execute("DELETE FROM inventory")
-        cur.execute("DELETE FROM analytics")
-        cur.execute("DELETE FROM users")
+    database_uri = str(current_app.config.get("SQLALCHEMY_DATABASE_URI", ""))
+    if current_app.config.get("APP_ENV") == "testing" and database_uri.startswith("sqlite:"):
+        for table_name in (
+            "knowledge_replies",
+            "knowledge_comments",
+            "knowledge_likes",
+            "knowledge_posts",
+            "notifications",
+            "messages",
+            "inventory",
+            "analytics",
+            "users",
+        ):
+            try:
+                cur.execute(f"DELETE FROM {table_name}")
+            except Exception:
+                logger.debug("Skipping reset for missing table %s", table_name)
         conn.commit()
 
     # Create referenced domain tables before PostgreSQL validates foreign keys.
@@ -291,6 +336,7 @@ def init_db():
         password TEXT,
         role TEXT DEFAULT 'user',
         location TEXT,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
         reliability_score REAL DEFAULT NULL,
         reliability_status TEXT DEFAULT 'Not Yet Rated',
         completed_transactions INTEGER DEFAULT 0,
@@ -394,6 +440,11 @@ def init_db():
         listing_date TEXT,
         order_date TEXT,
         delivery_date TEXT,
+        delivery_province TEXT,
+        delivery_city TEXT,
+        delivery_barangay TEXT,
+        delivery_street TEXT,
+        delivery_landmark TEXT,
         expiry_date TEXT,
         description TEXT,
         location TEXT,
@@ -443,6 +494,11 @@ def init_db():
         'thumbnail_longitude': 'REAL',
         'thumbnail_distance_meters': 'REAL',
         'thumbnail_captured_at': 'TEXT',
+        'delivery_province': 'TEXT',
+        'delivery_city': 'TEXT',
+        'delivery_barangay': 'TEXT',
+        'delivery_street': 'TEXT',
+        'delivery_landmark': 'TEXT',
         'listing_type': "TEXT DEFAULT 'standard'",
         'available_date': 'TEXT',
         'preorder_status': 'TEXT',
@@ -464,6 +520,7 @@ def init_db():
         'email': 'TEXT',
         'first_name': 'TEXT',
         'last_name': 'TEXT',
+        'is_active': 'BOOLEAN NOT NULL DEFAULT TRUE',
         'phone_number': 'TEXT',
         'profile_picture': 'TEXT',
         'bio': 'TEXT',
@@ -491,7 +548,7 @@ def init_db():
         cur.execute("ALTER TABLE users ADD COLUMN cancelled_transactions INTEGER DEFAULT 0")
     if 'total_transactions' not in users_columns:
         cur.execute("ALTER TABLE users ADD COLUMN total_transactions INTEGER DEFAULT 0")
-    
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS analytics(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -524,9 +581,17 @@ def init_db():
         sender TEXT,
         recipient TEXT,
         message TEXT,
-        timestamp TEXT
+        timestamp TEXT,
+        attachment_url TEXT,
+        attachment_type TEXT
     )
     """)
+    cur.execute("PRAGMA table_info(messages)")
+    message_columns = [row[1] for row in cur.fetchall()]
+    if "attachment_url" not in message_columns:
+        cur.execute("ALTER TABLE messages ADD COLUMN attachment_url TEXT")
+    if "attachment_type" not in message_columns:
+        cur.execute("ALTER TABLE messages ADD COLUMN attachment_type TEXT")
     
     # Create notifications table (used by the notifications endpoint)
     cur.execute("""
@@ -537,9 +602,66 @@ def init_db():
         message TEXT,
         type TEXT,
         created_at TEXT,
-        is_read INTEGER DEFAULT 0
+        is_read INTEGER DEFAULT 0,
+        link TEXT
     )
     """)
+    cur.execute("PRAGMA table_info(notifications)")
+    notification_columns = [row[1] for row in cur.fetchall()]
+    if "link" not in notification_columns:
+        cur.execute("ALTER TABLE notifications ADD COLUMN link TEXT")
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS password_reset_tokens(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        token TEXT UNIQUE,
+        expires_at TEXT,
+        created_at TEXT,
+        used_at TEXT,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        purpose TEXT NOT NULL DEFAULT 'password_reset',
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS slow_query_stats(
+        fingerprint TEXT PRIMARY KEY,
+        statement TEXT NOT NULL,
+        call_count INTEGER NOT NULL DEFAULT 0,
+        total_time_ms FLOAT NOT NULL DEFAULT 0,
+        max_time_ms FLOAT NOT NULL DEFAULT 0,
+        last_seen_at DATETIME NOT NULL
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS profile_reports(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reporter_username TEXT NOT NULL,
+        reported_username TEXT NOT NULL,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        reviewed_by TEXT,
+        reviewed_at DATETIME
+    )
+    """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS listing_photo_location_alerts(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        distance_meters REAL NOT NULL,
+        thumbnail_captured_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        reviewed_by TEXT,
+        reviewed_at DATETIME
+    )
+    """)
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS ix_listing_photo_alerts_status_created "
+        "ON listing_photo_location_alerts(status, created_at)"
+    )
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS knowledge_categories(
@@ -573,12 +695,19 @@ def init_db():
         image TEXT,
         video TEXT,
         status TEXT DEFAULT 'Published',
+        is_pinned INTEGER NOT NULL DEFAULT 0,
         views INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME,
         FOREIGN KEY(category_id) REFERENCES knowledge_categories(category_id)
     )
     """)
+    cur.execute("PRAGMA table_info(knowledge_posts)")
+    knowledge_post_columns = [row[1] for row in cur.fetchall()]
+    if "is_pinned" not in knowledge_post_columns:
+        cur.execute(
+            "ALTER TABLE knowledge_posts ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0"
+        )
     cur.execute("""
     CREATE TABLE IF NOT EXISTS knowledge_likes(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -627,17 +756,79 @@ def init_db():
         cur.execute("ALTER TABLE inventory ADD COLUMN source TEXT DEFAULT 'harvest'")
         cur.execute("UPDATE inventory SET source = 'harvest' WHERE source IS NULL")
 
-    # Insert default user if not exists
-    cur.execute("SELECT * FROM users WHERE username=?", ("admin",))
+    _create_query_indexes(cur)
+
+    cur.execute("SELECT 1 FROM users WHERE role='admin' LIMIT 1")
     if not cur.fetchone():
-        cur.execute("INSERT INTO users(username,password,role) VALUES (?,?,?)",
-                    ("admin", generate_password_hash("admin"), 'admin'))
+        bootstrap_username = str(current_app.config.get("INITIAL_ADMIN_USERNAME", "")).strip()
+        bootstrap_password = current_app.config.get("INITIAL_ADMIN_PASSWORD", "")
+        bootstrap_password_error = password_policy_error(
+            bootstrap_password,
+            (bootstrap_username,),
+        ) if bootstrap_password else None
+        if bootstrap_username and len(bootstrap_username) <= 128 and not bootstrap_password_error:
+            cur.execute(
+                "INSERT INTO users(username,password,role) VALUES (?,?,?)",
+                (bootstrap_username, generate_password_hash(bootstrap_password), "admin"),
+            )
+        elif bootstrap_username and bootstrap_password and bootstrap_password_error:
+            conn.close()
+            raise RuntimeError(
+                f"INITIAL_ADMIN_PASSWORD does not meet the password policy: "
+                f"{bootstrap_password_error}"
+            )
+        elif current_app.config.get("APP_ENV") == "production":
+            conn.close()
+            raise RuntimeError(
+                "No administrator exists. Set INITIAL_ADMIN_USERNAME and "
+                "INITIAL_ADMIN_PASSWORD for the initial production bootstrap."
+            )
 
     update_analytics()
 
     conn.commit()
 
     conn.close()
+
+
+def _create_query_indexes(cur):
+    """Create indexes for frequently filtered, joined, and ordered columns."""
+    index_definitions = (
+        ("ix_users_email", "users", ("email",)),
+        ("ix_users_lower_email", "users", ("email",), "LOWER(email)"),
+        ("ix_marketplace_status_listing_date", "marketplace", ("status", "listing_date")),
+        ("ix_marketplace_user_status_listing_date", "marketplace", ("user_id", "status", "listing_date")),
+        ("ix_marketplace_buyer_status_order_date", "marketplace", ("buyer_username", "status", "order_date")),
+        ("ix_marketplace_username_rating", "marketplace", ("username", "buyer_rating")),
+        ("ix_marketplace_status_type_listing_date", "marketplace", ("status", "listing_type", "listing_date")),
+        ("ix_inventory_farmer_crop_date", "inventory", ("farmer", "crop_id", "date_received")),
+        ("ix_inventory_crop_date", "inventory", ("crop_id", "date_received")),
+        ("ix_inventory_source_date", "inventory", ("source", "date_received")),
+        ("ix_knowledge_posts_status_pin_created", "knowledge_posts", ("status", "is_pinned", "created_at")),
+        ("ix_knowledge_posts_category_status_created", "knowledge_posts", ("category_id", "status", "created_at")),
+        ("ix_knowledge_comments_post_created", "knowledge_comments", ("post_id", "created_at")),
+        ("ix_knowledge_replies_comment_created", "knowledge_replies", ("comment_id", "created_at")),
+        ("ix_notifications_username_read_created", "notifications", ("username", "is_read", "created_at")),
+        ("ix_messages_sender_recipient_time", "messages", ("sender", "recipient", "timestamp")),
+        ("ix_messages_recipient_sender_time", "messages", ("recipient", "sender", "timestamp")),
+        ("ix_password_reset_user_used_expiry", "password_reset_tokens", ("user_id", "used_at", "expires_at")),
+        ("ix_marketplace_images_listing", "marketplace_images", ("listing_id",)),
+        ("ix_cart_user_listing", "cart", ("user_id", "listing_id")),
+        ("ix_analytics_period_type_value", "analytics", ("period_type", "period_value")),
+    )
+    for definition in index_definitions:
+        index_name, table_name, columns = definition[:3]
+        expression = definition[3] if len(definition) == 4 else None
+        cur.execute(f"PRAGMA table_info({table_name})")
+        existing_columns = {row["name"] for row in cur.fetchall()}
+        if not set(columns).issubset(existing_columns):
+            continue
+        indexed_columns = expression or ", ".join(columns)
+        cur.execute(
+            f"CREATE INDEX IF NOT EXISTS {index_name} "
+            f"ON {table_name} ({indexed_columns})"
+        )
+
 
 def update_analytics():
 

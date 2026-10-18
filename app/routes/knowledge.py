@@ -18,7 +18,7 @@ def knowledge_feed():
     categories = cur.fetchall()
 
     sql = """
-        SELECT kp.post_id, kp.title, kp.content, kp.image, kp.video, kp.status, kp.views, kp.created_at,
+        SELECT kp.post_id, kp.title, kp.content, kp.image, kp.video, kp.status, kp.is_pinned, kp.views, kp.created_at,
                kp.author, kc.category_name, kc.category_id,
                (SELECT COUNT(*) FROM knowledge_likes kl WHERE kl.post_id = kp.post_id) AS like_count,
                (SELECT COUNT(*) FROM knowledge_comments kcmt WHERE kcmt.post_id = kp.post_id) AS comment_count
@@ -33,7 +33,7 @@ def knowledge_feed():
     if category_id:
         sql += " AND kp.category_id = ?"
         params.append(category_id)
-    sql += " ORDER BY kp.created_at DESC"
+    sql += " ORDER BY kp.is_pinned DESC, kp.created_at DESC"
 
     posts = cur.execute(sql, params).fetchall()
     conn.close()
@@ -64,10 +64,18 @@ def knowledge_post(post_id):
 
     cur.execute("SELECT comment_id, username, comment, created_at FROM knowledge_comments WHERE post_id=? ORDER BY created_at ASC", (post_id,))
     comments = cur.fetchall()
-    replies = {}
-    for comment in comments:
-        cur.execute("SELECT reply_id, username, reply, created_at FROM knowledge_replies WHERE comment_id=? ORDER BY created_at ASC", (comment["comment_id"],))
-        replies[comment["comment_id"]] = cur.fetchall()
+    replies = {comment["comment_id"]: [] for comment in comments}
+    cur.execute(
+        """SELECT comment_id, reply_id, username, reply, created_at
+           FROM knowledge_replies
+           WHERE comment_id IN (
+               SELECT comment_id FROM knowledge_comments WHERE post_id=?
+           )
+           ORDER BY comment_id, created_at ASC""",
+        (post_id,),
+    )
+    for reply in cur.fetchall():
+        replies[reply["comment_id"]].append(reply)
 
     cur.execute("SELECT COUNT(*) AS liked FROM knowledge_likes WHERE post_id=? AND username=?", (post_id, session.get("user")))
     liked = cur.fetchone()["liked"] > 0

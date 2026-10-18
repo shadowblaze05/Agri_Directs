@@ -1,0 +1,799 @@
+CHAPTER IV
+RESULTS AND DISCUSSION
+
+4.1 Introduction
+
+This chapter presents the developed Agri-Direct system and discusses its
+modules in relation to the four specific objectives of the study. The
+discussion follows the system from the public landing page, through account
+access and the user-facing functions, to the administrator console. The
+implemented system provides marketplace and inventory functions,
+transactions, direct messaging, inventory-based market analysis, crop
+recommendations, demand forecasting, seller ratings, and a Digital
+Agricultural Knowledge Hub.
+
+The chapter also provides spaces for functional testing and system
+evaluation results. No formal user evaluation data has been collected or
+provided at this time; therefore, the relevant tables, figures, and
+interpretations are intentionally left as placeholders. No ratings,
+respondent counts, test results, or accuracy claims are fabricated.
+
+Implementation note: Agri-Direct currently uses standard user and admin
+roles rather than separate farmer and buyer account types. A standard user
+can perform user functions such as listing products or buying from another
+user. Where this chapter uses "farmer" or "buyer," it refers to the user's
+activity in a transaction, not a separate account role or dashboard.
+
+
+4.2 Developed Agri-Direct System
+
+Agri-Direct is a web-based agricultural marketplace and decision-support
+platform. It brings together a public information page, authenticated user
+functions, data-driven agricultural modules, communication features, and
+administrator workspaces. The system is intended to help users organize
+harvest and product information, find and transact agricultural listings,
+and review information derived from records stored in the platform.
+
+The user flow starts at the public landing page. Visitors can review the
+platform information and proceed to Login or Register. Once authenticated,
+users can access the signed-in Home page, Dashboard, Marketplace,
+Knowledge Hub, Messages, Notifications, and Profile. An administrator
+account has additional navigation to the Admin Console and its management
+workspaces.
+
+PUBLIC VISITOR
+     |
+     v
+PUBLIC LANDING PAGE (/)
+     | Login                         | Register
+     v                               v
+LOGIN (/login)                 STANDARD USER ACCOUNT
+     |                               |
+     +---------------+---------------+
+                     v
+             SIGNED-IN SYSTEM
+                     |
+        +------------+-------------+
+        |            |             |
+     Dashboard   Marketplace   Knowledge Hub
+        |            |             |
+  Harvest and   Listings and   Articles, likes,
+  inventory     transactions  and comments
+        |            |
+        +------ Messages and notifications
+                     |
+         Admin role only: Admin Console
+                     |
+      Users / Catalog / Content / Inventory /
+             Marketplace / Audit Log
+
+Figure 4.1. Agri-Direct system navigation flow
+[INSERT FIGURE 4.1: Create a flowchart of the visitor, signed-in user, and
+administrator paths shown above.]
+
+The public landing page is available at the root address (/). A successful
+login directs the user to the signed-in Home page (/home), while a
+successful registration creates a standard user account and directs that
+account to the Dashboard (/dashboard). Administrator access is not granted
+through public registration. Opening an administrator-only route while
+unauthenticated leads to Login; a signed-in standard user is redirected
+to the Dashboard with an access message.
+
+
+4.3 User Registration and Authentication
+
+The registration and authentication module controls access to Agri-Direct.
+The Register page collects account information and validates required
+credentials, username format and length, password length, password
+confirmation, and duplicate usernames or email addresses. Successful
+registration creates a standard user account. The Login page accepts a
+username or email address and password. Valid credentials establish a
+session; invalid or incomplete credentials produce a message and do not
+authenticate the user.
+
+The account role also controls access to administrative functions. Standard
+users cannot access the Admin Console, while accounts with the admin role
+can use the additional management workspaces. This supports the role-based
+access boundary required for the system's administrative functions.
+
+Figure 4.2. User Registration page
+[INSERT FIGURE 4.2: Screenshot of the Register page.]
+
+Figure 4.3. User Login page
+[INSERT FIGURE 4.3: Screenshot of the Login page.]
+
+Discussion
+
+Registration and Login provide the entry point for users to access
+Agri-Direct functions. Account validation helps prevent incomplete
+registrations, while role-based access separates standard platform
+activities from administrative management. This module is a supporting
+component of Specific Objective 1, which requires a centralized platform
+for farmers and buyers.
+
+
+4.4 Farmer and Buyer User Functions
+
+Agri-Direct provides a shared signed-in experience rather than separate
+farmer and buyer dashboards. A user's activity determines whether they
+function as a seller/farmer or buyer in a particular transaction. The
+signed-in Home page displays recent Agricultural Updates, featured
+Marketplace listings, a Marketplace overview, and a Market Brief derived
+from available harvest data. Navigation links provide access to the
+Dashboard, harvest upload, Marketplace, Knowledge Hub, Messages,
+Notifications, and Profile.
+
+The Dashboard presents an overview of recorded inventory. It includes
+headline figures such as total harvest, top crop, crop-type count, and
+location count, along with recent inventory and period-based statistics.
+The dashboard and related pages provide users with different views of
+harvest data, including total harvest, top crop, crop types, and locations.
+
+Figure 4.4. Signed-in Home page
+[INSERT FIGURE 4.4: Screenshot of the signed-in Home page showing the
+navigation, Market Brief, updates, and Marketplace overview.]
+
+Figure 4.5. User Dashboard
+[INSERT FIGURE 4.5: Screenshot of the Dashboard showing its summary cards,
+inventory, and charts or maps when data is available.]
+
+Discussion
+
+The signed-in Home page and Dashboard organize the user's route into
+Agri-Direct's marketplace, inventory, and information features. They are
+shared across standard accounts and should not be described as separate
+farmer and buyer dashboards. The dashboards support Specific Objective 1
+by providing user access to the platform functions that facilitate
+product management, transactions, and communication.
+
+
+4.5 Agricultural Marketplace and Product Management
+
+The Marketplace is the central location for browsing agricultural product
+listings. Available listing information can include crop name, amount,
+price, unit, seller, location, description, expiry, and seller-rating
+details. Users can search and filter listings and open product details.
+
+A user can create a listing from eligible inventory they own. The listing
+form validates the crop, available quantity, amount, and price before
+creating an available listing. If the user does not have eligible
+inventory, the system directs them to record harvest data before listing
+produce. The user can review and manage their own listings through the My
+Listings page.
+
+Figure 4.6. Agricultural Marketplace
+[INSERT FIGURE 4.6: Screenshot showing available agricultural listings.]
+
+Figure 4.7. Product details and listing actions
+[INSERT FIGURE 4.7: Screenshot of a product detail view or listing action.]
+
+Discussion
+
+The Marketplace brings product information and listing actions together in
+a single interface. Listing validation helps ensure that a seller cannot
+offer a quantity greater than the quantity available in their inventory.
+The Marketplace and product management functions directly support Specific
+Objective 1 by enabling agricultural product presentation and interaction
+between users acting as sellers and buyers.
+
+
+4.6 Inventory Management
+
+The inventory module allows users to record harvest data and review
+agricultural quantities stored in the system. A harvest can be entered
+manually or imported from a CSV file. Manual entries identify a crop and
+quantity, and may include a received date and supporting evidence. CSV
+imports process crop name, quantity, and an optional date. Valid rows are
+added to the user's inventory; invalid rows are reported rather than being
+treated as successful records.
+
+The Dashboard uses inventory records for its totals and crop summaries.
+Users can review inventory grouped by crop and can update or remove records
+subject to ownership rules. Administrators have separate tools for
+searching and reviewing inventory records. Some harvest records can be
+flagged for manual review when submitted evidence or location information
+is incomplete. The location check is a proximity indicator; it does not
+prove identity, land ownership, or crop authenticity.
+
+Figure 4.8. Harvest upload and inventory management
+[INSERT FIGURE 4.8: Screenshot of the harvest upload form and/or the
+inventory display.]
+
+Discussion
+
+Inventory is a core data source for the Marketplace, Dashboard, and
+market-intelligence functions. Recording harvest information gives users
+an organized view of their agricultural quantities and provides the
+system with records for its supply analysis. These functions support
+Specific Objective 1 and provide input to Specific Objectives 2 and 3.
+
+
+4.7 Transaction Management
+
+The transaction functions allow users to buy or trade for an available
+Marketplace listing and follow their own sales or purchases. A buyer can
+select a quantity, and the system checks listing availability and the
+requested amount before processing the purchase. A partial purchase
+reduces the remaining listing amount; a fully purchased listing changes
+its status. The trade workflow allows an eligible user to offer a crop
+they own in exchange for a listed product. Transaction pages provide
+users with information about listing, purchase, and order status. The
+system also supports transaction completion and buyer ratings where the
+transaction is eligible.
+
+Figure 4.9. Transaction and order management
+[INSERT FIGURE 4.9: Screenshot of a purchase, trade, My Listings, or My
+Purchases transaction view.]
+
+Discussion
+
+Transaction management structures the purchase and trade activities
+within the Marketplace and provides users with a way to follow their
+orders. Quantity and availability checks help prevent transactions that
+exceed the listing's available amount. This module directly supports
+Specific Objective 1 by providing transaction coordination within the
+centralized agricultural platform.
+
+
+4.8 Direct Messaging and Notifications
+
+The Messages module allows users to communicate directly with other
+Agri-Direct users. Users can select a contact, review conversation history,
+search for accounts, and send messages. AgriBot is also available for
+basic platform guidance. Notifications provide a central view of recent
+alerts for the signed-in user, including message and marketplace-related
+events. Users can mark notifications as read.
+
+Figure 4.10. Direct messaging interface
+[INSERT FIGURE 4.10: Screenshot of a conversation in the Messages page.]
+
+Figure 4.11. Notifications
+[INSERT FIGURE 4.11: Screenshot of the notification center or dashboard
+notification control.]
+
+Discussion
+
+Direct messaging gives users a communication channel within the same
+platform used for listings and transactions. Notifications complement
+messaging by surfacing relevant events. These features directly support
+Specific Objective 1, which includes direct communication between farmers
+and buyers.
+
+
+4.9 Market Intelligence Module
+
+The Market Intelligence module provides analytical information derived
+from agricultural inventory records. Its implemented functions include
+inventory-based price monitoring, supply-balance analysis, crop
+recommendations, and demand forecasting. Detailed Market Intelligence
+pages are restricted to administrator accounts in the current system;
+the signed-in Home page also displays a shorter inventory-derived Market
+Brief to users.
+
+The present implementation does not connect to an external live
+commodity-price service. Accordingly, references to "real-time market
+price monitoring" in the study objective should be interpreted carefully:
+the current module calculates an inventory-based price index or price
+signal when system data is analyzed; it does not retrieve verified,
+real-time market prices from an external source. This limitation should
+be stated when discussing the results.
+
+
+4.9.1 Inventory-Based Price Monitoring
+
+The price-monitoring view presents a modeled price snapshot derived from
+stored inventory quantities. It can show crop-level indicators and
+estimated movement or pressure based on relative supply information. The
+display is a heuristic index, not a currency price quote or a record of
+externally sourced market prices.
+
+Figure 4.12. Price monitoring interface
+[INSERT FIGURE 4.12: Screenshot of the implemented price-monitoring view.]
+
+Discussion
+
+The price-monitoring function provides users with a relative,
+inventory-derived indicator that can be reviewed alongside supply
+information. Since the implementation does not query a live external
+price source, it does not independently establish current market prices
+or actual buyer demand. The feature partially addresses the price
+monitoring portion of Specific Objective 2, subject to this limitation.
+
+
+4.9.2 Oversupply and Undersupply Detection
+
+The supply-balance function groups inventory quantities by crop and
+compares totals with dynamically calculated thresholds. Depending on the
+comparison, the system can classify a crop's current supply as balanced,
+undersupply, critical shortage, high supply, or oversupply. Associated
+risk alerts provide a short message about the identified supply
+condition.
+
+Figure 4.13. Supply balance and risk alerts
+[INSERT FIGURE 4.13: Screenshot of the implemented supply-balance view,
+including crop status or risk alerts.]
+
+Discussion
+
+The supply-balance analysis provides an inventory-based indication of
+potential supply imbalance using the records available to the system.
+Its output is a classification based on system quantities and thresholds,
+not a verified measurement of total supply in a geographic market. The
+feature supports the oversupply and undersupply detection component of
+Specific Objective 2.
+
+
+4.10 Decision-Support Module
+
+The decision-support features analyze stored crop inventory data to
+produce crop rankings and demand estimates. The current implementation
+uses statistical and rule-based methods. It does not claim to use
+artificial intelligence or machine learning.
+
+
+4.10.1 Crop Recommendation
+
+The Crop Recommendation service ranks crops using a multi-criteria
+scoring approach. It defines five criteria: demand strength, supply
+stability, seasonal fit, price opportunity, and risk balance. A fixed
+pairwise comparison matrix is used to derive criterion weights through
+the Analytic Hierarchy Process (AHP). The system then applies a
+Technique for Order Preference by Similarity to Ideal Solution (TOPSIS)
+calculation to score and rank crop options.
+
+The values used in these calculations are derived from the inventory and
+forecast information available to the application. They should not be
+interpreted as observed buyer demand, verified commodity prices, or
+agronomic guarantees. In particular, the criteria labels for demand,
+seasonality, and price opportunity are implemented as inventory-derived
+proxies; the system does not calculate them from a verified external price
+series, an independently observed crop season calendar, or historical
+transaction-demand records. The displayed recommendation is decision
+support based on the implemented criteria and data, not a promise of
+profitability.
+
+Figure 4.14. Crop recommendation interface and results
+[INSERT FIGURE 4.14: Screenshot of the implemented crop recommendations
+and ranked results.]
+
+Discussion
+
+The crop-recommendation module applies weighted criteria to produce a
+ranked output for crops represented in the available data. It supports
+Specific Objective 3 by implementing an algorithm-based recommendation
+feature. The scope of its conclusion is limited by the inventory-derived
+input values and the implemented criteria.
+
+
+4.10.2 Crop Demand Forecasting
+
+The demand-forecasting service produces a one-step crop quantity estimate
+from available positive inventory observations. Where there is sufficient
+variation in the available series, the service attempts an ARIMA(1,0,0)
+forecast. When there is insufficient data or the model fit fails, the
+system uses a linear fallback where possible; for insufficient data it
+reports that condition. Forecast quantities are constrained to
+non-negative values.
+
+The observations are inventory quantities, not a dedicated historical
+transaction-demand dataset. As a result, the current output should be
+described as an inventory-derived estimate and not as a validated measure
+of future buyer demand. Forecast accuracy must not be claimed until it
+has been evaluated against actual observations using an appropriate
+method.
+
+Figure 4.15. Demand forecasting interface
+[INSERT FIGURE 4.15: Screenshot of the implemented forecast view.]
+
+Table 4.1. Forecast method and result details (complete with actual output)
+
++--------------------------+----------------------------------------------+
+| Forecast detail          | Result                                       |
++--------------------------+----------------------------------------------+
+| Crop analyzed            | [INSERT CROP OR TEST INPUT]                  |
+| Number of observations   | [INSERT NUMBER]                              |
+| Forecast method returned | [ARIMA / FALLBACK-LINEAR / INSUFFICIENT-DATA]|
+| Latest input quantity    | [INSERT VALUE AND UNIT]                      |
+| Forecast quantity        | [INSERT VALUE AND UNIT]                      |
+| Actual quantity for      | [INSERT VALUE, IF AVAILABLE]                 |
+| comparison               |                                              |
++--------------------------+----------------------------------------------+
+
+Discussion
+
+The forecast feature supports Specific Objective 3 by producing an
+algorithm-based quantity estimate from recorded crop history. Its actual
+usefulness and accuracy remain to be established through the evaluation
+procedures and results. In particular, the current input data should be
+distinguished from transaction history when interpreting the output.
+
+
+4.11 Farmer Reliability Assessment
+
+Agri-Direct displays seller reliability information based on buyer
+ratings recorded for eligible marketplace transactions. After a
+qualifying completed order, the buyer can submit a one-to-five-star
+rating. A seller's displayed score is the average of recorded buyer
+ratings, accompanied by a reliability label and rating count. A seller
+without ratings is shown as "Not Yet Rated."
+
+Figure 4.16. Seller reliability information
+[INSERT FIGURE 4.16: Screenshot showing the seller's average rating,
+reliability label, and number of buyer ratings.]
+
+Discussion
+
+The rating summary gives a buyer additional information about prior
+buyer feedback for a seller. It reflects submitted ratings and should not
+be treated as independent verification of seller identity or product
+quality. This feature contributes to the trust and transaction
+coordination goals of Specific Objective 1. It is included as an
+implemented marketplace feature; it is not presented as a separately
+validated scoring model.
+
+
+4.12 Digital Agricultural Knowledge Hub
+
+The Digital Agricultural Knowledge Hub presents published agricultural
+articles and updates to signed-in users. Users can browse and search
+published content, open an article, and interact through likes and
+comments. Administrators can create articles, save drafts, publish or
+edit content, organize articles by category, and pin selected published
+updates.
+
+Figure 4.17. Digital Agricultural Knowledge Hub
+[INSERT FIGURE 4.17: Screenshot of the Knowledge Hub feed.]
+
+Figure 4.18. Knowledge article
+[INSERT FIGURE 4.18: Screenshot of an article page showing its content
+and interaction area.]
+
+Discussion
+
+The Knowledge Hub provides one location for agricultural information and
+updates within Agri-Direct. Its administrative publishing tools support
+content maintenance, while user interactions allow readers to respond to
+published material. This module complements the marketplace and
+decision-support features by making agricultural information available
+within the same platform.
+
+
+4.13 Administrative Module
+
+The Admin Console is an administrator-only workspace. Its main page
+provides management cards and summary counts, with links to focused
+workspaces:
+
+- Users and roles: search and manage accounts and role information.
+- Crop catalog: manage crop and crop-category records used by the system.
+- Knowledge Hub: manage articles, drafts, and knowledge categories.
+- Inventory: search and review inventory records and available evidence.
+- Marketplace: search and manage marketplace listings.
+- Audit log: search and filter system activity and export matching
+  entries to CSV.
+
+The Admin Console is a navigation and summary page; the detailed records
+are handled in the linked workspaces. Administrative access is checked
+before the relevant workspace is displayed. The system also provides
+administrative review actions for selected geotag submissions.
+
+Figure 4.19. Administrator Console
+[INSERT FIGURE 4.19: Screenshot of the Admin Console landing page showing
+management cards.]
+
+Figure 4.20. Administrative management workspaces
+[INSERT FIGURE 4.20: Insert screenshots of relevant workspaces, such as
+Users and Roles, Inventory, Knowledge Hub administration, and Audit Log.]
+
+Discussion
+
+The Admin Console centralizes selected account, catalog, content,
+inventory, marketplace, and activity-management functions for authorized
+administrators. It supports administration of the platform described in
+Specific Objective 1 and provides the administrative controls needed to
+maintain its records.
+
+
+4.14 Summary of System Features in Relation to Objectives
+
+Table 4.2 maps the four specific objectives in the provided outline to
+the implemented Agri-Direct modules. Where the implementation differs
+from the objective wording, the limitation is identified rather than
+reported as a fully realized capability.
+
+Table 4.2. System features and corresponding objectives
+
++-----------------------------+-------------------------------------+----------------------------+
+| Specific objective          | Implemented features                | Result/output              |
++-----------------------------+-------------------------------------+----------------------------+
+| 1. Develop a centralized    | Marketplace, listing and inventory  | Users can list and browse  |
+| agricultural supply-chain   | management, purchases/trades,       | produce, follow eligible   |
+| platform for product        | messaging, user ratings, and        | transactions, communicate,|
+| management, transactions,   | notifications.                      | and review seller ratings.|
+| and direct communication.   |                                     |                            |
++-----------------------------+-------------------------------------+----------------------------+
+| 2. Implement market         | Inventory-based price monitoring   | Modeled price indicators  |
+| intelligence for price      | and supply-balance/risk analysis.   | and potential supply      |
+| trends and supply imbalance.|                                     | imbalance signals. Price  |
+|                             |                                     | values are not live       |
+|                             |                                     | external quotations.      |
++-----------------------------+-------------------------------------+----------------------------+
+| 3. Develop algorithm-based | AHP/TOPSIS crop recommendation and | Ranked crop suggestions   |
+| crop recommendations and   | ARIMA/fallback inventory quantity  | and one-step inventory-   |
+| demand forecasts.           | forecasting.                       | derived estimates.        |
++-----------------------------+-------------------------------------+----------------------------+
+| 4. Evaluate functionality, | Functional testing and user        | [INSERT ACTUAL TEST AND   |
+| usability, reliability, and | evaluation are to be documented    | EVALUATION RESULTS AFTER  |
+| effectiveness.              | after they have been conducted.    | DATA COLLECTION.]         |
++-----------------------------+-------------------------------------+----------------------------+
+
+The system integrates the user-facing and administrator functions in a
+single application. Its current implementation provides concrete
+functionality for Objectives 1 through 3, with the qualifications noted
+above. Objective 4 cannot be concluded until the planned testing and
+evaluation data are collected and analyzed.
+
+
+4.15 System Testing Results
+
+Functional testing should be completed before the user evaluation. The
+following table is a placeholder for test execution results. Enter the
+number of test cases actually executed for each module, along with the
+passed and failed counts and any remarks. Do not infer a pass from the
+presence of a screen or button.
+
+Table 4.3. Functional testing results
+
++--------------------------+----------------+----------------+----------------+----------------------+
+| Module                   | Test cases run | Passed         | Failed         | Remarks              |
++--------------------------+----------------+----------------+----------------+----------------------+
+| Registration/Login       | [INSERT N]     | [INSERT N]     | [INSERT N]     | [INSERT REMARKS]     |
+| Marketplace/listings     | [INSERT N]     | [INSERT N]     | [INSERT N]     | [INSERT REMARKS]     |
+| Inventory/harvest        | [INSERT N]     | [INSERT N]     | [INSERT N]     | [INSERT REMARKS]     |
+| Transactions             | [INSERT N]     | [INSERT N]     | [INSERT N]     | [INSERT REMARKS]     |
+| Messaging/notifications  | [INSERT N]     | [INSERT N]     | [INSERT N]     | [INSERT REMARKS]     |
+| Market Intelligence      | [INSERT N]     | [INSERT N]     | [INSERT N]     | [INSERT REMARKS]     |
+| Crop recommendation     | [INSERT N]     | [INSERT N]     | [INSERT N]     | [INSERT REMARKS]     |
+| Demand forecasting       | [INSERT N]     | [INSERT N]     | [INSERT N]     | [INSERT REMARKS]     |
+| Seller rating            | [INSERT N]     | [INSERT N]     | [INSERT N]     | [INSERT REMARKS]     |
+| Knowledge Hub            | [INSERT N]     | [INSERT N]     | [INSERT N]     | [INSERT REMARKS]     |
+| Admin workspaces         | [INSERT N]     | [INSERT N]     | [INSERT N]     | [INSERT REMARKS]     |
+| TOTAL                    | [INSERT N]     | [INSERT N]     | [INSERT N]     |                      |
++--------------------------+----------------+----------------+----------------+----------------------+
+
+Functional test summary
+
+The functional tests covered [INSERT MODULES OR SCENARIOS]. A total of
+[INSERT NUMBER] test cases were run, of which [INSERT NUMBER] passed and
+[INSERT NUMBER] failed. The resulting pass rate was [INSERT PERCENTAGE]%.
+The failures or limitations observed were [INSERT FACTUAL SUMMARY]. These
+results indicate [INSERT INTERPRETATION BASED ON THE RECORDED EVIDENCE].
+
+
+4.16 Evaluation Results
+
+The study outline identifies functionality, usability, reliability, and
+effectiveness as evaluation criteria. The evaluation is pending. Complete
+the tables below only after gathering responses using the evaluation
+instrument and procedures described in Chapter III. State the scale and
+interpretation ranges used by that instrument.
+
+Table 4.4. Respondent profile
+
++-----------------------------+-------------------+-------------------+
+| Respondent category         | Frequency         | Percentage        |
++-----------------------------+-------------------+-------------------+
+| Farmers / users as sellers  | [INSERT N]        | [INSERT %]        |
+| Buyers / users as buyers    | [INSERT N]        | [INSERT %]        |
+| Administrators/evaluators   | [INSERT N]        | [INSERT %]        |
+| Total                       | [INSERT N]        | 100%              |
++-----------------------------+-------------------+-------------------+
+
+Use categories that match the actual participants and the roles used in
+the evaluation. Since the system uses standard user accounts rather than
+separate farmer and buyer account types, categorize participants by their
+actual role or activity in the study.
+
+4.16.1 Evaluation of Functionality
+
+Table 4.5. Functionality evaluation results
+
++-----------------------------+-------------------+-------------------+
+| Indicator                   | Mean/result       | Interpretation    |
++-----------------------------+-------------------+-------------------+
+| [FUNCTIONALITY ITEM 1]      | [INSERT RESULT]   | [INSERT LABEL]    |
+| [FUNCTIONALITY ITEM 2]      | [INSERT RESULT]   | [INSERT LABEL]    |
+| [FUNCTIONALITY ITEM 3]      | [INSERT RESULT]   | [INSERT LABEL]    |
+| [FUNCTIONALITY ITEM 4]      | [INSERT RESULT]   | [INSERT LABEL]    |
+| Overall mean                | [INSERT RESULT]   | [INSERT LABEL]    |
++-----------------------------+-------------------+-------------------+
+
+Figure 4.21. Functionality evaluation results
+[INSERT GRAPH AFTER DATA COLLECTION. Include scale, item labels, and
+respondent count.]
+
+Discussion
+
+The functionality evaluation obtained an overall result of [INSERT
+RESULT], interpreted as [INSERT INTERPRETATION] using the selected scale.
+The highest-rated indicator was [INSERT INDICATOR] ([INSERT RESULT]) and
+the lowest-rated indicator was [INSERT INDICATOR] ([INSERT RESULT]). This
+finding relates to the system's functions for [CONNECT TO SPECIFIC
+OBJECTIVE USING ACTUAL RESULTS].
+
+4.16.2 Evaluation of Usability
+
+Table 4.6. Usability evaluation results
+
++-----------------------------+-------------------+-------------------+
+| Indicator                   | Mean/result       | Interpretation    |
++-----------------------------+-------------------+-------------------+
+| Ease of navigation          | [INSERT RESULT]   | [INSERT LABEL]    |
+| Clarity of information      | [INSERT RESULT]   | [INSERT LABEL]    |
+| Ease of completing tasks    | [INSERT RESULT]   | [INSERT LABEL]    |
+| Interface consistency       | [INSERT RESULT]   | [INSERT LABEL]    |
+| Overall mean                | [INSERT RESULT]   | [INSERT LABEL]    |
++-----------------------------+-------------------+-------------------+
+
+Figure 4.22. Usability evaluation results
+[INSERT GRAPH AFTER DATA COLLECTION.]
+
+Discussion
+
+The usability evaluation produced an overall result of [INSERT RESULT],
+which corresponds to [INSERT INTERPRETATION]. The results for navigation
+and task completion indicate [INSERT FACTUAL INTERPRETATION BASED ON
+RESULTS]. Relate the finding to the relevant system modules and note any
+limitations in the participant sample or test conditions.
+
+4.16.3 Evaluation of Reliability
+
+Table 4.7. Reliability evaluation results
+
++-----------------------------+-------------------+-------------------+
+| Indicator                   | Mean/result       | Interpretation    |
++-----------------------------+-------------------+-------------------+
+| [RELIABILITY ITEM 1]        | [INSERT RESULT]   | [INSERT LABEL]    |
+| [RELIABILITY ITEM 2]        | [INSERT RESULT]   | [INSERT LABEL]    |
+| [RELIABILITY ITEM 3]        | [INSERT RESULT]   | [INSERT LABEL]    |
+| [RELIABILITY ITEM 4]        | [INSERT RESULT]   | [INSERT LABEL]    |
+| Overall mean                | [INSERT RESULT]   | [INSERT LABEL]    |
++-----------------------------+-------------------+-------------------+
+
+Figure 4.23. Reliability evaluation results
+[INSERT GRAPH AFTER DATA COLLECTION.]
+
+Discussion
+
+The reliability evaluation obtained an overall result of [INSERT RESULT],
+interpreted as [INSERT INTERPRETATION]. The result describes participant
+responses under the evaluation instrument; it is separate from the
+Marketplace seller-rating feature, which is calculated from buyer
+ratings. Do not treat the seller-rating score as a system-wide reliability
+evaluation.
+
+4.16.4 Evaluation of Effectiveness
+
+Table 4.8. Effectiveness evaluation results
+
++-----------------------------+-------------------+-------------------+
+| Indicator                   | Mean/result       | Interpretation    |
++-----------------------------+-------------------+-------------------+
+| Support for market          | [INSERT RESULT]   | [INSERT LABEL]    |
+| coordination                |                   |                   |
+| Access to agricultural      | [INSERT RESULT]   | [INSERT LABEL]    |
+| information                 |                   |                   |
+| Support for communication   | [INSERT RESULT]   | [INSERT LABEL]    |
+| Decision-support usefulness | [INSERT RESULT]   | [INSERT LABEL]    |
+| Overall mean                | [INSERT RESULT]   | [INSERT LABEL]    |
++-----------------------------+-------------------+-------------------+
+
+Figure 4.24. Effectiveness evaluation results
+[INSERT GRAPH AFTER DATA COLLECTION.]
+
+Discussion
+
+The effectiveness evaluation obtained an overall result of [INSERT
+RESULT], interpreted as [INSERT INTERPRETATION]. Discuss how the actual
+results relate to the system's stated purposes, including market
+coordination, agricultural information, communication, and decision
+support. Do not claim improved income, productivity, or market outcomes
+unless those outcomes were measured.
+
+4.16.5 Overall Evaluation Results
+
+Table 4.9. Overall system evaluation
+
++-----------------------------+-------------------+-------------------+
+| Evaluation criterion        | Overall result    | Interpretation    |
++-----------------------------+-------------------+-------------------+
+| Functionality               | [INSERT RESULT]   | [INSERT LABEL]    |
+| Usability                   | [INSERT RESULT]   | [INSERT LABEL]    |
+| Reliability                 | [INSERT RESULT]   | [INSERT LABEL]    |
+| Effectiveness               | [INSERT RESULT]   | [INSERT LABEL]    |
+| Overall evaluation          | [INSERT RESULT]   | [INSERT LABEL]    |
++-----------------------------+-------------------+-------------------+
+
+Figure 4.25. Overall system evaluation
+[INSERT GRAPH AFTER DATA COLLECTION.]
+
+Discussion
+
+The overall system evaluation produced [INSERT OVERALL RESULT], with
+[INSERT HIGHEST CRITERION] receiving the highest result and [INSERT
+LOWEST CRITERION] receiving the lowest result. The conclusion about the
+system should be based only on the collected data, the evaluation method,
+and the adopted interpretation scale.
+
+
+4.17 Discussion in Relation to the Objectives
+
+Specific Objective 1: Develop a centralized agricultural supply-chain
+platform that facilitates product management, transactions, and direct
+communication between farmers and buyers.
+
+The Marketplace, listing and inventory functions, purchase and trade
+workflows, Messages, and seller-rating displays implement the principal
+functions associated with this objective. Users can list products,
+browse listings, undertake eligible transactions, and communicate within
+the platform. The system uses a shared standard-user role, so the
+farmer/buyer distinction is based on activity rather than separate
+account modules. Final assessment: [INSERT RELEVANT FUNCTIONAL TEST AND
+EVALUATION RESULTS].
+
+Specific Objective 2: Implement market-intelligence modules that monitor
+price trends and detect potential oversupply and undersupply conditions.
+
+The supply-balance module classifies inventory-based crop quantities
+against dynamic thresholds and reports potential supply signals. The
+price-monitoring feature presents a modeled indicator derived from
+inventory; it does not retrieve live external commodity prices. The
+implemented functions therefore support supply imbalance analysis and
+inventory-based price monitoring, subject to the data-source limitation.
+Final assessment: [INSERT RELEVANT TEST RESULTS AND STATE THIS LIMITATION].
+
+Specific Objective 3: Develop algorithm-based decision-support features
+that provide crop recommendations and demand forecasts.
+
+Crop recommendations are ranked using the implemented AHP/TOPSIS
+multi-criteria process. Forecasts use inventory quantity observations,
+with ARIMA(1,0,0) where possible and a linear fallback or
+insufficient-data output in other cases. Although the objective describes
+historical transaction records and market-demand factors, the current
+forecast input is inventory quantities, not transaction history; several
+recommendation factors are also represented by inventory-derived proxies.
+These outputs are estimates based on system records, and forecast accuracy
+has not been established until tested against actual observations. Final
+assessment: [INSERT TEST RESULTS AND ANY ACCURACY ANALYSIS ACTUALLY
+CONDUCTED].
+
+Specific Objective 4: Evaluate the functionality, usability, reliability,
+and effectiveness of the developed system.
+
+This objective remains pending until functional testing and participant
+evaluation are completed. The selected instrument, sample, scoring
+method, computed results, and interpretation should be reported in
+Section 4.16. Final assessment: [INSERT ACTUAL EVALUATION SUMMARY].
+
+
+4.18 Chapter Summary
+
+This chapter presented Agri-Direct as a connected system that begins with
+a public landing page and account access, continues through shared
+user-facing inventory, Marketplace, transaction, communication, and
+information modules, and provides additional management functions to
+administrators. The system includes inventory-derived market signals,
+multi-criteria crop recommendations, demand quantity estimates, and
+buyer-based seller-rating information.
+
+The modules support the first three objectives with important scope
+qualifications: the system has shared standard user accounts rather than
+separate farmer and buyer roles; price monitoring uses an
+inventory-derived index rather than an external live price feed; and
+demand forecasting uses inventory observations rather than a dedicated
+historical transaction dataset. The fourth objective, formal evaluation,
+cannot be concluded until its testing and evaluation data are collected.
+The completed results in this chapter should form the evidence base for
+the conclusions and recommendations in Chapter V.
+
+END OF CHAPTER IV DRAFT

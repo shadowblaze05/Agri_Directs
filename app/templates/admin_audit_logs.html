@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Audit log | Agri-Direct Admin</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+</head>
+<body class="admin-page">
+  <nav class="navbar navbar-dark admin-navbar px-4 py-3">
+    <a class="navbar-brand fw-bold" href="{{ url_for('admin') }}"><i class="fas fa-leaf me-2"></i>Agri-Direct <span class="fw-normal opacity-75">/ Admin</span></a>
+    <a href="{{ url_for('admin') }}" class="btn btn-outline-light btn-sm"><i class="fas fa-arrow-left me-1"></i>Overview</a>
+  </nav>
+  <main class="container-fluid container-xxl py-4">
+    <a class="breadcrumb-link" href="{{ url_for('admin') }}">← Admin Console</a>
+    <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mt-2 mb-4">
+      <div>
+        <h1 class="h3 mb-1">Audit log</h1>
+        <p class="text-muted mb-0">A searchable, time-stamped record of authentication, admin access, and system changes.</p>
+      </div>
+      <a class="btn btn-outline-success" href="{{ url_for('admin_audit_logs', q=search, category=category, method=method, result=result, start_date=start_date, end_date=end_date, export='csv') }}">
+        <i class="fas fa-file-arrow-down me-2"></i>Export CSV
+      </a>
+    </div>
+
+    <section class="row g-3 mb-4" aria-label="Audit log summary">
+      <div class="col-12 col-sm-4"><div class="card h-100"><div class="card-body d-flex justify-content-between align-items-center"><div><div class="small text-muted">Matching events</div><div class="h3 mb-0">{{ "{:,}".format(total) }}</div></div><i class="fas fa-list-check audit-stat-icon"></i></div></div></div>
+      <div class="col-12 col-sm-4"><div class="card h-100"><div class="card-body d-flex justify-content-between align-items-center"><div><div class="small text-muted">Events today (UTC)</div><div class="h3 mb-0">{{ "{:,}".format(today_count) }}</div></div><i class="fas fa-calendar-day audit-stat-icon"></i></div></div></div>
+      <div class="col-12 col-sm-4"><div class="card h-100"><div class="card-body d-flex justify-content-between align-items-center"><div><div class="small text-muted">Requests needing review</div><div class="h3 mb-0">{{ "{:,}".format(failure_count) }}</div></div><i class="fas fa-triangle-exclamation audit-stat-icon"></i></div></div></div>
+    </section>
+
+    <form method="get" class="card audit-filters mb-3">
+      <div class="card-body">
+        <label for="audit-search" class="form-label fw-semibold">Search activity</label>
+        <div class="input-group mb-3">
+          <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+          <input id="audit-search" name="q" value="{{ search }}" maxlength="200" class="form-control" placeholder="Search person, action, page, IP address, or category">
+          <button class="btn btn-success" type="submit">Search</button>
+        </div>
+        <div class="row g-2 align-items-end">
+          <div class="col-6 col-md-2">
+            <label for="audit-category" class="form-label small">Category</label>
+            <select id="audit-category" name="category" class="form-select">
+              <option value="">All categories</option>
+              {% for option in categories %}<option value="{{ option }}" {% if category == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label for="audit-method" class="form-label small">Method</label>
+            <select id="audit-method" name="method" class="form-select">
+              <option value="">All methods</option>
+              {% for option in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] %}<option value="{{ option }}" {% if method == option %}selected{% endif %}>{{ option }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label for="audit-result" class="form-label small">Response</label>
+            <select id="audit-result" name="result" class="form-select">
+              <option value="">All responses</option>
+              <option value="success" {% if result == 'success' %}selected{% endif %}>Under 400</option>
+              <option value="failure" {% if result == 'failure' %}selected{% endif %}>400 and above</option>
+            </select>
+          </div>
+          <div class="col-6 col-md-2">
+            <label for="audit-start" class="form-label small">From (UTC)</label>
+            <input id="audit-start" type="date" name="start_date" value="{{ start_date }}" class="form-control">
+          </div>
+          <div class="col-6 col-md-2">
+            <label for="audit-end" class="form-label small">To (UTC)</label>
+            <input id="audit-end" type="date" name="end_date" value="{{ end_date }}" class="form-control">
+          </div>
+          <div class="col-12 col-md-2 d-flex gap-2">
+            <button class="btn btn-outline-success flex-grow-1" type="submit">Filter</button>
+            {% if search or category or method or result or start_date or end_date %}
+              <a class="btn btn-outline-secondary" href="{{ url_for('admin_audit_logs') }}" aria-label="Clear filters" title="Clear filters"><i class="fas fa-times"></i></a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </form>
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span class="small text-muted">
+        {% if total %}Showing {{ (page - 1) * page_size + 1 }}–{{ [(page * page_size), total]|min }} of {{ "{:,}".format(total) }} events{% else %}No events found{% endif %}
+      </span>
+      <span class="small text-muted">Times shown in UTC · newest first</span>
+    </div>
+    <div class="card audit-table-card">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead><tr><th>When (UTC)</th><th>Actor</th><th>Activity</th><th>Category</th><th>Method</th><th>Response</th><th>Duration</th><th>Context</th></tr></thead>
+          <tbody>
+            {% for event in events %}
+              <tr>
+                <td class="text-nowrap"><strong>{{ event.occurred_at|datetime_format('%Y-%m-%d') }}</strong><div class="small text-muted">{{ event.occurred_at|datetime_format('%H:%M:%S') }}</div></td>
+                <td>{{ event.actor or 'Anonymous' }}{% if event.role %}<div class="small text-muted">{{ event.role }}</div>{% endif %}</td>
+                <td><strong>{{ event.action }}</strong><div class="small text-muted text-break">{{ event.path }}</div></td>
+                <td><span class="badge text-bg-light border">{{ event.category }}</span></td>
+                <td><code>{{ event.method }}</code></td>
+                <td><span class="badge text-bg-{{ 'success' if event.status_code < 400 else 'danger' }}">{{ event.status_code }}</span></td>
+                <td class="text-nowrap">{{ "%.0f"|format(event.duration_ms) }} ms</td>
+                <td>
+                  <details class="audit-context">
+                    <summary>Details</summary>
+                    <dl class="mb-0 mt-2 small">
+                      <dt>Endpoint</dt><dd>{{ event.endpoint }}</dd>
+                      <dt>IP address</dt><dd>{{ event.ip_address or 'Unavailable' }}</dd>
+                      <dt>User agent</dt><dd class="audit-user-agent">{{ event.user_agent or 'Unavailable' }}</dd>
+                      <dt>Route parameters</dt><dd><code>{{ event.details }}</code></dd>
+                    </dl>
+                  </details>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="8" class="empty-state"><i class="fas fa-clipboard-list fs-2 mb-3 d-block"></i>No activity matches these filters.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if pages > 1 %}
+        <nav class="d-flex justify-content-between align-items-center p-3 border-top" aria-label="Audit log pages">
+          <a class="btn btn-sm btn-outline-secondary {% if page <= 1 %}disabled{% endif %}" href="{{ url_for('admin_audit_logs', page=page - 1, q=search, category=category, method=method, result=result, start_date=start_date, end_date=end_date) }}">← Newer</a>
+          <span class="small text-muted">Page {{ page }} of {{ pages }}</span>
+          <a class="btn btn-sm btn-outline-secondary {% if page >= pages %}disabled{% endif %}" href="{{ url_for('admin_audit_logs', page=page + 1, q=search, category=category, method=method, result=result, start_date=start_date, end_date=end_date) }}">Older →</a>
+        </nav>
+      {% endif %}
+    </div>
+    <p class="small text-muted mt-3 mb-0"><i class="fas fa-shield-halved me-1"></i>Audit entries are append-only from this console. Submitted form contents, passwords, and authentication tokens are not stored.</p>
+  </main>
+</body>
+</html>

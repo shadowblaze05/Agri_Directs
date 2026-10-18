@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Listing photo alerts | Agri-Direct Admin</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+</head>
+<body class="admin-page">
+  <nav class="navbar navbar-dark admin-navbar px-4 py-3">
+    <a class="navbar-brand fw-bold" href="{{ url_for('admin') }}"><i class="fas fa-leaf me-2"></i>Agri-Direct <span class="fw-normal opacity-75">/ Admin</span></a>
+    <a href="{{ url_for('admin') }}" class="btn btn-outline-light btn-sm"><i class="fas fa-arrow-left me-1"></i>Overview</a>
+  </nav>
+  <main class="container-fluid container-xxl py-4">
+    <a class="breadcrumb-link" href="{{ url_for('admin') }}">← Admin Console</a>
+    <div class="mt-2 mb-4">
+      <h1 class="h3 mb-1">Listing photo location alerts</h1>
+      <p class="text-muted mb-0">Review failed listing thumbnail checks. A listing photo must be within 10 km of the seller's verified profile location.</p>
+    </div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}<div class="alert alert-{{ category }}">{{ message }}</div>{% endfor %}
+    {% endwith %}
+    <div class="card shadow-sm border-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead><tr><th>Seller</th><th>Captured distance</th><th>Capture time</th><th>Alert received</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody>
+            {% for alert in alerts %}
+            <tr>
+              <td><a href="{{ url_for('seller_profile', username=alert.username) }}">@{{ alert.username }}</a></td>
+              <td class="text-danger fw-semibold">{{ '%.2f'|format(alert.distance_meters / 1000) }} km <span class="text-muted fw-normal">(limit: 10 km)</span></td>
+              <td>{{ alert.thumbnail_captured_at|datetime_format }}</td>
+              <td>{{ alert.created_at|datetime_format }}</td>
+              <td><span class="badge text-bg-{{ 'danger' if alert.status == 'open' else 'secondary' }}">{{ alert.status|title }}</span></td>
+              <td>
+                {% if alert.status == 'open' %}
+                <form method="post" action="{{ url_for('review_listing_photo_alert', alert_id=alert.id) }}">
+                  <button class="btn btn-sm btn-outline-success">Mark reviewed</button>
+                </form>
+                {% else %}
+                <span class="small text-muted">Reviewed by @{{ alert.reviewed_by }}</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-center py-4 text-muted">No listing photo location alerts have been recorded.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

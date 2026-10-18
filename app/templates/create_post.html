@@ -28,11 +28,11 @@
             </div>
             <div class="mb-3">
                 <label class="form-label">Image Upload</label>
-                <input type="file" class="form-control" name="image" accept="image/*">
+                <input type="file" class="form-control" name="image" accept="image/png,image/jpeg,image/gif,image/webp">
             </div>
             <div class="mb-3">
                 <label class="form-label">Video Upload</label>
-                <input type="file" class="form-control" name="video" accept="video/*">
+                <input type="file" class="form-control" name="video" accept="video/mp4,video/webm,video/quicktime,video/x-m4v">
             </div>
             <div class="mb-3">
                 <label class="form-label">Status</label>
@@ -40,6 +40,10 @@
                     <option value="Published">Publish</option>
                     <option value="Draft">Save Draft</option>
                 </select>
+            </div>
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" name="is_pinned" value="1" id="is_pinned">
+                <label class="form-check-label" for="is_pinned">Pin this Agricultural Update and notify users when published</label>
             </div>
             <button class="btn btn-success" type="submit">Save Article</button>
             <a href="/admin/knowledge" class="btn btn-outline-secondary">Cancel</a>

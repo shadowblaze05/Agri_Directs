@@ -1,6 +1,42 @@
 {% extends "market_intelligence_layout.html" %}
 
 {% block content %}
+{% if session.get('role') != 'admin' %}
+<div class="row g-4">
+    <div class="col-lg-8">
+        <div class="card chart-card h-100">
+            <span class="small-muted">Current outlook</span>
+            <h2 class="h4 mt-2">A quick read on the market</h2>
+            <p class="mb-0">{{ market_brief.recommendation }}</p>
+        </div>
+    </div>
+    <div class="col-lg-4">
+        <div class="card chart-card h-100">
+            <span class="small-muted">Crops in recent records</span>
+            <div class="display-6 fw-bold mt-2">{{ market_brief.active_crops }}</div>
+            <p class="text-muted mb-0">Different crop types are represented in current harvest data.</p>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card chart-card h-100">
+            <h3 class="h5">Supply update</h3>
+            <p class="mb-0">{{ market_brief.supply_update }}</p>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card chart-card h-100">
+            <h3 class="h5">Suggested next step</h3>
+            <p class="mb-0">{{ market_brief.next_step }}</p>
+        </div>
+    </div>
+    <div class="col-12">
+        <p class="small text-muted mb-0">
+            These signals use recent harvest quantities. They are not measured market prices,
+            guaranteed forecasts, or confirmed buyer demand.
+        </p>
+    </div>
+</div>
+{% else %}
 <div class="row g-4">
     {% for card in summary_cards %}
     <div class="col-lg-3 col-md-6">
@@ -87,9 +123,11 @@
         </div>
     </div>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
+{% if session.get('role') == 'admin' %}
 <script>
     const summaryChartCtx = document.getElementById('summaryPriceChart');
     if (summaryChartCtx) {
@@ -120,4 +158,5 @@
         });
     }
 </script>
+{% endif %}
 {% endblock %}
