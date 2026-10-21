@@ -327,7 +327,6 @@
                         <!-- Main Carousel -->
                         <div id="productCarousel" class="carousel slide" data-bs-ride="carousel">
                             <div class="carousel-inner">
-                                <!-- ============ FIX: Loop through images ============ -->
                                 {% for img in images %}
                                 <div class="carousel-item {% if loop.first %}active{% endif %}">
                                     <img src="{{ url_for('static', filename='uploads/marketplace/' + img.image_filename) }}" 

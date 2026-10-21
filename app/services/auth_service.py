@@ -1,5 +1,3 @@
-"""Authentication token helpers shared by API routes."""
-
 import logging
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -53,7 +51,6 @@ def generate_jwt_token(username):
 
 
 def verify_jwt_token(token):
-    """Verify JWT token and return username if valid"""
     try:
         if not isinstance(token, str) or not token:
             return None

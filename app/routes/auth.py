@@ -60,7 +60,7 @@ def _ensure_password_reset_table():
         db.session.commit()
 
 
-@limiter.limit("5 per minute", methods=["POST"])
+@limiter.limit("3 per minute", methods=["POST"])
 @limiter.limit("20 per hour", methods=["POST"])
 def login():
 
@@ -121,7 +121,7 @@ def login():
 
     return render_template("login.html")
 
-@limiter.limit("10 per hour", methods=["POST"])
+@limiter.limit("5 per hour", methods=["POST"])
 def register_user():
 
     if request.method == "POST":
@@ -155,7 +155,6 @@ def register_user():
 
         _ensure_password_reset_table()
         password = generate_password_hash(raw_password)
-        # New registrations are simple users by default
         role = "user"
 
         conn = get_db()
@@ -219,7 +218,6 @@ def register_user():
     return render_template("register.html")
 
 def _reset_code_digest(code):
-    """Return a keyed digest so short numeric codes are not stored in plaintext."""
     secret = current_app.config["SECRET_KEY"].encode("utf-8")
     return hmac.new(secret, code.encode("ascii"), hashlib.sha256).hexdigest()
 

@@ -1,4 +1,3 @@
-"""Shared validation rules for passwords chosen by users."""
 
 import re
 import unicodedata
@@ -78,7 +77,6 @@ _SEQUENTIAL_PATTERNS = (
 
 
 def password_policy_error(password, identifiers=()):
-    """Return a user-facing reason if a password does not meet the policy."""
     if len(password) < MIN_PASSWORD_LENGTH:
         return f"Password must be at least {MIN_PASSWORD_LENGTH} characters long."
     if len(password) > MAX_PASSWORD_LENGTH:
