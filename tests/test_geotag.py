@@ -993,7 +993,13 @@ def test_admin_marketplace_protects_ordered_listings_from_deletion(client, monke
     assert not cursor.deleted
 
 
-def test_admin_inventory_renders_review_interface(client, monkeypatch):
+@pytest.mark.parametrize(
+    ("verification_status", "badge_class"),
+    [("manual_review", "warning"), ("approved", "success"), ("rejected", "danger")],
+)
+def test_admin_inventory_renders_review_interface(
+    client, monkeypatch, verification_status, badge_class
+):
     record = {
         "id": 1,
         "crop_name": "Rice",
@@ -1002,7 +1008,7 @@ def test_admin_inventory_renders_review_interface(client, monkeypatch):
         "farmer": "farmer",
         "source": "harvest",
         "photo_path": None,
-        "verification_status": "manual_review",
+        "verification_status": verification_status,
         "distance_from_user": None,
         "capture_time": None,
         "verification_notes": "GPS missing",
@@ -1037,7 +1043,11 @@ def test_admin_inventory_renders_review_interface(client, monkeypatch):
     assert response.status_code == 200
     assert b"Inventory and geotag review" in response.data
     assert b"GPS missing" in response.data
-    assert b"Approve" in response.data
+    assert f"badge text-bg-{badge_class}".encode() in response.data
+    if verification_status == "manual_review":
+        assert b'name="decision" value="approved">Approve</button>' in response.data
+    else:
+        assert b'name="decision" value="approved">Approve</button>' not in response.data
 
 
 def test_profile_location_panel_does_not_render_exact_coordinates(client, monkeypatch):
