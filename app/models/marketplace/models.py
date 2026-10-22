@@ -11,9 +11,31 @@ class MarketplaceListing(Model):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer)
+    seller_user_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            name="fk_marketplace_seller_user_id_users",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     username = Column(String(128))
     buyer_username = Column(String(128))
-    crop_id = Column(Integer)
+    buyer_user_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            name="fk_marketplace_buyer_user_id_users",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    crop_id = Column(
+        Integer,
+        ForeignKey("crops.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     crop_name = Column(String(128))
     amount = Column(Integer)
     price = Column(Float)
@@ -49,6 +71,15 @@ class MarketplaceListing(Model):
     preorder_status = Column(String(32), nullable=True)     # pending, confirmed, cancel_requested, cancelled, completed
     preorder_quantity = Column(Integer, nullable=True)      # reserved amount
     cancel_requested_by = Column(String(128), nullable=True)
+    cancel_requested_by_user_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            name="fk_marketplace_cancel_requested_by_user_id_users",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     cancel_reason = Column(Text, nullable=True)
     cancel_requested_date = Column(String(32), nullable=True)
 # ==========================================

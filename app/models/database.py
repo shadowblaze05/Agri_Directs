@@ -461,8 +461,7 @@ def init_db():
         cancel_requested_by TEXT,
         cancel_reason TEXT,
         cancel_requested_date TEXT,
-        FOREIGN KEY (user_id) REFERENCES users(id),
-        FOREIGN KEY (crop_id) REFERENCES crops(id)
+        FOREIGN KEY (crop_id) REFERENCES crops(id) ON DELETE RESTRICT
     )
     """)
     
@@ -621,7 +620,7 @@ def init_db():
         used_at TEXT,
         attempt_count INTEGER NOT NULL DEFAULT 0,
         purpose TEXT NOT NULL DEFAULT 'password_reset',
-        FOREIGN KEY (user_id) REFERENCES users(id)
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
     """)
     cur.execute("""
@@ -699,7 +698,7 @@ def init_db():
         views INTEGER DEFAULT 0,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME,
-        FOREIGN KEY(category_id) REFERENCES knowledge_categories(category_id)
+        FOREIGN KEY(category_id) REFERENCES knowledge_categories(category_id) ON DELETE SET NULL
     )
     """)
     cur.execute("PRAGMA table_info(knowledge_posts)")
@@ -711,27 +710,30 @@ def init_db():
     cur.execute("""
     CREATE TABLE IF NOT EXISTS knowledge_likes(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        post_id INTEGER,
+        post_id INTEGER NOT NULL,
         username TEXT,
-        UNIQUE(post_id, username)
+        UNIQUE(post_id, username),
+        FOREIGN KEY(post_id) REFERENCES knowledge_posts(post_id) ON DELETE CASCADE
     )
     """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS knowledge_comments(
         comment_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        post_id INTEGER,
+        post_id INTEGER NOT NULL,
         username TEXT,
         comment TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(post_id) REFERENCES knowledge_posts(post_id) ON DELETE CASCADE
     )
     """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS knowledge_replies(
         reply_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        comment_id INTEGER,
+        comment_id INTEGER NOT NULL,
         username TEXT,
         reply TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(comment_id) REFERENCES knowledge_comments(comment_id) ON DELETE CASCADE
     )
     """)
     

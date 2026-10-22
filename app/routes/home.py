@@ -104,7 +104,7 @@ def _public_metrics(now=None):
           AND email IS NOT NULL AND TRIM(email) <> ''
           AND profile_picture IS NOT NULL AND TRIM(profile_picture) <> ''
           AND profile_photo_captured_at IS NOT NULL
-          AND location_verified = 1
+          AND location_verified = TRUE
           AND geotag_location IS NOT NULL AND TRIM(geotag_location) <> ''
     """).fetchone()["count"]
     product_listing_count = cur.execute("""

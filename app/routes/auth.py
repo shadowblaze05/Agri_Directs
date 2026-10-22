@@ -37,7 +37,8 @@ def _ensure_password_reset_table():
             created_at TEXT,
             used_at TEXT,
             attempt_count INTEGER NOT NULL DEFAULT 0,
-            purpose TEXT NOT NULL DEFAULT 'password_reset'
+            purpose TEXT NOT NULL DEFAULT 'password_reset',
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
         """
     )

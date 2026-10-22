@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, Index, Integer, String, Text
-
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text
 from .base import Column, Model
 
 
@@ -20,6 +19,15 @@ class AuditEvent(Model):
         nullable=False,
     )
     actor = Column(String(128), nullable=True)
+    actor_user_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            name="fk_audit_events_actor_user_id_users",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     role = Column(String(32), nullable=True)
     action = Column(String(255), nullable=False)
     category = Column(String(64), nullable=False)

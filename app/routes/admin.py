@@ -1008,7 +1008,8 @@ def admin_review_geotag(item_id):
     )
     conn.commit()
     conn.close()
-    flash(f"Harvest submission {decision}.", "success")
+    feedback_category = "success" if decision == "approved" else "danger"
+    flash(f"Harvest submission {decision}.", feedback_category)
     return redirect(url_for("admin_inventory"))
 
 

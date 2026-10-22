@@ -28,6 +28,15 @@ class Harvest(Model):
 
     quantity = Column(Integer)
     farmer = Column(String(128))
+    farmer_user_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            name="fk_harvest_farmer_user_id_users",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     date_received = Column(String(32))
     location = Column(String(255))
 
@@ -44,7 +53,17 @@ class Inventory(Model):
     )
 
     quantity = Column(Integer)
+    crop_name = Column(String(128))
     farmer = Column(String(128))
+    farmer_user_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            name="fk_inventory_farmer_user_id_users",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     date_received = Column(String(32))
     location = Column(String(255))
     source = Column(String(32), default="harvest")
@@ -56,6 +75,15 @@ class Inventory(Model):
     verification_status = Column(String(32), default="pending", nullable=False)
     verification_notes = Column(Text, nullable=True)
     reviewed_by = Column(String(128), nullable=True)
+    reviewed_by_user_id = Column(
+        Integer,
+        ForeignKey(
+            "users.id",
+            name="fk_inventory_reviewed_by_user_id_users",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
 

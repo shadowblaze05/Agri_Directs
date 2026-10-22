@@ -270,47 +270,76 @@ Database names and connection selection:
   from it; it does not use a separate market-intelligence database.
 - Flask-Migrate/Alembic records the applied revision in alembic_version.
   alembic_version is migration metadata, not a business-data table.
+- The configured original `AgriDirect` database and the disposable
+  `AgriDirect_erd_verify` clone are both at revision `f2c8a6d9e413`. Before
+  updating the original, a fresh custom-format backup was created and validated.
+  The two already-present parent schema heads were verified and stamped before
+  applying the reconciliation and expanded relationship migrations; existing
+  parent DDL was not replayed.
 
 Physical table catalog:
-The canonical application tables below are created/maintained by the migrations
-and compatibility initialization in app/models/database.py. Field names are
-listed as implemented; exact physical SQL types/defaults can vary with the
-applied migration history and database dialect. The ORM model files remain the
-source for model-level types and constraints.
+The canonical application tables are maintained by Alembic migrations, with
+app/models/database.py preserving legacy initialization paths. The expanded
+nullable user-relationship fields are now present in both `AgriDirect` and the
+verification clone and are loaded by the ORM normally. Exact physical SQL
+types/defaults can vary with migration history and database dialect.
 
 | Table | Columns and purpose |
 |---|---|
 | users | id (PK), username, email, password, first_name, last_name, phone_number, profile_picture, profile_photo_captured_at, bio, role, location, is_verified, location_latitude, location_longitude, location_verified, location_verified_at, psgc_location, geotag_location, reliability_score, reliability_status, completed_transactions, cancelled_transactions, total_transactions, created_at, updated_at. Account, profile, role, location verification, and reliability data. |
 | crops | id (PK), crops_name (unique), category_id (FK to crop_categories.id). Crop catalogue. |
 | crop_categories | id (PK), name (unique), description. Crop grouping/category lookup. |
-| harvest | id (PK), crop_id (FK to crops.id), quantity, farmer, date_received, location. Legacy harvest records; init_db migrates/backfills them into inventory. |
-| inventory | id (PK), crop_id (FK to crops.id), crop_name (legacy/denormalized compatibility field), quantity, farmer, date_received, location, source, photo_path, latitude, longitude, capture_time, distance_from_user, verification_status, verification_notes, reviewed_by, reviewed_at. Harvest stock and its evidence/review state. |
-| marketplace | id (PK), user_id (FK to users.id), username, buyer_username, crop_id (FK to crops.id), crop_name, amount, price, unit, status, order_status, listing_date, order_date, delivery_date, expiry_date, description, location, delivery_confirmed, buyer_confirmed, buyer_confirm_date, buyer_rating, buyer_rating_date, main_image, listing_type, available_date, preorder_status, preorder_quantity, cancel_requested_by, cancel_reason, cancel_requested_date. Listings, orders, ratings, preorders, and looking-for entries share this table. |
+| harvest | id (PK), crop_id (FK to crops.id), farmer, farmer_user_id (nullable FK to users.id), date_received, location. Legacy harvest records; init_db migrates/backfills them into inventory. |
+| inventory | id (PK), crop_id (FK to crops.id), crop_name (legacy/denormalized compatibility field), quantity, farmer, farmer_user_id (nullable FK to users.id), reviewed_by, reviewed_by_user_id (nullable FK to users.id), date_received, location, source, photo_path, latitude, longitude, capture_time, distance_from_user, verification_status, verification_notes, reviewed_at. Harvest stock and its evidence/review state. |
+| marketplace | id (PK), user_id (legacy seller ID; deliberately not linked because nine existing values are unresolved), seller_user_id (nullable FK to users.id), username, buyer_username, buyer_user_id (nullable FK to users.id), crop_id (FK to crops.id), crop_name, amount, price, unit, status, order_status, listing_date, order_date, delivery_date, expiry_date, description, location, delivery_confirmed, buyer_confirmed, buyer_confirm_date, buyer_rating, buyer_rating_date, main_image, listing_type, available_date, preorder_status, preorder_quantity, cancel_requested_by, cancel_requested_by_user_id (nullable FK to users.id), cancel_reason, cancel_requested_date. Listings, orders, ratings, preorders, and looking-for entries share this table. |
 | marketplace_images | id (PK), listing_id (FK to marketplace.id, cascade delete), image_filename, display_order, created_at. Listing image metadata. |
 | cart | id (PK), user_id (FK to users.id, cascade delete), listing_id (FK to marketplace.id, cascade delete), quantity, added_date. Shopping cart rows. |
-| analytics | id (PK), period_type, period_value, total_harvest, top_crop, top_crop_volume, top_crop_id, top_location, top_location_volume. Computed monthly/yearly dashboard summaries. |
-| messages | id (PK), sender, recipient, message, timestamp. User and AgriBot conversations. |
-| notifications | id (PK), username, title, message, type, created_at, is_read, link. Per-user notifications; linked announcements can open their Knowledge Hub post. |
+| analytics | id (PK), period_type, period_value, total_harvest, top_crop, top_crop_volume, top_crop_id (FK to crops.id), top_location, top_location_volume. Computed monthly/yearly dashboard summaries. |
+| messages | id (PK), sender, sender_user_id (nullable FK to users.id), recipient, recipient_user_id (nullable FK to users.id), message, timestamp. User and AgriBot conversations; text labels are retained and bot identities have no user ID. |
+| notifications | id (PK), username, user_id (nullable FK to users.id), title, message, type, created_at, is_read, link. Per-user notifications; linked announcements can open their Knowledge Hub post. |
+| password_reset_tokens | id (PK), user_id (nullable FK to users.id, cascade delete), token (unique), expires_at, created_at, used_at, attempt_count, purpose. Password-reset and email-verification token state. |
 | knowledge_categories | category_id (PK), category_name (unique). Knowledge Hub categories. |
-| knowledge_posts | post_id (PK), title, content, category_id, author, image, video, status, is_pinned, views, created_at, updated_at. Knowledge articles and media references; pinned published updates are promoted in feeds and notify non-admin users. |
-| knowledge_likes | id (PK), post_id, username. Knowledge article likes; the compatibility initializer enforces unique (post_id, username). |
-| knowledge_comments | comment_id (PK), post_id, username, comment, created_at. Article comments. |
-| knowledge_replies | reply_id (PK), comment_id, username, reply, created_at. Replies to comments. |
+| knowledge_posts | post_id (PK), title, content, category_id (FK to knowledge_categories.category_id), author, author_user_id (nullable FK to users.id), image, video, status, is_pinned, views, created_at, updated_at. Knowledge articles and media references; pinned published updates are promoted in feeds and notify non-admin users. |
+| knowledge_likes | id (PK), post_id (FK to knowledge_posts.post_id), username, user_id (nullable FK to users.id). Knowledge article likes; the compatibility initializer enforces unique (post_id, username). |
+| knowledge_comments | comment_id (PK), post_id (FK to knowledge_posts.post_id), username, user_id (nullable FK to users.id), comment, created_at. Article comments. |
+| knowledge_replies | reply_id (PK), comment_id (FK to knowledge_comments.comment_id), username, user_id (nullable FK to users.id), reply, created_at. Replies to comments. |
 | alembic_version | version_num. Alembic's migration revision tracking metadata; created and maintained by Flask-Migrate/Alembic. |
 
 Key data relationships and behavior:
 - inventory.crop_id and harvest.crop_id identify a row in crops. The inventory
   table retains crop_name for legacy compatibility; current intelligence joins
   inventory to crops for the crop name.
-- marketplace.user_id identifies the seller; marketplace.crop_id identifies
-  the crop when available. Marketplace cart/image rows reference listing IDs.
+- In both the original and verification clone, marketplace.crop_id references
+  crops.id. marketplace.user_id remains an unresolved legacy value: nine seller IDs had
+  no matching users row. A separate nullable seller_user_id FK provides the
+  canonical relationship for matched/new sellers without rewriting those old
+  values or blocking edits to those listings. The seller username is retained
+  as a display label, not treated as proof of ownership.
+- Marketplace cart/image rows reference listing IDs. Knowledge likes and
+  comments reference posts, replies reference comments, and posts reference
+  knowledge categories. Both databases now have nullable user-ID
+  relationships for marketplace participants, message endpoints, notification
+  recipients, harvest/inventory owners and reviewers, Knowledge Hub authors,
+  likers/commenters/repliers, profile-report parties/reviewers, audit actors,
+  and listing-photo alert users/reviewers. Legacy username/text columns remain
+  unchanged; database triggers populate canonical ID fields when an identity
+  matches a user. AgriBot and unmatched historical names remain unlinked.
 - User/profile coordinates are reference data; inventory coordinates and photo
   paths are harvest evidence. Exact GPS values must not be exposed publicly.
 - analytics rows are derived summaries refreshed by update_analytics(); they
   are not the raw source of market-intelligence forecasts.
-- A knowledge category/post/comment relationship is represented by IDs in the
-  schema. Not all such references are declared as database foreign-key
-  constraints in the current model definitions.
+- Password-reset tokens reference users.id and cascade when a user is deleted.
+  The reviewed migration removed 23 orphaned used or expired token rows from
+  `AgriDirect` after validation; no orphan reset tokens remain. The pre-migration
+  database backup is retained outside the repository for recovery.
+- The ORM models and both PostgreSQL databases now declare the expanded
+  user/crop ID columns and foreign keys. These user relationships use nullable
+  ID columns with `ON DELETE SET NULL`, preserving username labels and
+  authored/history rows when users are removed. Existing unmatched labels
+  remain null-linked; they were not rewritten or deleted. Nine unresolved
+  legacy marketplace seller IDs remain in `marketplace.user_id`; their
+  canonical `seller_user_id` remains NULL, and no FK was added to that legacy
+  column.
 - No separate ORM tables/classes exist for orders, preorders, transactions,
   reliability history, or market forecasts; order and preorder states are
   stored in marketplace and computed analytics remain in analytics/in memory.
@@ -621,20 +650,20 @@ exact types, nullability, defaults, and relationships.
 | users | User | id, username, email, password (Werkzeug hash), first_name, last_name, phone_number, profile_picture, profile-photo/GPS/PSGC fields, bio, role, location, is_verified, reliability_score, reliability_status, transaction counters, created_at, updated_at |
 | crops | Crop | id, crops_name, category_id |
 | crop_categories | CropCategory | id, name, description |
-| harvest | Harvest | id, crop_id, quantity, farmer, date_received, location |
-| inventory | Inventory | id, crop_id, quantity, farmer, date_received, location, source, photo_path, latitude, longitude, capture_time, distance_from_user, verification_status, verification_notes, reviewed_by, reviewed_at |
+| harvest | Harvest | id, crop_id, quantity, farmer, farmer_user_id, date_received, location |
+| inventory | Inventory | id, crop_id, crop_name, quantity, farmer, farmer_user_id, date_received, location, source, photo_path, latitude, longitude, capture_time, distance_from_user, verification_status, verification_notes, reviewed_by, reviewed_by_user_id, reviewed_at |
 | analytics | Analytics | id, period_type, period_value, total_harvest, top_crop, top_crop_volume, top_crop_id, top_location, top_location_volume |
-| marketplace | MarketplaceListing | id, user_id, username, buyer_username, crop_id, crop_name, amount, price, unit, status, order_status, listing/order/delivery/expiry dates, description, location, delivery_confirmed, buyer_confirmed, buyer_confirm_date, buyer_rating, buyer_rating_date, main_image, listing_type, available_date, preorder_status, preorder_quantity, cancellation fields; images and cart_items relationships |
+| marketplace | MarketplaceListing | id, user_id, seller_user_id, username, buyer_username, buyer_user_id, crop_id, crop_name, amount, price, unit, status, order_status, listing/order/delivery/expiry dates, description, location, delivery_confirmed, buyer_confirmed, buyer_confirm_date, buyer_rating, buyer_rating_date, main_image, listing_type, available_date, preorder_status, preorder_quantity, cancel_requested_by_user_id, cancellation fields; images and cart_items relationships |
 | marketplace_images | MarketplaceImage | id, listing_id, image_filename, display_order, created_at |
 | cart | Cart | id, user_id, listing_id, quantity, added_date |
 | knowledge_categories | KnowledgeCategory | category_id, category_name |
-| knowledge_posts | KnowledgePost | post_id, title, content, category_id, author, image, video, status, views, created_at, updated_at |
-| knowledge_likes | KnowledgeLike | id, post_id, username |
-| knowledge_comments | KnowledgeComment | comment_id, post_id, username, comment, created_at |
-| knowledge_replies | KnowledgeReply | reply_id, comment_id, username, reply, created_at |
-| messages | Message | id, sender, recipient, message, timestamp |
-| notifications | Notification | id, username, title, message, type, created_at, is_read |
-| audit_events | AuditEvent | occurred_at, actor, role, action, category, method, endpoint, path, status_code, duration_ms, IP address, user agent, route parameters |
+| knowledge_posts | KnowledgePost | post_id, title, content, category_id, author, author_user_id, image, video, status, views, created_at, updated_at |
+| knowledge_likes | KnowledgeLike | id, post_id, username, user_id |
+| knowledge_comments | KnowledgeComment | comment_id, post_id, username, user_id, comment, created_at |
+| knowledge_replies | KnowledgeReply | reply_id, comment_id, username, user_id, reply, created_at |
+| messages | Message | id, sender, sender_user_id, recipient, recipient_user_id, message, timestamp |
+| notifications | Notification | id, username, user_id, title, message, type, created_at, is_read |
+| audit_events | AuditEvent | occurred_at, actor, actor_user_id, role, action, category, method, endpoint, path, status_code, duration_ms, IP address, user agent, route parameters |
 
 Preorders and looking-for requests are represented by marketplace listing/order
 fields and listing_type values; there is no separate ORM Order or Transaction
@@ -805,7 +834,7 @@ VERSION
 -------
 1.4
 
-
+python -m pytest -q
 
 MAIL_SERVER=smtp.gmail.com
 MAIL_PORT=587
