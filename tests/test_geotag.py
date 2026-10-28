@@ -469,8 +469,7 @@ def test_manual_harvest_saves_proximity_result_without_photo(client, monkeypatch
     assert cursor.inserted_values[10] == "within_range"
     assert cursor.inserted_values[11] is None
     with client.session_transaction() as session:
-        assert session["_flashes"][-1][0] == "warning"
-        assert "not final approval" in session["_flashes"][-1][1]
+        assert session["_flashes"][-1] == ("success", "Harvest added")
 
 
 def test_harvest_without_gps_is_saved_for_manual_review(client, monkeypatch):
@@ -489,8 +488,7 @@ def test_harvest_without_gps_is_saved_for_manual_review(client, monkeypatch):
     assert cursor.inserted_values[10] == "manual_review"
     assert "GPS capture is missing" in cursor.inserted_values[11]
     with client.session_transaction() as session:
-        assert session["_flashes"][-1][0] == "warning"
-        assert "awaiting administrator review" in session["_flashes"][-1][1]
+        assert session["_flashes"][-1] == ("success", "Harvest added")
 
 
 def test_upload_page_does_not_prompt_for_harvest_location(client, monkeypatch):
@@ -499,13 +497,13 @@ def test_upload_page_does_not_prompt_for_harvest_location(client, monkeypatch):
         session["user"] = "farmer"
         session["role"] = "user"
         session["_flashes"] = [
-            ("warning", "Harvest entry added. Verification is awaiting review.")
+            ("success", "Harvest added")
         ]
 
     response = client.get("/upload")
 
     assert response.status_code == 200
-    assert b"alert alert-warning" in response.data
+    assert b"alert alert-success" in response.data
     assert b"alert alert-danger" not in response.data
     assert b"crop_photo" not in response.data
     assert b"Crop or harvest photo" not in response.data

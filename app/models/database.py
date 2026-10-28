@@ -362,6 +362,29 @@ def init_db():
         description TEXT
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS crop_pricing(
+        crop_id INTEGER PRIMARY KEY,
+        pricing_mode TEXT NOT NULL CHECK (pricing_mode IN ('range', 'bounds')),
+        price_unit TEXT NOT NULL DEFAULT 'kg'
+            CHECK (price_unit = 'kg'),
+        reference_price NUMERIC(10, 2),
+        price_range NUMERIC(10, 2),
+        minimum_price NUMERIC(10, 2),
+        maximum_price NUMERIC(10, 2),
+        CHECK (
+            (pricing_mode = 'range' AND reference_price > 0
+             AND price_range >= 0 AND reference_price > price_range
+             AND minimum_price IS NULL
+             AND maximum_price IS NULL) OR
+            (pricing_mode = 'bounds' AND minimum_price > 0
+             AND maximum_price >= minimum_price AND price_range IS NULL
+             AND (reference_price IS NULL OR reference_price BETWEEN
+                  minimum_price AND maximum_price))
+        ),
+        FOREIGN KEY (crop_id) REFERENCES crops(id) ON DELETE CASCADE
+    )
+    """)
     cur.execute("PRAGMA table_info(crops)")
     crop_columns = [row[1] for row in cur.fetchall()]
     if "category_id" not in crop_columns:

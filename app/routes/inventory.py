@@ -548,13 +548,7 @@ def upload():
                 f" Distance from your captured reference location: {distance / 1000:.2f} km."
                 if distance is not None else ""
             )
-            status_label = verification_status.replace("_", " ")
-            flash(
-                f"Harvest entry added. Location check: {status_label}. "
-                "This is not final approval; the submission is awaiting "
-                f"administrator review.{distance_message}",
-                "warning",
-            )
+            flash("Harvest added", "success")
             logger.info(f"User {session['user']} manually posted crop {crop_id} x{quantity}")
 
         else:

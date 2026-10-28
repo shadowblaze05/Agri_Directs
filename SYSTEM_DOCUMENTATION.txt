@@ -289,6 +289,7 @@ types/defaults can vary with migration history and database dialect.
 | users | id (PK), username, email, password, first_name, last_name, phone_number, profile_picture, profile_photo_captured_at, bio, role, location, is_verified, location_latitude, location_longitude, location_verified, location_verified_at, psgc_location, geotag_location, reliability_score, reliability_status, completed_transactions, cancelled_transactions, total_transactions, created_at, updated_at. Account, profile, role, location verification, and reliability data. |
 | crops | id (PK), crops_name (unique), category_id (FK to crop_categories.id). Crop catalogue. |
 | crop_categories | id (PK), name (unique), description. Crop grouping/category lookup. |
+| crop_pricing | crop_id (PK, FK to crops.id, ON DELETE CASCADE), pricing_mode, price_unit (kg), reference_price, price_range, minimum_price, maximum_price. One optional seller-pricing rule per crop; range rules derive the allowed minimum/maximum from reference price ± range, while bounds rules store explicit limits. All marketplace prices are per kilogram. |
 | harvest | id (PK), crop_id (FK to crops.id), farmer, farmer_user_id (nullable FK to users.id), date_received, location. Legacy harvest records; init_db migrates/backfills them into inventory. |
 | inventory | id (PK), crop_id (FK to crops.id), crop_name (legacy/denormalized compatibility field), quantity, farmer, farmer_user_id (nullable FK to users.id), reviewed_by, reviewed_by_user_id (nullable FK to users.id), date_received, location, source, photo_path, latitude, longitude, capture_time, distance_from_user, verification_status, verification_notes, reviewed_at. Harvest stock and its evidence/review state. |
 | marketplace | id (PK), user_id (legacy seller ID; deliberately not linked because nine existing values are unresolved), seller_user_id (nullable FK to users.id), username, buyer_username, buyer_user_id (nullable FK to users.id), crop_id (FK to crops.id), crop_name, amount, price, unit, status, order_status, listing_date, order_date, delivery_date, expiry_date, description, location, delivery_confirmed, buyer_confirmed, buyer_confirm_date, buyer_rating, buyer_rating_date, main_image, listing_type, available_date, preorder_status, preorder_quantity, cancel_requested_by, cancel_requested_by_user_id (nullable FK to users.id), cancel_reason, cancel_requested_date. Listings, orders, ratings, preorders, and looking-for entries share this table. |
@@ -315,6 +316,17 @@ Key data relationships and behavior:
   canonical relationship for matched/new sellers without rewriting those old
   values or blocking edits to those listings. The seller username is retained
   as a display label, not treated as proof of ownership.
+- crop_pricing.crop_id is a one-to-one foreign-key relationship to crops.id.
+  Admins may configure a symmetric reference-price range or explicit minimum
+  and maximum limits. Seller listing creation and edits enforce configured
+  limits on the server; buyer "looking for" offers are not seller crop listings.
+  Admins can also bulk import CSV or .xlsx rows from the crop catalog; each row
+  contains only crop_name, category_name, and price_unit (kg). The import
+  validates every row and any optional shared price rule before writing,
+  creates new crops and categories when needed, and rejects category
+  mismatches without partially importing the file. Admins can apply one shared
+  rule to all imported crops or set rules individually in the catalog. The CSV
+  template and both rule controls are available from the catalog.
 - Marketplace cart/image rows reference listing IDs. Knowledge likes and
   comments reference posts, replies reference comments, and posts reference
   knowledge categories. Both databases now have nullable user-ID
@@ -629,6 +641,7 @@ requirements.txt is the authoritative pinned dependency manifest:
 | PyJWT | 2.12.1 | JSON Web Tokens |
 | numpy | 2.5.2 | Numerical calculations and AHP/TOPSIS matrices |
 | pandas | 3.0.5 | Forecast time-series input |
+| openpyxl | 3.1.5 | Read admin crop-pricing workbooks (.xlsx) |
 | scikit-learn | 1.9.0 | Linear regression baseline |
 | statsmodels | 0.15.0 | ARIMA demand forecasting |
 | pyDecision | 5.1.1 | Decision-analysis package declared by the project |
@@ -735,7 +748,7 @@ Registered browser routes:
 | Knowledge hub | /knowledge, /knowledge/<post_id>, /knowledge/like/<post_id> (POST), /knowledge/comment/<post_id> (POST), /knowledge/reply/<comment_id> (POST) |
 | Marketplace | /marketplace, /marketplace/add (GET/POST), /marketplace/buy/<listing_id> (POST), /marketplace/complete-order/<listing_id> (POST), /marketplace/confirm-receipt/<listing_id> (POST), /marketplace/my-purchases, /marketplace/rate/<listing_id> (POST), /marketplace/my-listings, /marketplace/delete/<listing_id> (POST), /marketplace/trade/<listing_id> (GET/POST), /api/listing/<listing_id>, /marketplace/product/<listing_id>, /marketplace/cart, /marketplace/cart/add/<listing_id> (POST), /marketplace/cart/update/<cart_id> (POST), /marketplace/cart/remove/<cart_id> (POST), /marketplace/cart/checkout (POST), /marketplace/edit/<listing_id> (GET/POST), /marketplace/delete-image/<image_id> (POST), /marketplace/set-thumbnail/<image_id> (POST), /marketplace/preorder/<listing_id> (POST), /marketplace/preorder/<order_id>/accept (POST), /marketplace/preorder/<order_id>/reject (POST), /marketplace/preorder/<order_id>/request-cancel (POST), /marketplace/preorder/<order_id>/approve-cancel (POST), /marketplace/my-preorders, /marketplace/my-preorder-requests, /marketplace/looking-for |
 | Profile | /profile, /profile/update (GET/POST), /profile/location (POST) |
-| Administration | /admin, /admin/users, /admin/catalog, /admin/inventory, /admin/slow-queries, /admin/geotag/<item_id>/review (POST), /admin/knowledge, /admin/knowledge/create (GET/POST), /admin/knowledge/edit/<post_id> (GET/POST), /admin/knowledge/delete/<post_id> (POST), /admin/knowledge-categories, /admin/users/create (POST), /admin/users/edit/<user_id> (POST), /admin/users/delete/<user_id> (POST), /admin/crop-categories/create (POST), /admin/crop-categories/edit/<category_id> (POST), /admin/crop-categories/delete/<category_id> (POST), /admin/crops/create (POST), /admin/crops/edit/<crop_id> (POST), /admin/crops/delete/<crop_id> (POST), /admin/knowledge-categories/create (POST), /admin/knowledge-categories/edit/<category_id> (POST), /admin/knowledge-categories/delete/<category_id> (POST) |
+| Administration | /admin, /admin/users, /admin/catalog, /admin/catalog/pricing/template, /admin/catalog/pricing/import (POST), /admin/inventory, /admin/slow-queries, /admin/geotag/<item_id>/review (POST), /admin/knowledge, /admin/knowledge/create (GET/POST), /admin/knowledge/edit/<post_id> (GET/POST), /admin/knowledge/delete/<post_id> (POST), /admin/knowledge-categories, /admin/users/create (POST), /admin/users/edit/<user_id> (POST), /admin/users/delete/<user_id> (POST), /admin/crop-categories/create (POST), /admin/crop-categories/edit/<category_id> (POST), /admin/crop-categories/delete/<category_id> (POST), /admin/crops/create (POST), /admin/crops/edit/<crop_id> (POST), /admin/crops/<crop_id>/pricing (POST), /admin/crops/delete/<crop_id> (POST), /admin/knowledge-categories/create (POST), /admin/knowledge-categories/edit/<category_id> (POST), /admin/knowledge-categories/delete/<category_id> (POST) |
 | Audit log | /admin/audit-logs |
 
 The audit log is administrator-only and records write requests across the app,
@@ -842,3 +855,16 @@ MAIL_USERNAME=your_email@example.com
 MAIL_PASSWORD=your_email_app_password
 MAIL_USE_TLS=true
 MAIL_USE_SSL=false
+
+
+The APIs and external services serve different location-related functions:
+
+- **OpenStreetMap Nominatim — reverse geocoding:** Takes the farmer’s GPS coordinates and returns an approximate readable address or place name. It is used when a profile location is saved. See `geotag_service.py`.
+
+- **PSGC API — official location matching:** Looks up Philippine Standard Geographic Code records to match a place to official geographic areas, such as a city or municipality, province, region, and sometimes barangay. This gives the system a standardized location hierarchy. See `geotag_service.py`.
+
+- **Google Maps Geocoding API — forward geocoding:** Converts a text location into latitude and longitude so the system can place it on a map. It is optional and used when a Google Maps API key is configured. See `geo_service.py`.
+
+- **OpenStreetMap tile service — map display:** Supplies the map imagery (the tiles that form the map) shown on the locations page. It displays the map; it does not perform the address lookup. See `locations.html`.
+
+The browser’s built-in **Geolocation API** is also used to obtain a user’s coordinates, with their permission. It is not an external service.
