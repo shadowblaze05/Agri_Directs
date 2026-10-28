@@ -1,4 +1,8 @@
+import math
+import os
+import uuid
 from datetime import datetime, timedelta, timezone
+
 from flask import current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from PIL import Image, UnidentifiedImageError
 from .. import legacy as core
@@ -9,10 +13,8 @@ from ..services.geotag_service import (
     validate_coordinates,
     verify_crop_location,
 )
+from ..services.crop_pricing import price_bounds, seller_price_error
 from ..services.upload_service import save_sanitized_public_image
-
-import os
-import uuid
 
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
 
@@ -27,6 +29,15 @@ class ListingThumbnailOutOfRange(ValueError):
         super().__init__(message)
         self.distance_meters = distance_meters
         self.captured_at = captured_at
+
+
+def _crop_price_rule(cur, crop_id):
+    return cur.execute(
+        """SELECT pricing_mode, reference_price, price_range,
+                  minimum_price, maximum_price, price_unit
+           FROM crop_pricing WHERE crop_id=?""",
+        (crop_id,),
+    ).fetchone()
 
 
 def _validate_marketplace_image(uploaded_file):
@@ -281,9 +292,9 @@ def add_marketplace_listing():
         crop_id = request.form.get("crop_id")
         amount = request.form.get("amount")
         price = request.form.get("price")
-        unit = request.form.get("unit", "kg")
+        unit = "kg"
         description = request.form.get("description", "").strip()
-        expiry_days = request.form.get("expiry_days", 30)
+        expiry_days = request.form.get("expiry_days", 1)
         listing_type = request.form.get("listing_type", "standard")
         available_date = request.form.get("available_date", "").strip()
 
@@ -299,8 +310,11 @@ def add_marketplace_listing():
             flash("Invalid number format")
             return redirect(request.url)
 
-        if amount <= 0 or price <= 0:
+        if amount <= 0 or price <= 0 or not math.isfinite(price):
             flash("Amount and price must be positive")
+            return redirect(request.url)
+        if expiry_days < 1:
+            flash("Listing expiry must be at least 1 day.", "danger")
             return redirect(request.url)
 
         if listing_type not in ("standard", "preorder", "looking_for"):
@@ -327,7 +341,7 @@ def add_marketplace_listing():
         conn = get_db()
         cur = conn.cursor()
 
-        cur.execute("SELECT crops_name FROM crops WHERE id = ?", (crop_id,))
+        cur.execute("SELECT id, crops_name FROM crops WHERE id = ?", (crop_id,))
         crop = cur.fetchone()
         if not crop:
             flash("Invalid crop selected")
@@ -335,6 +349,14 @@ def add_marketplace_listing():
             return redirect(request.url)
 
         crop_name = crop["crops_name"]
+        if listing_type != "looking_for":
+            price_error = seller_price_error(
+                price, unit, _crop_price_rule(cur, crop_id)
+            )
+            if price_error:
+                flash(price_error, "danger")
+                conn.close()
+                return redirect(request.url)
 
         # Inventory check: only for standard listings
         if listing_type == "standard":
@@ -383,7 +405,14 @@ def add_marketplace_listing():
                 flash(str(error), "danger")
                 return redirect(request.url)
 
-        expiry_date = (datetime.now() + timedelta(days=expiry_days)).strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            expiry_date = (
+                datetime.now() + timedelta(days=expiry_days)
+            ).strftime("%Y-%m-%d %H:%M:%S")
+        except OverflowError:
+            conn.close()
+            flash("Listing expiry is too far in the future.", "danger")
+            return redirect(request.url)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         cur.execute("""
@@ -439,10 +468,15 @@ def add_marketplace_listing():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT c.crops_name AS crop_name, i.crop_id
+        SELECT c.crops_name AS crop_name, i.crop_id, cp.pricing_mode,
+               cp.reference_price, cp.price_range, cp.minimum_price,
+               cp.maximum_price, cp.price_unit
         FROM inventory i JOIN crops c ON c.id=i.crop_id
+        LEFT JOIN crop_pricing cp ON cp.crop_id=c.id
         WHERE i.farmer = ?
-        GROUP BY i.crop_id, c.crops_name
+        GROUP BY i.crop_id, c.crops_name, cp.pricing_mode,
+                 cp.reference_price, cp.price_range,
+                 cp.minimum_price, cp.maximum_price, cp.price_unit
         HAVING SUM(quantity) > 0
         ORDER BY c.crops_name
     """, (session["user"],))
@@ -460,7 +494,13 @@ def add_marketplace_listing():
             user_crops_with_ids.append({
                 "id": crop["crop_id"],
                 "crops_name": crop["crop_name"],
-                "total_quantity": total["total_quantity"] if total else 0
+                "total_quantity": total["total_quantity"] if total else 0,
+                "pricing_mode": crop["pricing_mode"],
+                "reference_price": crop["reference_price"],
+                "price_range": crop["price_range"],
+                "minimum_price": crop["minimum_price"],
+                "maximum_price": crop["maximum_price"],
+                "price_unit": crop["price_unit"],
             })
 
     cur.execute("""
@@ -473,7 +513,13 @@ def add_marketplace_listing():
     """, (session["user"],))
     user_inventory = cur.fetchall()
 
-    cur.execute("SELECT id, crops_name FROM crops ORDER BY crops_name")
+    cur.execute("""
+        SELECT c.id, c.crops_name, cp.pricing_mode, cp.reference_price,
+               cp.price_range, cp.minimum_price, cp.maximum_price,
+               cp.price_unit
+        FROM crops c LEFT JOIN crop_pricing cp ON cp.crop_id=c.id
+        ORDER BY c.crops_name
+    """)
     all_crops = cur.fetchall()
 
     cur.execute(
@@ -1788,7 +1834,7 @@ def edit_marketplace_listing(listing_id):
     if request.method == "POST":
         amount = request.form.get("amount")
         price = request.form.get("price")
-        unit = request.form.get("unit", "kg")
+        unit = "kg"
         description = request.form.get("description", "").strip()
 
         try:
@@ -1799,10 +1845,19 @@ def edit_marketplace_listing(listing_id):
             conn.close()
             return redirect(request.url)
 
-        if amount <= 0 or price <= 0:
+        if amount <= 0 or price <= 0 or not math.isfinite(price):
             flash("Amount and price must be positive")
             conn.close()
             return redirect(request.url)
+
+        if listing["listing_type"] != "looking_for":
+            price_error = seller_price_error(
+                price, unit, _crop_price_rule(cur, listing["crop_id"])
+            )
+            if price_error:
+                flash(price_error, "danger")
+                conn.close()
+                return redirect(request.url)
 
         thumbnail = request.files.get("thumbnail")
         thumbnail_capture = None
@@ -1906,6 +1961,7 @@ def edit_marketplace_listing(listing_id):
         ORDER BY display_order ASC
     """, (listing_id,))
     images = cur.fetchall()
+    crop_pricing = _crop_price_rule(cur, listing["crop_id"])
 
     cart_count = get_cart_count(session["user"])
 
@@ -1914,6 +1970,8 @@ def edit_marketplace_listing(listing_id):
     return render_template("add_listing.html",
                          listing=listing,
                          images=images,
+                         crop_pricing=crop_pricing,
+                         seller_price_bounds=price_bounds(crop_pricing),
                          cart_count=cart_count,
                          profile_location_verified=bool(user["location_verified"]))
 

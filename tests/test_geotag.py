@@ -468,6 +468,8 @@ def test_manual_harvest_saves_proximity_result_without_photo(client, monkeypatch
     assert cursor.inserted_values[9] == pytest.approx(1_000)
     assert cursor.inserted_values[10] == "within_range"
     assert cursor.inserted_values[11] is None
+    with client.session_transaction() as session:
+        assert session["_flashes"][-1] == ("success", "Harvest added")
 
 
 def test_harvest_without_gps_is_saved_for_manual_review(client, monkeypatch):
@@ -485,6 +487,8 @@ def test_harvest_without_gps_is_saved_for_manual_review(client, monkeypatch):
     assert cursor.inserted_values[9] is None
     assert cursor.inserted_values[10] == "manual_review"
     assert "GPS capture is missing" in cursor.inserted_values[11]
+    with client.session_transaction() as session:
+        assert session["_flashes"][-1] == ("success", "Harvest added")
 
 
 def test_upload_page_does_not_prompt_for_harvest_location(client, monkeypatch):
@@ -492,10 +496,15 @@ def test_upload_page_does_not_prompt_for_harvest_location(client, monkeypatch):
     with client.session_transaction() as session:
         session["user"] = "farmer"
         session["role"] = "user"
+        session["_flashes"] = [
+            ("success", "Harvest added")
+        ]
 
     response = client.get("/upload")
 
     assert response.status_code == 200
+    assert b"alert alert-success" in response.data
+    assert b"alert alert-danger" not in response.data
     assert b"crop_photo" not in response.data
     assert b"Crop or harvest photo" not in response.data
     assert b"Capture harvest location" not in response.data
@@ -993,7 +1002,13 @@ def test_admin_marketplace_protects_ordered_listings_from_deletion(client, monke
     assert not cursor.deleted
 
 
-def test_admin_inventory_renders_review_interface(client, monkeypatch):
+@pytest.mark.parametrize(
+    ("verification_status", "badge_class"),
+    [("manual_review", "warning"), ("approved", "success"), ("rejected", "danger")],
+)
+def test_admin_inventory_renders_review_interface(
+    client, monkeypatch, verification_status, badge_class
+):
     record = {
         "id": 1,
         "crop_name": "Rice",
@@ -1002,7 +1017,7 @@ def test_admin_inventory_renders_review_interface(client, monkeypatch):
         "farmer": "farmer",
         "source": "harvest",
         "photo_path": None,
-        "verification_status": "manual_review",
+        "verification_status": verification_status,
         "distance_from_user": None,
         "capture_time": None,
         "verification_notes": "GPS missing",
@@ -1037,7 +1052,11 @@ def test_admin_inventory_renders_review_interface(client, monkeypatch):
     assert response.status_code == 200
     assert b"Inventory and geotag review" in response.data
     assert b"GPS missing" in response.data
-    assert b"Approve" in response.data
+    assert f"badge text-bg-{badge_class}".encode() in response.data
+    if verification_status == "manual_review":
+        assert b'name="decision" value="approved">Approve</button>' in response.data
+    else:
+        assert b'name="decision" value="approved">Approve</button>' not in response.data
 
 
 def test_profile_location_panel_does_not_render_exact_coordinates(client, monkeypatch):
@@ -1100,7 +1119,11 @@ def test_profile_location_panel_does_not_render_exact_coordinates(client, monkey
     assert b"56.78" not in response.data
 
 
-def test_admin_can_record_geotag_review(client, monkeypatch):
+@pytest.mark.parametrize(
+    ("decision", "flash_category"),
+    [("approved", "success"), ("rejected", "danger")],
+)
+def test_admin_can_record_geotag_review(client, monkeypatch, decision, flash_category):
     class FakeCursor:
         def __init__(self):
             self.executed = []
@@ -1135,15 +1158,17 @@ def test_admin_can_record_geotag_review(client, monkeypatch):
 
     response = client.post(
         "/admin/geotag/1/review",
-        data={"decision": "approved", "review_note": "Photo inspected"},
+        data={"decision": decision, "review_note": "Photo inspected"},
     )
 
     assert response.status_code == 302
     update_values = connection.fake_cursor.executed[-1][1]
-    assert update_values[0] == "approved"
+    assert update_values[0] == decision
     assert update_values[1] == "admin"
     assert "GPS missing" in update_values[3]
     assert "Photo inspected" in update_values[3]
+    with client.session_transaction() as session:
+        assert session["_flashes"][-1][0] == flash_category
 
 
 def test_crop_photo_is_validated_and_saved_outside_static(tmp_path, monkeypatch):

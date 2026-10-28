@@ -20,7 +20,8 @@ def test_admin_can_assign_and_reassign_crops_by_category(tmp_path):
                 CREATE TABLE users (
                     id INTEGER PRIMARY KEY, username TEXT UNIQUE, password TEXT,
                     role TEXT, email TEXT, first_name TEXT, last_name TEXT,
-                    location TEXT, is_active BOOLEAN NOT NULL DEFAULT TRUE
+                    location TEXT, is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    is_verified BOOLEAN NOT NULL DEFAULT TRUE
                 )
             """))
             connection.execute(text("""
@@ -33,6 +34,17 @@ def test_admin_can_assign_and_reassign_crops_by_category(tmp_path):
                 CREATE TABLE crops (
                     id INTEGER PRIMARY KEY, crops_name TEXT UNIQUE,
                     category_id INTEGER
+                )
+            """))
+            connection.execute(text("""
+                CREATE TABLE crop_pricing (
+                    crop_id INTEGER PRIMARY KEY REFERENCES crops(id) ON DELETE CASCADE,
+                    pricing_mode TEXT NOT NULL,
+                    price_unit TEXT NOT NULL DEFAULT 'kg',
+                    reference_price NUMERIC(10, 2),
+                    price_range NUMERIC(10, 2),
+                    minimum_price NUMERIC(10, 2),
+                    maximum_price NUMERIC(10, 2)
                 )
             """))
             connection.execute(text("""

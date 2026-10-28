@@ -1,10 +1,366 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Crop Catalog | Admin</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"><link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}"></head>
-<body class="admin-page"><nav class="navbar navbar-dark admin-navbar px-4 py-3"><a class="navbar-brand fw-bold" href="{{ url_for('admin') }}"><i class="fas fa-leaf me-2"></i>Agri-Direct <span class="fw-normal opacity-75">/ Admin</span></a><a href="{{ url_for('admin') }}" class="btn btn-outline-light btn-sm">Overview</a></nav><main class="container py-4">
-<div class="d-flex justify-content-between align-items-center"><div><a class="breadcrumb-link" href="{{ url_for('admin') }}">← Admin Console</a><h1 class="h3 mt-2">Crop catalog</h1><p class="text-muted mb-0">Maintain crops and categories used across the system.</p></div><div><button class="btn btn-outline-success me-2" data-bs-toggle="collapse" data-bs-target="#newCategory">+ Category</button><button class="btn btn-success" data-bs-toggle="collapse" data-bs-target="#newCrop">+ Crop</button></div></div>
-<form class="input-group my-3"><input name="q" value="{{ search }}" class="form-control" placeholder="Search crops, categories, or descriptions"><button class="btn btn-outline-secondary">Search</button>{% if search %}<a class="btn btn-outline-secondary" href="{{ url_for('admin_catalog') }}">Clear</a>{% endif %}</form>
-<div class="collapse mb-3" id="newCrop"><form method="post" action="{{ url_for('create_crop') }}" class="card card-body"><div class="row g-2"><div class="col-md-5"><input name="name" class="form-control" placeholder="Crop name" required></div><div class="col-md-5"><select name="category_id" class="form-select"><option value="">Uncategorized</option>{% for category in all_crop_categories %}<option value="{{ category['id'] }}">{{ category['name'] }}</option>{% endfor %}</select></div><div class="col-md-2"><button class="btn btn-success w-100">Add crop</button></div></div></form></div>
-<div class="collapse mb-3" id="newCategory"><form method="post" action="{{ url_for('create_crop_category') }}" class="card card-body"><div class="row g-2"><div class="col-md-4"><input name="name" class="form-control" placeholder="Category name" required></div><div class="col-md-6"><input name="description" class="form-control" placeholder="Description"></div><div class="col-md-2"><button class="btn btn-success w-100">Add category</button></div></div></form></div>
-<div class="row g-4"><div class="col-lg-7"><div class="card shadow-sm border-0"><div class="card-header bg-white"><h2 class="h5 mb-0">Crops by category</h2></div>{% for category_name, grouped_crops in crops|groupby('category_name') %}<section class="border-bottom"><h3 class="h6 bg-light px-3 py-2 mb-0">{{ category_name or 'Uncategorized' }}</h3><table class="table table-hover mb-0"><tbody>{% for crop in grouped_crops %}<tr><td><form method="post" action="{{ url_for('edit_crop', crop_id=crop['id']) }}" class="d-flex flex-wrap gap-2"><input name="name" class="form-control form-control-sm flex-grow-1" style="min-width: 130px" value="{{ crop['crops_name'] }}" aria-label="Crop name" required><select name="category_id" class="form-select form-select-sm" style="max-width: 200px" aria-label="Crop category"><option value="" {% if not crop['category_id'] %}selected{% endif %}>Uncategorized</option>{% for category in all_crop_categories %}<option value="{{ category['id'] }}" {% if crop['category_id'] == category['id'] %}selected{% endif %}>{{ category['name'] }}</option>{% endfor %}</select><button class="btn btn-sm btn-outline-primary">Save</button></form></td><td class="text-end"><form method="post" action="{{ url_for('delete_crop', crop_id=crop['id']) }}" class="d-inline" onsubmit="return confirm('Delete this crop?')"><button class="btn btn-sm btn-outline-danger">Delete</button></form></td></tr>{% endfor %}</tbody></table></section>{% else %}<p class="text-muted p-3 mb-0">No matching crops.</p>{% endfor %}</div></div><div class="col-lg-5"><div class="card shadow-sm border-0"><div class="card-header bg-white"><h2 class="h5 mb-0">Categories</h2></div><ul class="list-group list-group-flush">
-{% for category in crop_categories %}<li class="list-group-item"><form method="post" action="{{ url_for('edit_crop_category', category_id=category['id']) }}" class="input-group input-group-sm mb-2"><input name="name" class="form-control" value="{{ category['name'] }}"><button class="btn btn-outline-primary">Save</button></form><form method="post" action="{{ url_for('delete_crop_category', category_id=category['id']) }}" onsubmit="return confirm('Delete this category?')"><button class="btn btn-sm btn-outline-danger">Delete</button></form></li>{% else %}<li class="list-group-item text-muted">No matching categories.</li>{% endfor %}
-</ul></div></div></div></main><script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script></body></html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Crop Catalog | Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+</head>
+<body class="admin-page">
+    <nav class="navbar navbar-dark admin-navbar px-4 py-3">
+        <a class="navbar-brand fw-bold" href="{{ url_for('admin') }}">Agri-Direct <span class="fw-normal opacity-75">/ Admin</span></a>
+        <a href="{{ url_for('admin') }}" class="btn btn-outline-light btn-sm">Overview</a>
+    </nav>
+    <main class="container py-4">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <a class="breadcrumb-link" href="{{ url_for('admin') }}">← Admin Console</a>
+                <h1 class="h3 mt-2">Crop catalog and prices</h1>
+                <p class="text-muted mb-0">Manage crops, categories, and seller price limits.</p>
+            </div>
+            <div>
+                <button class="btn btn-outline-success me-2" data-bs-toggle="collapse" data-bs-target="#newCategory">+ Category</button>
+                <button class="btn btn-success" data-bs-toggle="collapse" data-bs-target="#newCrop">+ Crop</button>
+            </div>
+        </div>
+
+        <form method="get" class="row g-2 my-3 align-items-end" id="catalogFilters">
+            <div class="col-md-4">
+                <label class="form-label" for="cropSearch">Search</label>
+                <input id="cropSearch" name="q" value="{{ search }}" class="form-control" placeholder="Search crops or categories">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" for="categoryFilter">Category</label>
+                <select id="categoryFilter" name="category_id" class="form-select">
+                    <option value="">All categories</option>
+                    {% for category in all_crop_categories %}
+                    <option value="{{ category['id'] }}" {% if category_filter == category['id']|string %}selected{% endif %}>{{ category['name'] }}</option>
+                    {% endfor %}
+                    <option value="uncategorized" {% if category_filter == 'uncategorized' %}selected{% endif %}>Uncategorized</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label" for="cropFilter">Crop</label>
+                <select id="cropFilter" name="crop_id" class="form-select">
+                    <option value="">All crops</option>
+                    {% for crop in all_crops %}
+                    <option value="{{ crop['id'] }}" data-category="{{ crop['category_id'] or 'uncategorized' }}" {% if crop_filter == crop['id']|string %}selected{% endif %}>{{ crop['crops_name'] }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button class="btn btn-outline-secondary flex-grow-1">Search</button>
+                {% if search or category_filter or crop_filter %}
+                <a class="btn btn-outline-secondary" href="{{ url_for('admin_catalog') }}">Clear</a>
+                {% endif %}
+            </div>
+        </form>
+
+        <section class="card shadow-sm border-0 mb-4">
+            <div class="card-body">
+                <h2 class="h5">Import crop prices</h2>
+                <p class="text-muted">
+                    Upload a CSV or Excel workbook (.xlsx) to add new crops or update crop categories.
+                    All rows and any selected shared price rule are validated before anything is saved.
+                </p>
+                <p class="small mb-3">
+                    The file must contain only these columns:
+                    <code>crop_name, category_name, price_unit</code>.
+                    Enter <code>kg</code> for every price unit. Category may be blank; new categories in the file are added automatically.
+                    For an existing crop, a supplied category must match its current category.
+                    If no shared rule is selected, the file adds crops/categories without changing existing prices; use the crop rule editor below to set rules individually.
+                </p>
+                <form method="post" enctype="multipart/form-data" action="{{ url_for('import_crop_pricing') }}" id="cropPricingImportForm">
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('download_crop_pricing_template') }}">Download CSV template</a>
+                        <label class="visually-hidden" for="cropPricingFile">CSV or Excel pricing file</label>
+                        <input id="cropPricingFile" name="file" class="form-control form-control-sm" type="file" accept=".csv,.xlsx" required>
+                        <button class="btn btn-success btn-sm">Validate and import</button>
+                    </div>
+                    <div class="form-check mt-3">
+                        <input class="form-check-input" type="checkbox" value="1" id="applyImportPriceRule" name="apply_pricing_rule">
+                        <label class="form-check-label fw-semibold" for="applyImportPriceRule">Apply one price rule to every crop in this file</label>
+                    </div>
+                    <div class="row g-2 mt-1" id="importPriceRuleFields">
+                        <div class="col-md-3">
+                            <label class="form-label small" for="importPricingMode">Price rule</label>
+                            <select id="importPricingMode" name="pricing_mode" class="form-select form-select-sm" disabled>
+                                <option value="range">Specific price + range</option>
+                                <option value="bounds">Minimum + maximum</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small" for="importReferencePrice">Reference price (₱/kg)</label>
+                            <input id="importReferencePrice" name="reference_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01" disabled>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small" for="importPriceRange">Range (₱/kg)</label>
+                            <input id="importPriceRange" name="price_range" class="form-control form-control-sm" type="number" min="0" step="0.01" disabled>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small" for="importMinimumPrice">Minimum (₱/kg)</label>
+                            <input id="importMinimumPrice" name="minimum_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01" disabled>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label small" for="importMaximumPrice">Maximum (₱/kg)</label>
+                            <input id="importMaximumPrice" name="maximum_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01" disabled>
+                        </div>
+                        <div class="col-12"><small class="text-muted">When checked, this validated rule is applied to every crop in the upload. Otherwise, it is ignored.</small></div>
+                    </div>
+                </form>
+                <hr>
+                <h3 class="h6">Set a rule for one crop</h3>
+                <form method="post" data-pricing-url="{{ url_for('save_crop_pricing', crop_id=0) }}" id="selectedCropPricingForm" class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label small" for="selectedPricingCrop">Crop</label>
+                        <select id="selectedPricingCrop" class="form-select form-select-sm" required>
+                            <option value="">Choose a crop</option>
+                            {% for crop in all_crops %}
+                            <option value="{{ crop['id'] }}"
+                                    data-mode="{{ crop['pricing_mode'] or 'none' }}"
+                                    data-reference="{{ crop['reference_price'] if crop['reference_price'] is not none else '' }}"
+                                    data-range="{{ crop['price_range'] if crop['price_range'] is not none else '' }}"
+                                    data-minimum="{{ crop['minimum_price'] if crop['minimum_price'] is not none else '' }}"
+                                    data-maximum="{{ crop['maximum_price'] if crop['maximum_price'] is not none else '' }}">{{ crop['crops_name'] }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small" for="selectedPricingMode">Price rule</label>
+                        <select id="selectedPricingMode" name="pricing_mode" class="form-select form-select-sm" required>
+                            <option value="none">No restriction</option>
+                            <option value="range">Specific price + range</option>
+                            <option value="bounds">Minimum + maximum</option>
+                        </select>
+                    </div>
+                    <input type="hidden" name="price_unit" value="kg">
+                    <div class="col-md-2">
+                        <label class="form-label small" for="selectedReferencePrice">Reference price (₱/kg)</label>
+                        <input id="selectedReferencePrice" name="reference_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01">
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label small" for="selectedPriceRange">Range</label>
+                        <input id="selectedPriceRange" name="price_range" class="form-control form-control-sm" type="number" min="0" step="0.01">
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label small" for="selectedMinimumPrice">Minimum</label>
+                        <input id="selectedMinimumPrice" name="minimum_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01">
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label small" for="selectedMaximumPrice">Maximum</label>
+                        <input id="selectedMaximumPrice" name="maximum_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01">
+                    </div>
+                    <div class="col-md-2"><button id="saveSelectedCropPricing" class="btn btn-outline-success btn-sm w-100" disabled>Save crop rule</button></div>
+                </form>
+            </div>
+        </section>
+
+        <div class="collapse mb-3" id="newCrop">
+            <form method="post" action="{{ url_for('create_crop') }}" class="card card-body">
+                <div class="row g-2">
+                    <div class="col-md-5"><input name="name" class="form-control" placeholder="Crop name" required></div>
+                    <div class="col-md-5">
+                        <select name="category_id" class="form-select">
+                            <option value="">Uncategorized</option>
+                            {% for category in all_crop_categories %}<option value="{{ category['id'] }}">{{ category['name'] }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2"><button class="btn btn-success w-100">Add crop</button></div>
+                </div>
+            </form>
+        </div>
+        <div class="collapse mb-3" id="newCategory">
+            <form method="post" action="{{ url_for('create_crop_category') }}" class="card card-body">
+                <div class="row g-2">
+                    <div class="col-md-4"><input name="name" class="form-control" placeholder="Category name" required></div>
+                    <div class="col-md-6"><input name="description" class="form-control" placeholder="Description"></div>
+                    <div class="col-md-2"><button class="btn btn-success w-100">Add category</button></div>
+                </div>
+            </form>
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-white"><h2 class="h5 mb-0">Crops by category and seller pricing</h2></div>
+                    {% for category_name, grouped_crops in crops|groupby('category_name') %}
+                    <section class="border-bottom">
+                        <h3 class="h6 bg-light px-3 py-2 mb-0">{{ category_name }}</h3>
+                        <table class="table table-hover mb-0">
+                            <tbody>
+                            {% for crop in grouped_crops %}
+                            <tr>
+                                <td>
+                                    <form method="post" action="{{ url_for('edit_crop', crop_id=crop['id']) }}" class="row g-2 mb-2 align-items-center">
+                                        <div class="col-md-5">
+                                            <input name="name" class="form-control form-control-sm" value="{{ crop['crops_name'] }}" aria-label="Crop name" required>
+                                        </div>
+                                        <div class="col-md-5">
+                                            <select name="category_id" class="form-select form-select-sm" aria-label="Crop category">
+                                                <option value="" {% if not crop['category_id'] %}selected{% endif %}>Uncategorized</option>
+                                                {% for category in all_crop_categories %}
+                                                <option value="{{ category['id'] }}" {% if crop['category_id'] == category['id'] %}selected{% endif %}>{{ category['name'] }}</option>
+                                                {% endfor %}
+                                            </select>
+                                        </div>
+                                        <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100">Save crop</button></div>
+                                    </form>
+
+                                    {% set bounds = crop_price_bounds.get(crop['id']) %}
+                                    {% if bounds %}
+                                    <p class="small text-success mb-2">
+                                        Allowed seller price: ₱{{ "%.2f"|format(bounds['minimum']) }}–₱{{ "%.2f"|format(bounds['maximum']) }} per {{ bounds['unit'] }}
+                                        {% if bounds['reference'] is not none %}(reference ₱{{ "%.2f"|format(bounds['reference']) }}){% endif %}
+                                    </p>
+                                    {% else %}
+                                    <p class="small text-muted mb-2">No seller price restriction is set.</p>
+                                    {% endif %}
+
+                                    <form method="post" action="{{ url_for('save_crop_pricing', crop_id=crop['id']) }}" class="row g-2 align-items-end">
+                                        <div class="col-md-3">
+                                            <label class="form-label small" for="pricing-mode-{{ crop['id'] }}">Price rule</label>
+                                            <select id="pricing-mode-{{ crop['id'] }}" name="pricing_mode" class="form-select form-select-sm">
+                                                <option value="none" {% if not crop['pricing_mode'] %}selected{% endif %}>No restriction</option>
+                                                <option value="range" {% if crop['pricing_mode'] == 'range' %}selected{% endif %}>Specific price + range</option>
+                                                <option value="bounds" {% if crop['pricing_mode'] == 'bounds' %}selected{% endif %}>Minimum + maximum</option>
+                                            </select>
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label small" for="reference-{{ crop['id'] }}">Reference price (₱)</label>
+                                            <input id="reference-{{ crop['id'] }}" name="reference_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01" value="{{ crop['reference_price'] if crop['reference_price'] is not none else '' }}">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label small">Price unit</label>
+                                            <input type="text" class="form-control form-control-sm" value="kg" aria-label="Price unit" readonly>
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label small" for="range-{{ crop['id'] }}">Range (₱)</label>
+                                            <input id="range-{{ crop['id'] }}" name="price_range" class="form-control form-control-sm" type="number" min="0" step="0.01" value="{{ crop['price_range'] if crop['price_range'] is not none else '' }}">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label small" for="minimum-{{ crop['id'] }}">Minimum (₱)</label>
+                                            <input id="minimum-{{ crop['id'] }}" name="minimum_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01" value="{{ crop['minimum_price'] if crop['minimum_price'] is not none else '' }}">
+                                        </div>
+                                        <div class="col-md-2">
+                                            <label class="form-label small" for="maximum-{{ crop['id'] }}">Maximum (₱)</label>
+                                            <input id="maximum-{{ crop['id'] }}" name="maximum_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01" value="{{ crop['maximum_price'] if crop['maximum_price'] is not none else '' }}">
+                                        </div>
+                                        <div class="col-md-1"><button class="btn btn-sm btn-success w-100" aria-label="Save pricing for {{ crop['crops_name'] }}">Save</button></div>
+                                    </form>
+                                    <small class="text-muted">All prices are per kg. Range means the seller may price from reference minus range to reference plus range (for example, ₱48 ± ₱10 allows ₱38–₱58). The minimum/maximum rule uses its two limits; reference price is optional.</small>
+                                </td>
+                                <td class="text-end align-top">
+                                    <form method="post" action="{{ url_for('delete_crop', crop_id=crop['id']) }}" onsubmit="return confirm('Delete this crop?')">
+                                        <button class="btn btn-sm btn-outline-danger">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr><td class="text-muted p-3">No matching crops.</td></tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </section>
+                    {% else %}
+                    <p class="text-muted p-3 mb-0">No matching crops.</p>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-white"><h2 class="h5 mb-0">Categories</h2></div>
+                    <ul class="list-group list-group-flush">
+                        {% for category in crop_categories %}
+                        <li class="list-group-item">
+                            <form method="post" action="{{ url_for('edit_crop_category', category_id=category['id']) }}" class="input-group input-group-sm mb-2">
+                                <input name="name" class="form-control" value="{{ category['name'] }}">
+                                <button class="btn btn-outline-primary">Save</button>
+                            </form>
+                            <form method="post" action="{{ url_for('delete_crop_category', category_id=category['id']) }}" onsubmit="return confirm('Delete this category?')">
+                                <button class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
+                        </li>
+                        {% else %}
+                        <li class="list-group-item text-muted">No matching categories.</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        const categoryFilter = document.getElementById('categoryFilter');
+        const cropFilter = document.getElementById('cropFilter');
+        const filterCropOptions = () => {
+            const category = categoryFilter.value;
+            for (const option of cropFilter.options) {
+                if (!option.value) continue;
+                option.hidden = Boolean(category && option.dataset.category !== category);
+                if (option.hidden && option.selected) cropFilter.value = '';
+            }
+        };
+        categoryFilter.addEventListener('change', filterCropOptions);
+        filterCropOptions();
+
+        const importRuleToggle = document.getElementById('applyImportPriceRule');
+        const importRuleMode = document.getElementById('importPricingMode');
+        const importRuleInputs = [
+            document.getElementById('importReferencePrice'),
+            document.getElementById('importPriceRange'),
+            document.getElementById('importMinimumPrice'),
+            document.getElementById('importMaximumPrice')
+        ];
+        const updateImportRuleFields = () => {
+            const enabled = importRuleToggle.checked;
+            importRuleMode.disabled = !enabled;
+            importRuleInputs.forEach(input => { input.disabled = !enabled; });
+            importRuleMode.required = enabled;
+            const rangeMode = importRuleMode.value === 'range';
+            importRuleInputs[0].required = enabled && rangeMode;
+            importRuleInputs[1].required = enabled && rangeMode;
+            importRuleInputs[2].required = enabled && !rangeMode;
+            importRuleInputs[3].required = enabled && !rangeMode;
+        };
+        importRuleToggle.addEventListener('change', updateImportRuleFields);
+        importRuleMode.addEventListener('change', updateImportRuleFields);
+        updateImportRuleFields();
+
+        const selectedCropPricingForm = document.getElementById('selectedCropPricingForm');
+        const selectedPricingCrop = document.getElementById('selectedPricingCrop');
+        const selectedPricingMode = document.getElementById('selectedPricingMode');
+        const selectedPricingInputs = {
+            reference_price: document.getElementById('selectedReferencePrice'),
+            price_range: document.getElementById('selectedPriceRange'),
+            minimum_price: document.getElementById('selectedMinimumPrice'),
+            maximum_price: document.getElementById('selectedMaximumPrice')
+        };
+        const selectedPricingSubmit = document.getElementById('saveSelectedCropPricing');
+        const updateSelectedPricingFields = () => {
+            const mode = selectedPricingMode.value;
+            const rangeMode = mode === 'range';
+            const boundsMode = mode === 'bounds';
+            selectedPricingInputs.reference_price.required = rangeMode;
+            selectedPricingInputs.price_range.required = rangeMode;
+            selectedPricingInputs.minimum_price.required = boundsMode;
+            selectedPricingInputs.maximum_price.required = boundsMode;
+        };
+        selectedPricingMode.addEventListener('change', updateSelectedPricingFields);
+        updateSelectedPricingFields();
+        selectedPricingCrop.addEventListener('change', () => {
+            const option = selectedPricingCrop.selectedOptions[0];
+            selectedPricingSubmit.disabled = !selectedPricingCrop.value;
+            if (!selectedPricingCrop.value) return;
+            selectedPricingForm.action = selectedCropPricingForm.dataset.pricingUrl.replace(
+                '/0/pricing',
+                `/${selectedPricingCrop.value}/pricing`
+            );
+            selectedPricingMode.value = option.dataset.mode;
+            for (const [field, input] of Object.entries(selectedPricingInputs)) {
+                input.value = option.dataset[field] || '';
+            }
+        });
+    </script>
+</body>
+</html>

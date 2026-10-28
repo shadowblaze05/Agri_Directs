@@ -36,6 +36,8 @@
             </thead>
             <tbody>
               {% for item in inventory %}
+                {% set verification_status = item['verification_status'] or 'pending' %}
+                {% set verification_badge = 'success' if verification_status == 'approved' else 'danger' if verification_status == 'rejected' else 'warning' %}
                 <tr>
                   <td>
                     <strong>{{ item['crop_name'] or '-' }}</strong><br>
@@ -51,7 +53,7 @@
                       {% else %}
                         <span class="text-muted">No crop photo</span><br>
                       {% endif %}
-                      <span>{{ (item['verification_status'] or 'pending')|replace('_', ' ')|title }}</span>
+                      <span class="badge text-bg-{{ verification_badge }}">{{ verification_status|replace('_', ' ')|title }}</span>
                       {% if item['distance_from_user'] is not none %}
                         <span class="text-muted"> | {{ (item['distance_from_user'] / 1000)|round(2) }} km from reference</span>
                       {% endif %}
@@ -69,7 +71,7 @@
                         </div>
                       </form>
                     {% elif item['source'] in [none, 'harvest'] %}
-                      <span class="badge text-bg-secondary">{{ item['verification_status']|title }}</span>
+                      <span class="badge text-bg-{{ verification_badge }}">{{ verification_status|replace('_', ' ')|title }}</span>
                       {% if item['reviewed_by'] %}<br><small class="text-muted">by {{ item['reviewed_by'] }}</small>{% endif %}
                     {% endif %}
                   </td>

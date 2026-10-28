@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Boolean,
     DateTime,
+    ForeignKey,
     Float,
     Integer,
     String,
@@ -137,3 +138,20 @@ class User(Model):
         onupdate=lambda: datetime.now(timezone.utc),
         nullable=False
     )
+
+
+class PasswordResetToken(Model):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    token = Column(Text, unique=True)
+    expires_at = Column(Text)
+    created_at = Column(Text)
+    used_at = Column(Text)
+    attempt_count = Column(Integer, nullable=False, default=0)
+    purpose = Column(String(32), nullable=False, default="password_reset")

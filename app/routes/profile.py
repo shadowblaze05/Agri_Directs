@@ -271,7 +271,7 @@ def capture_profile_location():
     cur.execute(
         "UPDATE users SET profile_picture=?, profile_photo_captured_at=?, location=?, "
         "psgc_location=?, geotag_location=?, "
-        "location_latitude=?, location_longitude=?, location_verified=1, "
+        "location_latitude=?, location_longitude=?, location_verified=TRUE, "
         "location_verified_at=?, updated_at=? WHERE username=?",
         (
             f"/static/uploads/profiles/{filename}", captured_at_iso, psgc_location,

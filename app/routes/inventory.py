@@ -433,10 +433,18 @@ def upload():
                 if processed_any:
                     conn.commit()
                     update_analytics()
-                    flash("CSV upload successful!")
+                    flash(
+                        "CSV upload successful. Imported harvest records are "
+                        "pending manual verification because CSV files do not "
+                        "include GPS capture evidence.",
+                        "warning",
+                    )
                     logger.info(f"User {session['user']} uploaded {filename}")
                 else:
-                    flash("CSV upload completed, but no valid records were added.")
+                    flash(
+                        "CSV upload completed, but no valid records were added.",
+                        "warning",
+                    )
 
             except Exception as error:
                 flash("The CSV file could not be processed.")
@@ -540,12 +548,7 @@ def upload():
                 f" Distance from your captured reference location: {distance / 1000:.2f} km."
                 if distance is not None else ""
             )
-            flash(
-                f"Harvest entry added. Location status: {verification_status.replace('_', ' ')}."
-                f"{distance_message} Allowed distance: "
-                f"{current_app.config['MAX_CROP_DISTANCE_KM']:g} km. "
-                "Geographic proximity is not proof of crop ownership."
-            )
+            flash("Harvest added", "success")
             logger.info(f"User {session['user']} manually posted crop {crop_id} x{quantity}")
 
         else:

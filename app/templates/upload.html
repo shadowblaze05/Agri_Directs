@@ -245,17 +245,15 @@
             </p>
           </div>
           <div class="upload-card-body">
-            {% with messages = get_flashed_messages() %}{% if messages %}
-            <div
-              class="alert alert-danger alert-dismissible fade show"
-              role="alert"
-            >
-              <i class="fas fa-exclamation-circle"></i> {{ messages[0] }}<button
-                type="button"
-                class="btn-close"
-                data-bs-dismiss="alert"
-              ></button>
-            </div>
+            {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}
+              {% for category, message in messages %}
+                {% set alert_class = category if category in ['success', 'danger', 'warning', 'info'] else 'danger' %}
+                {% set alert_icon = 'fa-check-circle' if alert_class == 'success' else 'fa-exclamation-triangle' if alert_class == 'warning' else 'fa-times-circle' if alert_class == 'danger' else 'fa-info-circle' %}
+                <div class="alert alert-{{ alert_class }} alert-dismissible fade show" role="status">
+                  <i class="fas {{ alert_icon }}" aria-hidden="true"></i> {{ message }}
+                  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+              {% endfor %}
             {% endif %}{% endwith %}
             <form method="POST" enctype="multipart/form-data" id="uploadForm">
               <div class="drop-zone" id="dropZone">

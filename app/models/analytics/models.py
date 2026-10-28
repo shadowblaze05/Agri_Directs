@@ -1,6 +1,6 @@
 """Analytics model."""
 
-from sqlalchemy import Integer, String
+from sqlalchemy import ForeignKey, Integer, String
 
 from ..base import Column, Model
 
@@ -14,6 +14,14 @@ class Analytics(Model):
     total_harvest = Column(Integer)
     top_crop = Column(String(128))
     top_crop_volume = Column(Integer)
-    top_crop_id = Column(Integer)
+    top_crop_id = Column(
+        Integer,
+        ForeignKey(
+            "crops.id",
+            name="fk_analytics_top_crop_id_crops",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
     top_location = Column(String(255))
     top_location_volume = Column(Integer)
