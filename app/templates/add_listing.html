@@ -303,7 +303,7 @@
                                                 data-range="{{ crop['price_range'] or '' }}"
                                                 data-minimum="{{ crop['minimum_price'] or '' }}"
                                                 data-maximum="{{ crop['maximum_price'] or '' }}"
-                                            {{ crop['crops_name'] }} ({{ crop['total_quantity'] }} available)
+                                                >{{ crop['crops_name'] }} ({{ crop['total_quantity'] }} available)
                                         </option>
                                         {% endfor %}
                                     </select>
@@ -325,7 +325,7 @@
                                     {% endif %}
                                 </div>
                                 <div class="col-md-6 mb-3">
-                                    <label for="amount" id="amountLabel" class="form-label">Amount *</label>
+                                    <label for="amount" id="amountLabel" class="form-label">Amount (kg)</label>
                                     <input type="number" class="form-control" id="amount" name="amount"
                                            value="{{ listing.amount if listing else '' }}"
                                            min="1" required>
