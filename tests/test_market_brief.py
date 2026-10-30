@@ -29,6 +29,11 @@ def _inventory_connection():
         INSERT INTO users VALUES
             ('farmer', 'user', 1), ('admin', 'admin', 1);
         CREATE TABLE crops (id INTEGER PRIMARY KEY, crops_name TEXT);
+        CREATE TABLE crop_pricing (
+            crop_id INTEGER PRIMARY KEY, pricing_mode TEXT, reference_price REAL,
+            price_range REAL, minimum_price REAL, maximum_price REAL,
+            price_unit TEXT
+        );
         CREATE TABLE inventory (
             crop_id INTEGER,
             quantity INTEGER,
@@ -45,6 +50,9 @@ def _inventory_connection():
             (1, 80, 'farmer-three', '2026-10-04', 'West', 'trade'),
             (1, 10, 'legacy-farmer', '2026-09-30', 'East', NULL);
     """)
+    connection.execute(
+        "INSERT INTO crop_pricing VALUES (1, 'range', 32.5, 4.5, NULL, NULL, 'kg')"
+    )
     return connection
 
 
@@ -56,6 +64,7 @@ def test_market_brief_inventory_query_aggregates_harvests_across_farmers(monkeyp
     assert {record["quantity"] for record in records} == {25, 40, 10}
     assert {record["location"] for record in records} == {"North", "South", "East"}
     assert sum(record["quantity"] for record in records) == 75
+    assert {record["reference_price"] for record in records} == {32.5}
 
 
 def test_market_intelligence_loader_aggregates_harvests_across_farmers(monkeypatch):
@@ -66,6 +75,7 @@ def test_market_intelligence_loader_aggregates_harvests_across_farmers(monkeypat
     assert {record["quantity"] for record in records} == {25.0, 40.0, 10.0}
     assert {record["location"] for record in records} == {"North", "South", "East"}
     assert sum(record["quantity"] for record in records) == 75
+    assert {record["reference_price"] for record in records} == {32.5}
 
 
 @pytest.mark.parametrize(
@@ -107,6 +117,8 @@ class _DashboardCursor:
         self.row = (
             {"active_listings": 0, "crop_count": 0}
             if "COUNT(*) AS active_listings" in query
+            else {"total": 0}
+            if "COALESCE(SUM(quantity), 0) AS total" in query
             else None
         )
         return self
@@ -133,6 +145,9 @@ def test_market_intelligence_page_is_admin_only(monkeypatch):
     monkeypatch.setattr(
         home_routes, "_market_analysis_context", _sample_market_analysis
     )
+    monkeypatch.setattr(
+        home_routes, "get_active_user_role", lambda *_args: "user"
+    )
     with app_module.app.test_client() as client:
         with client.session_transaction() as user_session:
             user_session["user"] = "farmer"
@@ -147,6 +162,9 @@ def test_market_intelligence_page_is_admin_only(monkeypatch):
 def test_market_brief_remains_visible_on_dashboard_for_regular_users(monkeypatch):
     monkeypatch.setattr(home_routes, "get_db", _DashboardConnection)
     monkeypatch.setattr(home_routes, "update_analytics", lambda: None)
+    monkeypatch.setattr(
+        home_routes, "get_active_user_role", lambda *_args: "user"
+    )
     monkeypatch.setattr(
         home_routes, "_market_analysis_context", _sample_market_analysis
     )
@@ -166,6 +184,9 @@ def test_market_brief_remains_visible_on_dashboard_for_regular_users(monkeypatch
 def test_dashboard_displays_the_market_brief(monkeypatch):
     monkeypatch.setattr(home_routes, "get_db", _DashboardConnection)
     monkeypatch.setattr(home_routes, "update_analytics", lambda: None)
+    monkeypatch.setattr(
+        home_routes, "get_active_user_role", lambda *_args: "user"
+    )
     monkeypatch.setattr(
         home_routes, "_market_analysis_context", _sample_market_analysis
     )
@@ -203,6 +224,9 @@ def test_signed_in_home_displays_the_market_brief(monkeypatch):
 def test_market_charts_remain_admin_only(monkeypatch):
     monkeypatch.setattr(
         home_routes, "_market_analysis_context", _sample_market_analysis
+    )
+    monkeypatch.setattr(
+        home_routes, "get_active_user_role", lambda *_args: "user"
     )
     with app_module.app.test_client() as client:
         with client.session_transaction() as user_session:

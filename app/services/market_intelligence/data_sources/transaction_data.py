@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime
+import math
 from typing import Any, Iterable
 
 from ....models.database import get_db
+
+
+def _optional_float(value):
+    if value is None or value == "":
+        return None
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError("Crop pricing values must be finite numbers")
+    return result
 
 
 def normalize_records(records: Iterable[dict[str, Any]] | None):
@@ -30,6 +40,12 @@ def normalize_records(records: Iterable[dict[str, Any]] | None):
                 "quantity": float(quantity) if isinstance(quantity, (int, float)) else float(quantity or 0),
                 "date_received": str(date_value),
                 "location": str(location).strip(),
+                "pricing_mode": row.get("pricing_mode"),
+                "reference_price": _optional_float(row.get("reference_price")),
+                "price_range": _optional_float(row.get("price_range")),
+                "minimum_price": _optional_float(row.get("minimum_price")),
+                "maximum_price": _optional_float(row.get("maximum_price")),
+                "price_unit": row.get("price_unit") or "kg",
             }
         )
     return normalized
@@ -41,9 +57,12 @@ def load_transaction_records():
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT c.crops_name AS crop_name, i.quantity, i.date_received, i.location
+        SELECT c.crops_name AS crop_name, i.quantity, i.date_received, i.location,
+               cp.pricing_mode, cp.reference_price, cp.price_range,
+               cp.minimum_price, cp.maximum_price, cp.price_unit
         FROM inventory i
         LEFT JOIN crops c ON c.id = i.crop_id
+        LEFT JOIN crop_pricing cp ON cp.crop_id = c.id
         WHERE i.source IS NULL OR i.source = 'harvest'
         ORDER BY i.date_received DESC
         """
@@ -56,6 +75,12 @@ def load_transaction_records():
             "quantity": row["quantity"],
             "date_received": row["date_received"],
             "location": row["location"],
+            "pricing_mode": row["pricing_mode"],
+            "reference_price": row["reference_price"],
+            "price_range": row["price_range"],
+            "minimum_price": row["minimum_price"],
+            "maximum_price": row["maximum_price"],
+            "price_unit": row["price_unit"],
         } for row in rows]
     )
 

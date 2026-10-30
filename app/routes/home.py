@@ -11,6 +11,9 @@ from ..legacy import logger
 from ..models.database import get_db, update_analytics
 from ..services.geo_service import geocode_location
 from ..services.market_intelligence import analyze_market_intelligence
+from ..services.market_intelligence.crop_recommendation import CropRecommendationService
+from ..services.market_intelligence.data_sources.price_data import build_price_snapshot
+from ..services.market_intelligence.data_sources.supply_data import aggregate_supply
 from ..services.auth_service import get_active_user_role
 from ..services.upload_service import save_sanitized_public_image, save_video_upload
 from werkzeug.utils import secure_filename
@@ -215,8 +218,11 @@ def _market_records_from_db():
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "SELECT c.crops_name AS crop_name, i.quantity, i.date_received, i.location "
+        "SELECT c.crops_name AS crop_name, i.quantity, i.date_received, i.location, "
+        "cp.pricing_mode, cp.reference_price, cp.price_range, "
+        "cp.minimum_price, cp.maximum_price, cp.price_unit "
         "FROM inventory i JOIN crops c ON c.id = i.crop_id "
+        "LEFT JOIN crop_pricing cp ON cp.crop_id = c.id "
         "WHERE i.source IS NULL OR i.source = 'harvest' "
         "ORDER BY i.date_received DESC"
     )
@@ -228,19 +234,37 @@ def _market_records_from_db():
             "quantity": row["quantity"],
             "date_received": row["date_received"],
             "location": row["location"],
+            "pricing_mode": row["pricing_mode"],
+            "reference_price": row["reference_price"],
+            "price_range": row["price_range"],
+            "minimum_price": row["minimum_price"],
+            "maximum_price": row["maximum_price"],
+            "price_unit": row["price_unit"],
         }
         for row in rows
     ]
 
 
-def _market_analysis_context():
-    records = _market_records_from_db()
+def _analyze_market_records(records):
     try:
-        analysis = analyze_market_intelligence(records)
+        return analyze_market_intelligence(records)
     except Exception:
         analysis = build_market_analysis(records)
+        supply_summary = aggregate_supply(records)["by_crop"]
+        recommendation = CropRecommendationService().recommend(
+            records,
+            supply_summary=supply_summary,
+            forecast_summary=analysis.get("forecast", []),
+        )
+        analysis["price_monitoring"] = build_price_snapshot(records)
+        analysis["recommendations"] = recommendation["recommendations"]
+        analysis["criteria_weights"] = recommendation["criteria_weights"]
+        return analysis
 
-    return analysis
+
+def _market_analysis_context():
+    records = _market_records_from_db()
+    return _analyze_market_records(records)
 
 
 def _market_brief_context(analysis):
@@ -250,10 +274,16 @@ def _market_brief_context(analysis):
     risk_alerts = analysis.get("risk_alerts", [])
 
     if recommendations:
-        top_crop = recommendations[0].get("crop", "a suitable crop")
+        top_recommendation = recommendations[0]
+        top_crop = top_recommendation.get("crop", "a suitable crop")
+        price_context = (
+            " and its configured catalog reference price"
+            if top_recommendation.get("reference_price") is not None
+            else " and other available market signals"
+        )
         recommendation = (
             f"{top_crop} currently ranks as a promising option based on recent "
-            "harvest and supply patterns."
+            f"harvest and supply patterns{price_context}."
         )
     else:
         recommendation = (
@@ -301,19 +331,27 @@ def market_intelligence():
     market_brief = _market_brief_context(analysis)
     summary = analysis.get("summary", {})
     price_monitoring = analysis.get("price_monitoring", [])
+    priced_items = [
+        item for item in price_monitoring if item.get("current_price") is not None
+    ]
     recommendations = analysis.get("recommendations", [])
     risk_alerts = analysis.get("risk_alerts", [])
+    average_price = (
+        sum(float(item["current_price"]) for item in priced_items) / len(priced_items)
+        if priced_items
+        else None
+    )
 
     summary_cards = [
-        {"label": "Market value", "badge": summary.get("market_pressure", "Balanced").title(), "value": f"₱{int(summary.get('total_quantity', 0)):,}", "detail": f"Current live harvest volume for {summary.get('current_month', 'this month')}."},
-        {"label": "Average price index", "badge": f"{max(0, min(100, round(sum(item.get('price_index', 0) for item in price_monitoring) / max(len(price_monitoring), 1), 0)))}", "value": str(round(sum(item.get('price_index', 0) for item in price_monitoring) / max(len(price_monitoring), 1), 1)), "detail": "Derived from live crop prices and supply pressure."},
+        {"label": "Harvest volume", "badge": summary.get("market_pressure", "Balanced").title(), "value": f"{int(summary.get('total_quantity', 0)):,}", "detail": f"Current live harvest volume for {summary.get('current_month', 'this month')}."},
+        {"label": "Average catalog reference", "badge": f"{len(priced_items)} crops priced", "value": f"₱{average_price:,.2f}/kg" if average_price is not None else "Unavailable", "detail": "Configured crop prices; bounds-only rules use their midpoint."},
         {"label": "Active crops", "badge": "Live", "value": str(summary.get("active_crops", 0)), "detail": "Crops currently represented in inventory."},
         {"label": "Alert level", "badge": "Watch" if risk_alerts else "Stable", "value": "Moderate" if risk_alerts else "Stable", "detail": "Based on current dynamic supply thresholds."},
     ]
 
     pulse_items = [
         {"label": item.get("crop", "Crop"), "value": item.get("signal", "Balanced"), "progress": min(100, max(10, int(item.get("price_index", 50))))}
-        for item in price_monitoring[:4]
+        for item in priced_items[:4]
     ]
 
     focus_items = [
@@ -332,15 +370,19 @@ def market_intelligence():
     if not insight_items:
         insight_items = [{"title": "Demand resilience", "level": "Positive", "desc": "Current data suggests supply is balanced and stable."}]
 
-    chart_points = [int(item.get("price_index", 0)) for item in price_monitoring[:6]]
+    chart_points = [int(item["price_index"]) for item in priced_items[:6]]
     if not chart_points:
-        chart_points = [0, 0, 0, 0, 0, 0]
+        chart_points = [0]
 
     return render_template(
         "market_intelligence.html",
         active_page="summary",
         summary_cards=summary_cards,
-        price_labels=["Current"] * max(1, len(chart_points)),
+        price_labels=(
+            [item["crop"] for item in priced_items[:6]]
+            if priced_items
+            else ["No configured prices"]
+        ),
         price_series=chart_points,
         pulse_items=pulse_items,
         focus_items=focus_items,
@@ -359,28 +401,43 @@ def market_intelligence_price_monitoring():
     price_items = [
         {
             "crop": item.get("crop", "Crop"),
-            "current_price": f"₱{float(item.get('price_index', 0)):.0f}/index",
-            "variance": f"{item.get('price_index', 0) - 100:+.1f}%",
-            "trend": item.get("trend", "Stable"),
+            "current_price": (
+                f"₱{float(item['current_price']):,.2f}/{item.get('price_unit', 'kg')}"
+                if item.get("current_price") is not None
+                else "Not configured"
+            ),
+            "variance": (
+                f"{item['comparison_to_average_percent']:+.1f}% vs average"
+                if item.get("comparison_to_average_percent") is not None
+                else "No comparison"
+            ),
+            "trend": item.get("price_basis_label", "Unavailable"),
             "signal": item.get("signal", "Balanced"),
         }
         for item in price_monitoring[:6]
     ]
 
     if not price_items:
-        price_items = [{"crop": "No data", "current_price": "₱0/index", "variance": "0.0%", "trend": "Stable", "signal": "Waiting for inventory"}]
+        price_items = [{"crop": "No data", "current_price": "Not configured", "variance": "No comparison", "trend": "Unavailable", "signal": "Waiting for inventory"}]
 
     summary_total = analysis.get("summary", {}).get("total_quantity", 0)
+    priced_count = sum(
+        item.get("current_price") is not None for item in price_monitoring
+    )
     detail_items = [
-        {"label": "Live harvest", "value": f"{summary_total}", "note": "Current combined inventory volume."},
+        {"label": "Live harvest", "value": f"{summary_total}", "note": "Current combined inventory volume, not currency value."},
         {"label": "Active crops", "value": str(analysis.get("summary", {}).get("active_crops", 0)), "note": "Crops represented in the live data."},
         {"label": "Market pressure", "value": analysis.get("summary", {}).get("market_pressure", "balanced").title(), "note": "Current supply condition."},
-        {"label": "Coverage", "value": f"{len(price_monitoring)} crops", "note": "Based on current live inventory."},
+        {"label": "Price coverage", "value": f"{priced_count} crops", "note": "Active crops with an admin-configured catalog price."},
     ]
 
-    trend_labels = ["Live"] * max(len(price_monitoring), 1)
-    trend_series = [int(item.get("price_index", 0)) for item in price_monitoring]
+    priced_monitoring = [
+        item for item in price_monitoring if item.get("price_index") is not None
+    ]
+    trend_labels = [item["crop"] for item in priced_monitoring]
+    trend_series = [item["price_index"] for item in priced_monitoring]
     if not trend_series:
+        trend_labels = ["No configured prices"]
         trend_series = [0]
 
     return render_template(
@@ -407,12 +464,24 @@ def market_intelligence_crop_recommendations():
             "reason": item.get("reason", "No recommendation available."),
             "demand": "High" if item.get("score", 0) > 0.6 else "Balanced",
             "seasonal": "Strong" if item.get("score", 0) > 0.6 else "Watch",
+            "reference_price": (
+                f"₱{float(item['reference_price']):,.2f}/kg"
+                if item.get("reference_price") is not None
+                else "No catalog price"
+            ),
+            "price_basis": (
+                "Bounds midpoint estimate"
+                if item.get("price_basis") == "bounds_midpoint"
+                else "Catalog reference"
+                if item.get("reference_price") is not None
+                else "Unavailable"
+            ),
         }
         for item in recommendations[:5]
     ]
 
     if not recommendation_items:
-        recommendation_items = [{"crop": "No data", "score": 0, "reason": "Inventory data is insufficient for ranking.", "demand": "N/A", "seasonal": "N/A"}]
+        recommendation_items = [{"crop": "No data", "score": 0, "reason": "Inventory data is insufficient for ranking.", "demand": "N/A", "seasonal": "N/A", "reference_price": "No catalog price", "price_basis": "Unavailable"}]
 
     return render_template(
         "market_intelligence_recommendations.html",
@@ -618,10 +687,7 @@ def api_market_insights():
         return jsonify({"error": "Unauthorized"}), 401
 
     records = _market_records_from_db()
-    try:
-        analysis = analyze_market_intelligence(records)
-    except Exception:
-        analysis = build_market_analysis(records)
+    analysis = _analyze_market_records(records)
     return jsonify(analysis)
 
 
@@ -631,10 +697,7 @@ def api_forecast():
         return jsonify({"error": "Unauthorized"}), 401
 
     records = _market_records_from_db()
-    try:
-        analysis = analyze_market_intelligence(records)
-    except Exception:
-        analysis = build_market_analysis(records)
+    analysis = _analyze_market_records(records)
     return jsonify({"forecast": analysis.get("forecast", [])})
 
 def api_stats():

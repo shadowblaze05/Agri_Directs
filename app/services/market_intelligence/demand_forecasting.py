@@ -41,7 +41,7 @@ class DemandForecastingService:
                 warnings.simplefilter("error", (EstimationWarning, ConvergenceWarning))
                 model = ARIMA(series, order=(1, 0, 0))
                 result = model.fit()
-                forecast_value = float(result.forecast(steps=1)[0])
+                forecast_value = float(result.forecast(steps=1).iloc[0])
             return max(0.0, forecast_value), "arima"
         except (
             ConvergenceWarning,

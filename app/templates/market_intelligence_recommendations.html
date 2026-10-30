@@ -7,7 +7,7 @@
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <div>
                     <h5 class="mb-1">Weighted scoring model</h5>
-                    <p class="text-muted mb-0">An example of how demand, price, and seasonal fit can inform recommendations.</p>
+                    <p class="text-muted mb-0">Recommendations include the configured catalog price; crops without a price use a neutral price score.</p>
                 </div>
                 <span class="soft-chip">Scored outlook</span>
             </div>
@@ -32,6 +32,9 @@
                     <div class="d-flex justify-content-between mt-2 small text-muted">
                         <span>{{ item.demand }}</span>
                         <span>{{ item.seasonal }}</span>
+                    </div>
+                    <div class="small text-muted mt-2">
+                        {{ item.price_basis }}: {{ item.reference_price }}
                     </div>
                 </div>
                 {% endfor %}
