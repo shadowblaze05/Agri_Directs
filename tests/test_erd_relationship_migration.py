@@ -112,7 +112,7 @@ def create_schema(connection):
 def test_erd_reconciliation_is_the_single_alembic_head():
     config = Config()
     config.set_main_option("script_location", str(ROOT / "migrations"))
-    assert ScriptDirectory.from_config(config).get_heads() == ["f2c8a6d9e413"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["d3a6f1c8b920"]
 
 
 def test_expanded_relationship_migration_preserves_legacy_labels_and_covers_user_links():

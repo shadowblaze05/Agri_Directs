@@ -1,6 +1,3 @@
-"""Upload service boundary."""
-"""Validation and storage helpers for uploaded public media."""
-
 from io import BytesIO
 import os
 
@@ -25,7 +22,6 @@ def _read_bounded(uploaded_file, maximum_size):
 
 
 def save_sanitized_public_image(uploaded_file, destination, expected_format, maximum_size):
-	"""Validate and re-encode an image without carrying source metadata forward."""
 	contents = _read_bounded(uploaded_file, maximum_size)
 	try:
 		with Image.open(BytesIO(contents)) as source:

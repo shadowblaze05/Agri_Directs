@@ -549,7 +549,7 @@ def init_db():
         'is_verified': 'INTEGER DEFAULT 0',
         'location_latitude': 'REAL',
         'location_longitude': 'REAL',
-        'location_verified': 'INTEGER NOT NULL DEFAULT 0',
+        'location_verified': 'BOOLEAN NOT NULL DEFAULT FALSE',
         'location_verified_at': 'DATETIME',
         'profile_photo_captured_at': 'DATETIME',
         'psgc_location': 'TEXT',

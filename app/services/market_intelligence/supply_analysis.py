@@ -1,16 +1,9 @@
-"""Dynamic threshold supply analysis for market intelligence."""
-
 from __future__ import annotations
-
 from typing import Any, Iterable
-
 import numpy as np
-
 from .data_sources.price_data import build_price_snapshot
 
-
 class SupplyAnalysisService:
-    """Derive risk signals and threshold-bound supply classifications from inventory values."""
 
     @staticmethod
     def _crop_totals(records):

@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 
 def get_active_user_role(username, connection_factory=None):
-    """Return the current active role for a username, or None if unavailable."""
     if not username:
         return None
     if connection_factory is None:
@@ -65,7 +64,6 @@ def verify_jwt_token(token):
 
 
 def token_required(f):
-    """Decorator to protect API endpoints with JWT"""
     @wraps(f)
     def decorated(*args, **kwargs):
         token = request.headers.get("Authorization")

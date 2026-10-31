@@ -1,9 +1,6 @@
-"""Validation and proximity checks for farm and harvest coordinates."""
-
 import math
 import re
 import unicodedata
-
 import requests
 
 
@@ -12,7 +9,6 @@ PSGC_API = "https://psgc.gitlab.io/api"
 
 
 def validate_coordinates(latitude, longitude):
-    """Return finite latitude/longitude floats or raise ``ValueError``."""
     try:
         lat = float(latitude)
         lon = float(longitude)
@@ -29,7 +25,6 @@ def validate_coordinates(latitude, longitude):
 
 
 def calculate_distance_meters(latitude_a, longitude_a, latitude_b, longitude_b):
-    """Calculate great-circle distance between two coordinate pairs."""
     lat_a, lon_a = validate_coordinates(latitude_a, longitude_a)
     lat_b, lon_b = validate_coordinates(latitude_b, longitude_b)
 
@@ -53,7 +48,6 @@ def verify_crop_location(
     crop_longitude,
     max_distance_meters,
 ):
-    """Return a proximity status and distance, or manual review if unavailable."""
     values = (user_latitude, user_longitude, crop_latitude, crop_longitude)
     if any(value is None or value == "" for value in values):
         return "manual_review", None
@@ -64,7 +58,6 @@ def verify_crop_location(
     status = "within_range" if distance <= max_distance_meters else "outside_range"
     return status, distance
 def reverse_geocode_coordinates(latitude, longitude):
-    """Resolve coordinates to a human-readable place using OpenStreetMap Nominatim."""
     lat, lon = validate_coordinates(latitude, longitude)
     response = requests.get(
         "https://nominatim.openstreetmap.org/reverse",

@@ -1,7 +1,4 @@
-"""Shared pricing rules for crop catalog and seller listings."""
-
 from decimal import Decimal, InvalidOperation
-
 
 PRICE_UNITS = {"kg"}
 

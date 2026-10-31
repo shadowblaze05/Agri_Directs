@@ -1,10 +1,7 @@
-"""Notification service boundary."""
-
 from datetime import datetime, timezone
 
 
 def notify_published_announcement(cursor, post_id, title):
-    """Notify non-admin accounts when an Agricultural Update is newly pinned."""
     created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     cursor.execute(
         """

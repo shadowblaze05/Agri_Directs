@@ -1,19 +1,12 @@
-"""Demand forecasting service using ARIMA with linear fallback."""
-
 from __future__ import annotations
-
 import warnings
 from typing import Iterable
-
 import numpy as np
 import pandas as pd
 from statsmodels.tools.sm_exceptions import ConvergenceWarning, EstimationWarning
 from statsmodels.tsa.arima.model import ARIMA
 
-
 class DemandForecastingService:
-    """Forecast crop demand trends from the historical inventory series."""
-
     @staticmethod
     def _series_for_crop(records, crop_name):
         history = []

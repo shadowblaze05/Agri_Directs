@@ -1,9 +1,5 @@
-"""Crop recommendation service combining AHP and TOPSIS scoring."""
-
 from __future__ import annotations
-
 from typing import Any, Iterable
-
 import numpy as np
 
 from .criteria_builder import CriteriaBuilder

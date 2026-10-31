@@ -1,17 +1,11 @@
-"""Baseline demand comparison based on ordinary least squares."""
-
 from __future__ import annotations
-
 from typing import Iterable
-
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 
 
 class DemandBaselineService:
-    """Build OLS baselines to compare the ARIMA forecast against simple trend behavior."""
-
     @staticmethod
     def calculate(series: Iterable[float]):
         values = [float(value) for value in series if value is not None]

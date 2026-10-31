@@ -1,12 +1,9 @@
-"""Geocoding service used by location-aware routes."""
-
 import os
 import logging
 
 logger = logging.getLogger(__name__)
 
 def geocode_location(location):
-    """Geocode a location string to lat/lng using Google Maps API or a fallback."""
     api_key = os.environ.get("GOOGLE_MAPS_API_KEY")
     if not api_key:
         # fallback coordinates if no API key is configured

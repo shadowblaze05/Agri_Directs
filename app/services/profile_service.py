@@ -1,10 +1,7 @@
-"""Profile readiness checks shared by harvest submission routes."""
-
 from ..services.geotag_service import validate_coordinates
 
 
 def missing_harvest_profile_requirements(user):
-    """Return the required profile items missing before harvest submissions."""
     if not user:
         return ["account"]
 

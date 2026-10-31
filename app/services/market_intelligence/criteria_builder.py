@@ -1,14 +1,9 @@
-"""Criteria definition and AHP weight construction for crop recommendation."""
-
 from __future__ import annotations
-
 from typing import Dict, List
-
 import numpy as np
 
 
 def ahp_method(dataset, wd="mean"):
-    """Compute AHP weights using the mean-normalized method without importing the full pyDecision package."""
     dataset = np.asarray(dataset, dtype=float)
     if dataset.ndim != 2:
         raise ValueError("AHP matrix must be 2D")
@@ -42,7 +37,6 @@ CRITERIA = [
 
 
 def build_pairwise_matrix():
-    """Return the pairwise comparison matrix used for AHP weighting."""
     return np.array(
         [
             [1.0, 3.0, 5.0, 2.0, 4.0],
@@ -56,7 +50,6 @@ def build_pairwise_matrix():
 
 
 class CriteriaBuilder:
-    """Build and expose AHP criteria weights for downstream crop scoring."""
 
     def __init__(self):
         self.matrix = build_pairwise_matrix()
