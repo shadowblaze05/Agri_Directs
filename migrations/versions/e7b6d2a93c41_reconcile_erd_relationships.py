@@ -548,7 +548,15 @@ def _preflight_parent_schema(connection, expected_heads=_EXPECTED_PARENT_HEADS):
             for foreign_key in inspector.get_foreign_keys(table_name)
             if foreign_key.get("constrained_columns") == columns
         ]
-        if matches:
+        unexpected_matches = [
+            foreign_key
+            for foreign_key in matches
+            if (
+                foreign_key.get("referred_table") != referred_table
+                or foreign_key.get("referred_columns") != referred_columns
+            )
+        ]
+        if unexpected_matches:
             raise RuntimeError(
                 f"Foreign key preflight found an existing constraint on "
                 f"{table_name}{columns!r}; review it before applying this migration."
@@ -719,6 +727,18 @@ def _add_foreign_key(table_name, constraint_name, referred_table, columns, refer
         )
         if same_definition:
             return
+        same_relationship = (
+            foreign_key.get("constrained_columns") == columns
+            and foreign_key.get("referred_table") == referred_table
+            and foreign_key.get("referred_columns") == referred_columns
+        )
+        if same_relationship and foreign_key.get("name") is not None:
+            with op.batch_alter_table(table_name) as batch_op:
+                batch_op.drop_constraint(
+                    foreign_key["name"],
+                    type_="foreignkey",
+                )
+            continue
         if (
             foreign_key.get("name") == constraint_name
             or foreign_key.get("constrained_columns") == columns

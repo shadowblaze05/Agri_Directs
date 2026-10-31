@@ -363,7 +363,7 @@ def verify_email():
                 conn.commit()
                 conn.close()
                 session.clear()
-                flash("Email verified. You can now log in.")
+                flash("Email verified. You can now log in.", "success")
                 return redirect(url_for("login"))
         cur.execute(
             "UPDATE password_reset_tokens SET attempt_count=attempt_count+1 "

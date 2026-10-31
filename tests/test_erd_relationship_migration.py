@@ -6,7 +6,7 @@ from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from alembic.script import ScriptDirectory
 import pytest
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import Integer, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import configure_mappers
 
@@ -27,6 +27,14 @@ def load_migration():
 
 def load_expanded_user_migration():
     path = MIGRATIONS / "f2c8a6d9e413_expand_user_erd_relationships.py"
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    return migration
+
+
+def load_location_schema_migration():
+    path = MIGRATIONS / "d3a6f1c8b920_normalize_location_verified_type.py"
     spec = importlib.util.spec_from_file_location(path.stem, path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
@@ -113,6 +121,143 @@ def test_erd_reconciliation_is_the_single_alembic_head():
     config = Config()
     config.set_main_option("script_location", str(ROOT / "migrations"))
     assert ScriptDirectory.from_config(config).get_heads() == ["d3a6f1c8b920"]
+
+
+def test_location_schema_upgrade_repairs_integer_flag_and_non_cascading_fk(monkeypatch):
+    migration = load_location_schema_migration()
+    operations = []
+
+    class Connection:
+        dialect = type("Dialect", (), {"name": "postgresql"})()
+
+        def execute(self, _statement):
+            return type("Result", (), {"scalar_one": lambda self: 0})()
+
+    class Inspector:
+        def has_table(self, table_name):
+            return table_name in {"users", "password_reset_tokens"}
+
+        def get_columns(self, table_name):
+            if table_name == "users":
+                return [{"name": "location_verified", "type": Integer()}]
+            return [{"name": "user_id"}]
+
+        def get_foreign_keys(self, _table_name):
+            return [{
+                "name": "password_reset_tokens_user_id_fkey",
+                "constrained_columns": ["user_id"],
+                "referred_table": "users",
+                "referred_columns": ["id"],
+                "options": {},
+            }]
+
+    connection = Connection()
+
+    class FakeOperations:
+        def get_bind(self):
+            return connection
+
+        def drop_constraint(self, name, table_name, type_):
+            operations.append(("drop", name, table_name, type_))
+
+        def create_foreign_key(
+            self, name, source, target, local_columns, remote_columns, ondelete
+        ):
+            operations.append(
+                ("create", name, source, target, local_columns, remote_columns, ondelete)
+            )
+
+        def execute(self, statement):
+            operations.append(("execute", str(statement)))
+
+    monkeypatch.setattr(migration.sa, "inspect", lambda _connection: Inspector())
+    monkeypatch.setattr(migration, "op", FakeOperations())
+
+    migration.upgrade()
+
+    assert (
+        "drop",
+        "password_reset_tokens_user_id_fkey",
+        "password_reset_tokens",
+        "foreignkey",
+    ) in operations
+    assert (
+        "create",
+        "fk_password_reset_tokens_user_id_users",
+        "password_reset_tokens",
+        "users",
+        ["user_id"],
+        ["id"],
+        "CASCADE",
+    ) in operations
+    assert any(
+        "ALTER COLUMN location_verified TYPE BOOLEAN" in operation[1]
+        for operation in operations
+        if operation[0] == "execute"
+    )
+
+
+def test_erd_reconciliation_replaces_non_cascading_password_reset_fk(monkeypatch):
+    migration = load_migration()
+    operations = []
+
+    class Inspector:
+        def get_foreign_keys(self, _table_name):
+            return [{
+                "name": "password_reset_tokens_user_id_fkey",
+                "constrained_columns": ["user_id"],
+                "referred_table": "users",
+                "referred_columns": ["id"],
+                "options": {},
+            }]
+
+    class BatchOperations:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, _type, _value, _traceback):
+            return False
+
+        def drop_constraint(self, name, type_):
+            operations.append(("drop", name, type_))
+
+        def create_foreign_key(
+            self, name, target, local_columns, remote_columns, ondelete
+        ):
+            operations.append(
+                ("create", name, target, local_columns, remote_columns, ondelete)
+            )
+
+    class FakeOperations:
+        def get_bind(self):
+            return object()
+
+        def batch_alter_table(self, _table_name):
+            return BatchOperations()
+
+    monkeypatch.setattr(migration.sa, "inspect", lambda _connection: Inspector())
+    monkeypatch.setattr(migration, "op", FakeOperations())
+
+    migration._add_foreign_key(
+        "password_reset_tokens",
+        "fk_password_reset_tokens_user_id_users",
+        "users",
+        ["user_id"],
+        ["id"],
+        "CASCADE",
+    )
+
+    assert operations == [
+        ("drop", "password_reset_tokens_user_id_fkey", "foreignkey"),
+        (
+            "create",
+            "fk_password_reset_tokens_user_id_users",
+            "users",
+            ["user_id"],
+            ["id"],
+            "CASCADE",
+        ),
+    ]
 
 
 def test_expanded_relationship_migration_preserves_legacy_labels_and_covers_user_links():

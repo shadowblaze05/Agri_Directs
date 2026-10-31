@@ -110,6 +110,10 @@ def test_registration_requires_email_code_before_login(tmp_path, monkeypatch):
         response = client.post("/verify-email", data={"code": code})
         assert response.status_code == 302
         assert response.headers["Location"].endswith("/login")
+        login_page = client.get("/login")
+        assert b"alert-success" in login_page.data
+        assert b"fa-check-circle" in login_page.data
+        assert b"Email verified. You can now log in." in login_page.data
         with application.app_context():
             assert db.session.execute(text(
                 "SELECT is_verified FROM users WHERE username='verifyfarmer'"
