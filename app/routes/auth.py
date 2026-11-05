@@ -333,7 +333,7 @@ def verify_email():
             else:
                 sent = False
             if sent:
-                flash("A new verification code has been sent.")
+                flash("A new verification code has been sent. (Pls check your spam folder if you don't see it.)")
             else:
                 flash("We could not send the code. Check your email settings or try again later.")
             return redirect(url_for("verify_email"))

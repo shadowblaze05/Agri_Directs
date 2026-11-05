@@ -15,6 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from .config import Config
 from .extensions import bcrypt, db, limiter, login_manager, mail, migrate
 from .models.database import update_analytics
+from .services.auth_service import get_active_user_role
 from .services.audit_service import record_request_event, should_audit_request
 from .services.slow_query_monitor import install_slow_query_monitor
 
@@ -77,6 +78,22 @@ def create_app(config_overrides=None):
         g.request_started_at = time.perf_counter()
         g.audit_actor = session.get("user")
         g.audit_role = session.get("role")
+
+    @app.before_request
+    def refresh_authenticated_session():
+        username = session.get("user")
+        if not username or request.endpoint == "static":
+            return None
+
+        role = get_active_user_role(username)
+        if role is None:
+            session.clear()
+            g.audit_role = None
+            return None
+
+        session["role"] = role
+        g.audit_role = role
+        return None
 
     @app.before_request
     def enforce_same_origin_mutations():

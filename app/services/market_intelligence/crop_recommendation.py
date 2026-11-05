@@ -1,9 +1,85 @@
 from __future__ import annotations
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 import numpy as np
 
 from .criteria_builder import CriteriaBuilder
 from .data_sources.price_data import get_crop_reference_prices
+
+_CLIMATE_SEASONS = (
+    ("Cool dry season", "Dec-Feb", {12, 1, 2}),
+    ("Hot dry season", "Mar-May", {3, 4, 5}),
+    ("Rainy season", "Jun-Nov", {6, 7, 8, 9, 10, 11}),
+)
+_PHILIPPINE_TIMEZONE = timezone(timedelta(hours=8))
+_YEAR_ROUND_TOLERANCE = 0.20
+
+
+def _seasonal_fit(records, crop_name, month=None):
+    month = month or datetime.now(_PHILIPPINE_TIMEZONE).month
+    current_season = next(
+        index
+        for index, (_, _, months) in enumerate(_CLIMATE_SEASONS)
+        if month in months
+    )
+    season_year_totals = {}
+
+    for row in records or []:
+        if (row or {}).get("crop_name") != crop_name:
+            continue
+        date_value = (row or {}).get("date_received")
+        if not date_value:
+            continue
+        try:
+            record_date = datetime.fromisoformat(str(date_value).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if record_date.tzinfo is not None:
+            record_date = record_date.astimezone(_PHILIPPINE_TIMEZONE)
+        quantity = float((row or {}).get("quantity") or 0)
+        if quantity <= 0:
+            continue
+        season = next(
+            index
+            for index, (_, _, months) in enumerate(_CLIMATE_SEASONS)
+            if record_date.month in months
+        )
+        season_year = record_date.year - int(season == 0 and record_date.month != 12)
+        key = (season, season_year)
+        season_year_totals[key] = season_year_totals.get(key, 0.0) + quantity
+
+    season_name, month_range, _ = _CLIMATE_SEASONS[current_season]
+    label_prefix = f"{season_name} ({month_range})"
+    observed_seasons = {season for season, _ in season_year_totals}
+    if len(observed_seasons) < len(_CLIMATE_SEASONS):
+        return 0.5, f"{label_prefix} - Insufficient history"
+
+    season_monthly_averages = [[] for _ in _CLIMATE_SEASONS]
+    for (season, _), total in season_year_totals.items():
+        months_in_season = len(_CLIMATE_SEASONS[season][2])
+        season_monthly_averages[season].append(total / months_in_season)
+    seasonal_averages = [
+        sum(year_values) / len(year_values)
+        for year_values in season_monthly_averages
+    ]
+    average_seasonal_quantity = sum(seasonal_averages) / len(_CLIMATE_SEASONS)
+    fit_score = min(
+        1.0,
+        seasonal_averages[current_season] / (2 * average_seasonal_quantity),
+    )
+    is_year_round = average_seasonal_quantity > 0 and all(
+        abs(seasonal_average - average_seasonal_quantity)
+        <= average_seasonal_quantity * _YEAR_ROUND_TOLERANCE
+        for seasonal_average in seasonal_averages
+    )
+    fit_label = (
+        "Year-round availability"
+        if is_year_round
+        else "Favorable"
+        if fit_score >= 0.5
+        else "Watch"
+    )
+    return fit_score, f"{label_prefix} - {fit_label}"
 
 
 def topsis_method(dataset, weights, criterion_type, graph=True, verbose=True):
@@ -55,12 +131,11 @@ class CropRecommendationService:
         crop_name,
         records,
         supply_summary,
-        forecast_summary,
         price_opportunity,
+        seasonal_fit_score,
     ):
         demand = 0.0
         stability = 0.0
-        seasonal = 0.0
         risk = 0.0
 
         crop_rows = [row for row in records or [] if (row or {}).get("crop_name") == crop_name]
@@ -76,20 +151,13 @@ class CropRecommendationService:
             stability = 0.0
             risk = 0.0
 
-        forecast_entry = next((item for item in forecast_summary if item["crop"] == crop_name), None)
-        if forecast_entry:
-            forecast_quantity = float(forecast_entry["forecast_quantity"])
-            seasonal = min(1.0, forecast_quantity / max(sum(item["forecast_quantity"] for item in forecast_summary if item["crop"] != crop_name) + 1, 1.0))
-        else:
-            seasonal = 0.5
-
         supply_total = supply_summary.get(crop_name, 0.0)
         supply_score = min(1.0, supply_total / max(supply_summary.values() or [1.0])) if supply_summary else 0.0
         return np.array(
             [
                 demand,
                 stability,
-                seasonal,
+                seasonal_fit_score,
                 price_opportunity,
                 1.0 - max(0.0, abs(supply_score - risk)),
             ],
@@ -102,6 +170,10 @@ class CropRecommendationService:
         forecast_summary = forecast_summary or []
         crop_names = sorted({(row or {}).get("crop_name") for row in records if (row or {}).get("crop_name")})
         matrix = []
+        seasonal_fits = {
+            crop_name: _seasonal_fit(records, crop_name)
+            for crop_name in crop_names
+        }
         reference_prices = get_crop_reference_prices(records)
         known_prices = [
             reference_prices[crop]["price"]
@@ -127,8 +199,8 @@ class CropRecommendationService:
                     crop_name,
                     records,
                     supply_summary,
-                    forecast_summary,
                     price_opportunity,
+                    seasonal_fits[crop_name][0],
                 )
             )
         if not matrix:
@@ -141,6 +213,8 @@ class CropRecommendationService:
                 {
                     "crop": crop_name,
                     "score": round(float(score), 4),
+                    "seasonal_fit": seasonal_fits[crop_name][1],
+                    "seasonal_fit_score": round(seasonal_fits[crop_name][0], 4),
                     "reason": "Strong demand and favorable market conditions.",
                     "reference_price": (
                         round(reference_prices[crop_name]["price"], 2)

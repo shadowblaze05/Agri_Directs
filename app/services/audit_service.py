@@ -8,6 +8,7 @@ from ..extensions import db
 from ..models.audit import AuditEvent
 
 _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_MUTATING_ENDPOINTS = {"delete_inventory"}
 _AUTH_ENDPOINTS = {"login", "logout", "register", "get_token"}
 _ACTION_VERBS = {
     "create": "Created",
@@ -34,6 +35,7 @@ def should_audit_request(endpoint, method, path):
         return False
     return (
         method in _MUTATING_METHODS
+        or endpoint in _MUTATING_ENDPOINTS
         or endpoint in _AUTH_ENDPOINTS
         or path == "/admin"
         or path.startswith("/admin/")

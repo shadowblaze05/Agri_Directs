@@ -1205,11 +1205,16 @@ def test_evidence_is_limited_to_owner_and_admin(client, tmp_path, monkeypatch):
     monkeypatch.setitem(app_module.app.config, "UPLOAD_FOLDER", str(tmp_path))
 
     class FakeCursor:
-        def execute(self, _query, _params):
-            self.last_call = (_query, _params)
+        def execute(self, query, params):
+            self.last_call = (query, params)
             return self
 
         def fetchone(self):
+            if self.last_call[0].startswith("SELECT role, is_active FROM users"):
+                return {
+                    "role": "admin" if self.last_call[1][0] == "admin" else "user",
+                    "is_active": True,
+                }
             return {"farmer": "owner"}
 
     class FakeConnection:

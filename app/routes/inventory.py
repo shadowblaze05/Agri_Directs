@@ -14,6 +14,7 @@ from werkzeug.utils import secure_filename
 
 from .. import legacy as core
 from ..legacy import app, get_db, logger, update_analytics
+from ..services.auth_service import get_active_user_role
 from ..services.geotag_service import validate_coordinates, verify_crop_location
 from ..services.profile_service import missing_harvest_profile_requirements
 
@@ -64,6 +65,15 @@ def _save_crop_photo(uploaded_file):
     os.makedirs(evidence_dir, exist_ok=True)
     uploaded_file.save(os.path.join(evidence_dir, filename))
     return filename
+
+
+def _current_user_role():
+    role = get_active_user_role(session.get("user"), get_db)
+    if role is None:
+        session.clear()
+        return None
+    session["role"] = role
+    return role
 
 
 def _parse_gps_capture(form):
@@ -243,6 +253,10 @@ def edit_inventory(item_id):
     if "user" not in session:
         return redirect("/login")
 
+    role = _current_user_role()
+    if role is None:
+        return redirect("/login")
+
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT i.id, i.farmer, i.quantity, c.crops_name AS crop_name FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.id=?", (item_id,))
@@ -253,7 +267,7 @@ def edit_inventory(item_id):
         flash("Inventory item not found")
         return redirect("/dashboard")
 
-    can_modify = session.get("role") == "admin" or (item["farmer"] == session["user"])
+    can_modify = role == "admin" or (item["farmer"] == session["user"])
     if not can_modify:
         conn.close()
         flash("You are not allowed to modify this item")
@@ -286,6 +300,10 @@ def delete_inventory(item_id):
     if "user" not in session:
         return redirect("/login")
 
+    role = _current_user_role()
+    if role is None:
+        return redirect("/login")
+
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT i.id, i.farmer FROM inventory i WHERE i.id=?", (item_id,))
@@ -295,7 +313,7 @@ def delete_inventory(item_id):
         flash("Inventory item not found")
         return redirect("/dashboard")
 
-    can_modify = session.get("role") == "admin" or (item["farmer"] == session["user"])
+    can_modify = role == "admin" or (item["farmer"] == session["user"])
     if not can_modify:
         conn.close()
         flash("You are not allowed to delete this item")
@@ -575,6 +593,10 @@ def crop_evidence(filename):
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
+    role = _current_user_role()
+    if role is None:
+        return jsonify({"error": "Unauthorized"}), 401
+
     conn = get_db()
     row = conn.cursor().execute(
         "SELECT farmer FROM inventory WHERE photo_path=?",
@@ -582,7 +604,7 @@ def crop_evidence(filename):
     ).fetchone()
     conn.close()
     if not row or (
-        row["farmer"] != session["user"] and session.get("role") != "admin"
+        row["farmer"] != session["user"] and role != "admin"
     ):
         return jsonify({"error": "Evidence photo not found"}), 404
 
@@ -600,7 +622,7 @@ def register(application):
     application.add_url_rule('/inventory/edit_crop', endpoint='inventory_edit_crop', view_func=inventory_edit_crop, methods=['POST'])
     application.add_url_rule('/inventory/delete_crop', endpoint='inventory_delete_crop', view_func=inventory_delete_crop, methods=['POST'])
     application.add_url_rule('/inventory/edit/<int:item_id>', endpoint='edit_inventory', view_func=edit_inventory, methods=['GET', 'POST'])
-    application.add_url_rule('/inventory/delete/<int:item_id>', endpoint='delete_inventory', view_func=delete_inventory)
+    application.add_url_rule('/inventory/delete/<int:item_id>', endpoint='delete_inventory', view_func=delete_inventory, methods=['POST'])
     application.add_url_rule('/upload', endpoint='upload', view_func=upload, methods=['GET', 'POST'])
     application.add_url_rule('/harvest-evidence/<filename>', endpoint='crop_evidence', view_func=crop_evidence)
     for _name in __all__:

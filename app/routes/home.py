@@ -463,7 +463,7 @@ def market_intelligence_crop_recommendations():
             "score": round(item.get("score", 0) * 100, 0),
             "reason": item.get("reason", "No recommendation available."),
             "demand": "High" if item.get("score", 0) > 0.6 else "Balanced",
-            "seasonal": "Strong" if item.get("score", 0) > 0.6 else "Watch",
+            "seasonal": item.get("seasonal_fit", "Insufficient seasonal history"),
             "reference_price": (
                 f"₱{float(item['reference_price']):,.2f}/kg"
                 if item.get("reference_price") is not None
@@ -765,7 +765,7 @@ def api_stats():
 
     # Number of entries
     cur.execute(
-        "SELECT COUNT(*) AS count FROM inventory" + plain_owner_filter,
+        "SELECT COUNT(*) AS count FROM inventory WHERE 1=1" + plain_owner_filter,
         owner_params,
     )
     entry_count = cur.fetchone()["count"]
@@ -1017,7 +1017,7 @@ def send_message():
     conn.commit()
     conn.close()
     
-    logger.info(f"Message sent from {session['user']} to {recipient}: {message}")
+    logger.info("Message sent from %s to %s", session["user"], recipient)
     return jsonify({"status": "success"})
 
 def total_harvest():

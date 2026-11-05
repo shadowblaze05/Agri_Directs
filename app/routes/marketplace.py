@@ -209,6 +209,21 @@ def get_cart_count(username):
     return cart_count
 
 
+def _available_inventory_quantity(cur, username, crop_id):
+    cur.execute("""
+        SELECT COALESCE(SUM(i.quantity), 0) - COALESCE((
+            SELECT SUM(m.amount)
+            FROM marketplace m
+            WHERE m.username = ? AND m.crop_id = ? AND m.status = 'available'
+              AND COALESCE(m.listing_type, 'standard') = 'standard'
+        ), 0) AS total
+        FROM inventory i
+        WHERE i.farmer = ? AND i.crop_id = ?
+    """, (username, crop_id, username, crop_id))
+    result = cur.fetchone()
+    return max(0, result["total"] or 0)
+
+
 def marketplace():
     if "user" not in session:
         return redirect("/login")
@@ -360,15 +375,14 @@ def add_marketplace_listing():
 
         # Inventory check: only for standard listings
         if listing_type == "standard":
-            cur.execute("""
-                SELECT SUM(quantity) as total
-                FROM inventory
-                WHERE farmer = ? AND crop_id = ?
-            """, (session["user"], crop_id))
-            inventory = cur.fetchone()
-
-            if not inventory or inventory["total"] < amount:
-                flash(f"You don't have enough {crop_name} in your inventory. Available: {inventory['total'] if inventory else 0}")
+            available_quantity = _available_inventory_quantity(
+                cur, session["user"], crop_id
+            )
+            if available_quantity < amount:
+                flash(
+                    f"You don't have enough {crop_name} in your inventory. "
+                    f"Available: {available_quantity} kg"
+                )
                 conn.close()
                 return redirect(request.url)
 
@@ -485,23 +499,21 @@ def add_marketplace_listing():
     user_crops_with_ids = []
     for crop in user_crops:
         if crop["crop_id"]:
-            cur.execute("""
-                SELECT SUM(quantity) as total_quantity
-                FROM inventory
-                WHERE farmer = ? AND crop_id = ?
-            """, (session["user"], crop["crop_id"]))
-            total = cur.fetchone()
-            user_crops_with_ids.append({
-                "id": crop["crop_id"],
-                "crops_name": crop["crop_name"],
-                "total_quantity": total["total_quantity"] if total else 0,
-                "pricing_mode": crop["pricing_mode"],
-                "reference_price": crop["reference_price"],
-                "price_range": crop["price_range"],
-                "minimum_price": crop["minimum_price"],
-                "maximum_price": crop["maximum_price"],
-                "price_unit": crop["price_unit"],
-            })
+            available_quantity = _available_inventory_quantity(
+                cur, session["user"], crop["crop_id"]
+            )
+            if available_quantity > 0:
+                user_crops_with_ids.append({
+                    "id": crop["crop_id"],
+                    "crops_name": crop["crop_name"],
+                    "total_quantity": available_quantity,
+                    "pricing_mode": crop["pricing_mode"],
+                    "reference_price": crop["reference_price"],
+                    "price_range": crop["price_range"],
+                    "minimum_price": crop["minimum_price"],
+                    "maximum_price": crop["maximum_price"],
+                    "price_unit": crop["price_unit"],
+                })
 
     cur.execute("""
         SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total_quantity

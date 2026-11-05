@@ -303,7 +303,7 @@
                                                 data-range="{{ crop['price_range'] or '' }}"
                                                 data-minimum="{{ crop['minimum_price'] or '' }}"
                                                 data-maximum="{{ crop['maximum_price'] or '' }}"
-                                                >{{ crop['crops_name'] }} ({{ crop['total_quantity'] }} available)
+                                                >{{ crop['crops_name'] }} ({{ crop['total_quantity'] }} kg available)
                                         </option>
                                         {% endfor %}
                                     </select>
@@ -325,11 +325,11 @@
                                     {% endif %}
                                 </div>
                                 <div class="col-md-6 mb-3">
-                                    <label for="amount" id="amountLabel" class="form-label">Amount (kg)</label>
+                                    <label for="amount" id="amountLabel" class="form-label">Amount (kg) *</label>
                                     <input type="number" class="form-control" id="amount" name="amount"
                                            value="{{ listing.amount if listing else '' }}"
                                            min="1" required>
-                                    <small class="text-muted">Available: <span id="availableDisplay">{{ listing.amount if listing else 0 }}</span></small>
+                                    <small class="text-muted" id="availableInfo">Available: <span id="availableDisplay">{{ listing.amount if listing else 0 }}</span> kg</small>
                                 </div>
                             </div>
 
@@ -759,18 +759,30 @@
             const priceLabel = document.getElementById('priceLabel');
 
             if (amountLabel) {
-                amountLabel.textContent = isLookingFor ? 'Quantity Wanted *' : 'Amount *';
+                amountLabel.textContent = isLookingFor
+                    ? 'Quantity Wanted (kg) *'
+                    : 'Amount (kg) *';
             }
             if (priceLabel) {
                 priceLabel.textContent = isLookingFor ? 'Price Range per kg (₱) *' : 'Price per kg (₱) *';
             }
             updateCropPriceGuidance();
 
-            // Amount cap removal for pre-orders and looking_for
+            // Pre-orders and buyer requests do not reserve seller inventory.
             const amountInput = document.getElementById('amount');
-            if (amountInput && useAllCrops) {
-                amountInput.disabled = false;
-                amountInput.removeAttribute('max');
+            const availableInfo = document.getElementById('availableInfo');
+            const availableDisplay = document.getElementById('availableDisplay');
+            if (availableInfo) availableInfo.hidden = useAllCrops;
+            if (amountInput && useAllCrops) amountInput.removeAttribute('max');
+
+            const standardCrop = document.getElementById('crop_id_standard');
+            if (amountInput && standardCrop && !useAllCrops) {
+                const selectedCrop = standardCrop.selectedOptions[0];
+                const available = selectedCrop && selectedCrop.value
+                    ? Number(selectedCrop.dataset.available) || 0
+                    : 0;
+                if (availableDisplay) availableDisplay.textContent = String(available);
+                amountInput.max = String(available);
             }
         }
 
@@ -826,7 +838,9 @@
             document.getElementById('type_standard')?.addEventListener('change', updateListingTypeUI);
             document.getElementById('type_preorder')?.addEventListener('change', updateListingTypeUI);
             document.getElementById('type_looking_for')?.addEventListener('change', updateListingTypeUI);
-            document.getElementById('crop_id_standard')?.addEventListener('change', updateCropPriceGuidance);
+            document.getElementById('crop_id_standard')?.addEventListener('change', function() {
+                updateListingTypeUI();
+            });
             document.getElementById('crop_id_preorder')?.addEventListener('change', updateCropPriceGuidance);
             updateListingTypeUI();
 

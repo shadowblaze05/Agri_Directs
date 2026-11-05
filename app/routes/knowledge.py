@@ -1,6 +1,7 @@
 from flask import flash, jsonify, redirect, render_template, request, session, url_for
 from .. import legacy as core
 from ..models.database import get_db
+from ..services.auth_service import get_active_user_role
 
 # Route implementations use the shared compatibility context.
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
@@ -124,7 +125,12 @@ def comment_knowledge_post(post_id):
 def reply_to_comment(comment_id):
     if "user" not in session:
         return redirect("/login")
-    if session.get("role") != "admin":
+    role = get_active_user_role(session.get("user"), get_db)
+    if role is None:
+        session.clear()
+        return redirect("/login")
+    session["role"] = role
+    if role != "admin":
         flash("Only admins can reply to comments")
         return redirect("/dashboard")
 
