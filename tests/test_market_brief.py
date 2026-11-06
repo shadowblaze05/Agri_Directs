@@ -221,6 +221,65 @@ def test_signed_in_home_displays_the_market_brief(monkeypatch):
     assert b"Tomato supply is above the usual range" in response.data
 
 
+def test_signed_in_home_displays_verified_marketplace_listing_photo(monkeypatch):
+    listing = {
+        "id": 17,
+        "crop_name": "Tomatoes",
+        "amount": 25,
+        "price": 58.5,
+        "unit": "kg",
+        "location": "Sariaya, Quezon",
+        "main_image": "tomatoes.jpg",
+        "thumbnail_verified": 1,
+        "seller_name": "farmer",
+    }
+
+    class FeaturedCursor:
+        def execute(self, query, params=()):
+            if "SELECT m.id" in query:
+                self.rows = [listing]
+                self.row = None
+            elif "COUNT(DISTINCT m.crop_name)" in query:
+                self.rows = None
+                self.row = {"active_listings": 1, "crop_count": 1}
+            else:
+                self.rows = None
+                self.row = {"active_listings": 1}
+            return self
+
+        def fetchall(self):
+            return self.rows
+
+        def fetchone(self):
+            return self.row
+
+    class FeaturedConnection:
+        def __init__(self):
+            self._cursor = FeaturedCursor()
+
+        def cursor(self):
+            return self._cursor
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(home_routes, "get_db", FeaturedConnection)
+    monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "user")
+    monkeypatch.setattr(home_routes, "_latest_updates", lambda limit=3: [])
+    monkeypatch.setattr(home_routes, "_market_analysis_context", _sample_market_analysis)
+
+    with app_module.app.test_client() as client:
+        with client.session_transaction() as user_session:
+            user_session["user"] = "farmer"
+            user_session["role"] = "user"
+
+        response = client.get("/home")
+
+    assert response.status_code == 200
+    assert b"uploads/marketplace/tomatoes.jpg" in response.data
+    assert b"alt=\"Tomatoes listed by farmer\"" in response.data
+
+
 def test_market_charts_remain_admin_only(monkeypatch):
     monkeypatch.setattr(
         home_routes, "_market_analysis_context", _sample_market_analysis

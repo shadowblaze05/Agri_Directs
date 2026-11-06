@@ -166,9 +166,9 @@
         <a class="nav-link" href="/home"><i class="fas fa-home"></i> Home</a
         ><a class="nav-link" href="/dashboard"
           ><i class="fas fa-chart-line"></i> Dashboard</a
-        ><a class="nav-link" href="/upload"
+        >{% if session.get('role') != 'buyer' %}<a class="nav-link" href="/upload"
           ><i class="fas fa-upload"></i> Upload Harvest</a
-        >{% if session.get('role') == 'admin' %}<a
+        >{% endif %}{% if session.get('role') == 'admin' %}<a
           class="nav-link"
           href="/market-intelligence"
           ><i class="fas fa-brain"></i> Market Intelligence</a
@@ -274,7 +274,7 @@
             {% endif %}
             <div>
               <span class="badge bg-success text-capitalize mb-2"
-                >{{ user.role or 'Member' }}</span
+                >{{ 'Seller' if user.role in (None, '', 'user', 'seller') else 'Buyer' if user.role == 'buyer' else 'Administrator' if user.role == 'admin' else 'Member' }}</span
               >
               <h1 class="h3 mb-1">
                 {{ (user.first_name ~ ' ' ~ user.last_name).strip() or
@@ -353,9 +353,9 @@
               {% else %}
               <p class="text-muted mb-0 py-3">
                 No harvest has been added yet.
-                <a href="/upload" class="text-success"
+                {% if session.get('role') != 'buyer' %}<a href="/upload" class="text-success"
                   >Add your first record.</a
-                >
+                >{% endif %}
               </p>
               {% endfor %}
             </section>
@@ -399,9 +399,12 @@
                 <i class="fas fa-flag me-1"></i> Report profile
               </button>
               <div class="collapse mt-3" id="profileReportForm">
-                <form method="post" action="{{ url_for('report_profile', username=user.username) }}">
+                <form method="post" enctype="multipart/form-data" action="{{ url_for('report_profile', username=user.username) }}">
                   <label class="form-label" for="profile-report-description">Describe the problem</label>
                   <textarea class="form-control mb-2" id="profile-report-description" name="description" rows="4" minlength="10" maxlength="2000" required></textarea>
+                  <label class="form-label" for="profile-report-evidence">Evidence (optional)</label>
+                  <input class="form-control mb-1" id="profile-report-evidence" name="evidence" type="file">
+                  <div class="form-text mb-3">Attach a photo or other file, up to 10 MB.</div>
                   <button class="btn btn-danger w-100" type="submit">Submit report</button>
                 </form>
               </div>

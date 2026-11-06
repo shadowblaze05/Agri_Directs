@@ -7,6 +7,7 @@ import app as app_module
 from app.extensions import db
 from app.models.audit import AuditEvent
 from app.models.database import get_db, init_db
+from app.services.auth_service import generate_jwt_token
 from app.services.audit_service import should_audit_request
 
 
@@ -25,12 +26,17 @@ def make_security_app(database_path):
         cursor = connection.cursor()
         for username, role in (
             ("owner", "user"),
+            ("buyer", "buyer"),
             ("former-admin", "admin"),
         ):
             cursor.execute(
                 "INSERT INTO users (username, role, is_active) VALUES (?, ?, ?)",
                 (username, role, True),
             )
+        cursor.execute(
+            "CREATE TABLE IF NOT EXISTS cart "
+            "(id INTEGER PRIMARY KEY, user_id INTEGER, quantity INTEGER)"
+        )
         crop = cursor.execute("SELECT id FROM crops LIMIT 1").fetchone()
         cursor.execute(
             """INSERT INTO inventory (crop_id, quantity, farmer, date_received, photo_path)
@@ -168,3 +174,108 @@ def test_inactive_session_is_rejected_by_inventory_routes(tmp_path):
         assert response.headers["Location"].endswith("/login")
         with client.session_transaction() as user_session:
             assert "user" not in user_session
+
+
+def test_buyer_role_is_saved_and_cannot_manage_harvest_or_listings(tmp_path):
+    application = make_security_app(tmp_path / "buyer-role.sqlite")
+
+    with application.test_client() as client:
+        set_session(client, "owner", "user")
+        response = client.post(
+            "/profile/update",
+            data={
+                "first_name": "Farm",
+                "last_name": "Buyer",
+                "email": "owner@example.com",
+                "role": "buyer",
+            },
+            headers={"Origin": "http://localhost"},
+        )
+        assert response.status_code == 302
+        with client.session_transaction() as user_session:
+            assert user_session["role"] == "buyer"
+
+        with application.app_context():
+            connection = get_db()
+            role = connection.cursor().execute(
+                "SELECT role FROM users WHERE username=?",
+                ("owner",),
+            ).fetchone()["role"]
+            connection.close()
+        assert role == "buyer"
+        profile_settings = client.get("/profile/update")
+        assert profile_settings.status_code == 200
+        assert b'<option value="buyer" selected>Buyer</option>' in profile_settings.data
+        profile_response = client.get("/profile")
+        assert profile_response.status_code == 200
+        assert b"Buyer" in profile_response.data
+
+        item_id = inventory_id(application)
+        assert client.get("/inventory").headers["Location"].endswith("/marketplace")
+        assert client.get("/upload").headers["Location"].endswith("/marketplace")
+        assert client.get("/marketplace/my-purchases").status_code == 200
+        marketplace_response = client.get("/marketplace")
+        assert marketplace_response.status_code == 200
+        assert b'href="/marketplace/add"' not in marketplace_response.data
+        assert b'href="/marketplace/my-listings"' not in marketplace_response.data
+        assert b'href="/upload"' not in marketplace_response.data
+        response = client.post(
+            f"/inventory/delete/{item_id}",
+            headers={"Origin": "http://localhost"},
+        )
+        assert response.headers["Location"].endswith("/marketplace")
+
+        response = client.post(
+            "/marketplace/add",
+            data={},
+            headers={"Origin": "http://localhost"},
+        )
+        assert response.headers["Location"].endswith("/marketplace")
+        assert client.get("/marketplace/my-preorder-requests").headers[
+            "Location"
+        ].endswith("/marketplace")
+        response = client.post(
+            "/marketplace/preorder/1/accept",
+            json={},
+            headers={"Origin": "http://localhost"},
+        )
+        assert response.status_code == 403
+        token = generate_jwt_token("owner")
+        response = client.post(
+            "/api/harvest",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"crop_name": "Rice", "quantity": 1, "location": "Farm"},
+        )
+        assert response.status_code == 403
+        assert "Only Sellers" in response.get_json()["error"]
+
+        with application.app_context():
+            connection = get_db()
+            connection.cursor().execute(
+                "UPDATE users SET role=? WHERE username=?",
+                ("seller", "owner"),
+            )
+            connection.commit()
+            connection.close()
+        set_session(client, "owner", "seller")
+        response = client.post(
+            "/marketplace/add",
+            data={},
+            headers={"Origin": "http://localhost"},
+        )
+        assert response.headers["Location"].endswith("/marketplace/add")
+        with application.app_context():
+            connection = get_db()
+            connection.cursor().execute(
+                "UPDATE users SET role=NULL WHERE username=?",
+                ("owner",),
+            )
+            connection.commit()
+            connection.close()
+        response = client.post(
+            "/api/harvest",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"crop_name": "Rice", "quantity": 1, "location": "Farm"},
+        )
+        assert response.status_code == 403
+        assert "Complete your profile" in response.get_json()["error"]

@@ -1,4 +1,5 @@
 import re
+import smtplib
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,7 @@ def make_password_recovery_app(database_uri):
             "SQLALCHEMY_DATABASE_URI": database_uri,
             "MAIL_SUPPRESS_SEND": False,
             "MAIL_DEFAULT_SENDER": "noreply@example.test",
+            "AGRI_DIRECT_OFFICIAL_EMAIL": "official@example.test",
         }
     )
     with application.app_context():
@@ -102,28 +104,44 @@ def test_password_recovery_uses_emailed_code_and_changes_password_in_app(tmp_pat
 
         response = client.post(
             "/reset-password",
-            data={"password": "123456", "confirm_password": "123456"},
+            data={"password": "Farmer1", "confirm_password": "Farmer1"},
         )
         assert response.status_code == 200
-        assert b"at least 12 characters" in response.data
+        assert b"at least 8 characters" in response.data
         with client.session_transaction() as user_session:
             assert user_session.get("password_reset_user_id") == 1
 
         response = client.post(
             "/reset-password",
             data={
-                "password": "New!Harvest7Moon",
-                "confirm_password": "New!Harvest7Moon",
+                "password": "FarmerName7",
+                "confirm_password": "FarmerName7",
             },
         )
         assert response.status_code == 302
         assert response.headers["Location"].endswith("/login")
+        password_confirmation = next(
+            message for message in outbox
+            if message.subject == "Your Agri-Direct password was changed"
+        )
+        assert password_confirmation.recipients == ["farmer@example.test"]
+        assert "successfully changed" in password_confirmation.body
+        assert all(
+            message.subject != "Agri-Direct account password changed"
+            for message in outbox
+        )
+        assert len(outbox) == 2
 
         with application.app_context():
             password_hash = db.session.execute(
                 text("SELECT password FROM users WHERE id = 1")
             ).scalar_one()
-            assert check_password_hash(password_hash, "New!Harvest7Moon")
+            assert check_password_hash(password_hash, "FarmerName7")
+
+        response = client.get("/login")
+        assert response.status_code == 200
+        assert b"alert-success" in response.data
+        assert b"Password reset successful" in response.data
 
         response = client.get("/reset-password")
         assert response.status_code == 302
@@ -136,7 +154,7 @@ def test_password_reset_response_is_generic_when_delivery_fails(tmp_path, monkey
     )
 
     def fail_delivery(_message):
-        raise RuntimeError("SMTP failure details")
+        raise smtplib.SMTPException("SMTP failure details")
 
     monkeypatch.setattr(auth_routes.mail, "send", fail_delivery)
     with application.test_client() as client:

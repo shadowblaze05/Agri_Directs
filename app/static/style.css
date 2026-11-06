@@ -17,6 +17,78 @@ h1, h2 {
     background: darkgreen;
 }
 
+.navbar-brand::before {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    margin-right: 0.45rem;
+    background: url("/static/images/logo.png") center / contain no-repeat;
+    content: "";
+    vertical-align: middle;
+}
+
+.navbar-brand > .fa-leaf {
+    display: none !important;
+}
+
+.site-brand-logo {
+    width: 32px;
+    height: 32px;
+    margin-right: 0.45rem;
+    object-fit: contain;
+    vertical-align: middle;
+}
+
+.sidebar nav > .nav-link,
+.analytics-sidebar nav > .nav-link {
+    order: 9;
+}
+
+.sidebar nav > .nav-link[href="/home"],
+.analytics-sidebar nav > .nav-link[href="/home"] {
+    order: 1;
+}
+
+.sidebar nav > .nav-link[href="/marketplace"],
+.analytics-sidebar nav > .nav-link[href="/marketplace"] {
+    order: 2;
+}
+
+.sidebar nav > .nav-link[href="/upload"],
+.analytics-sidebar nav > .nav-link[href="/upload"] {
+    order: 3;
+}
+
+.sidebar nav > .nav-link[href="/knowledge"],
+.analytics-sidebar nav > .nav-link[href="/knowledge"] {
+    order: 4;
+}
+
+.sidebar nav > .nav-link[href="/messages"],
+.analytics-sidebar nav > .nav-link[href="/messages"] {
+    order: 5;
+}
+
+.sidebar nav > .nav-link[href="/dashboard"],
+.analytics-sidebar nav > .nav-link[href="/dashboard"] {
+    order: 6;
+}
+
+.sidebar nav > .nav-link[href="/notifications-center"],
+.analytics-sidebar nav > .nav-link[href="/notifications-center"] {
+    order: 7;
+}
+
+.sidebar nav > .nav-link[href="/profile"],
+.analytics-sidebar nav > .nav-link[href="/profile"] {
+    order: 8;
+}
+
+.sidebar nav > .nav-link[href="/logout"],
+.analytics-sidebar nav > .nav-link[href="/logout"] {
+    order: 10;
+}
+
 .page-state {
     display: flex;
     flex-direction: column;

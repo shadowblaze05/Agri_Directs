@@ -4,13 +4,15 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from flask import abort, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import abort, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from PIL import Image, UnidentifiedImageError
 import requests
+from werkzeug.utils import secure_filename
 
 from .. import legacy as core
 from ..algorithms.reliability_score import seller_reliability_status
 from ..models.database import get_db
+from ..services.admin_notification_service import notify_superadmin
 from ..services.geotag_service import (
     resolve_psgc_location,
     reverse_geocode_coordinates,
@@ -120,6 +122,27 @@ def report_profile(username):
         flash("Report details must be between 10 and 2,000 characters.")
         return redirect(url_for("seller_profile", username=username))
 
+    evidence = request.files.get("evidence")
+    evidence_filename = None
+    evidence_original_name = None
+    evidence_path = None
+    if evidence and evidence.filename:
+        evidence_original_name = secure_filename(evidence.filename)[:255]
+        if not evidence_original_name:
+            flash("Choose an evidence file with a valid filename.", "danger")
+            return redirect(url_for("seller_profile", username=username))
+        evidence.stream.seek(0, os.SEEK_END)
+        evidence_size = evidence.stream.tell()
+        evidence.stream.seek(0)
+        maximum_size = current_app.config["MAX_PROFILE_REPORT_EVIDENCE_SIZE_BYTES"]
+        if not evidence_size or evidence_size > maximum_size:
+            maximum_size_mb = maximum_size / (1024 * 1024)
+            flash(
+                f"Evidence files must be non-empty and no larger than {maximum_size_mb:g} MB.",
+                "danger",
+            )
+            return redirect(url_for("seller_profile", username=username))
+
     conn = get_db()
     cur = conn.cursor()
     target = cur.execute(
@@ -129,16 +152,61 @@ def report_profile(username):
     if not target:
         conn.close()
         abort(404)
+    if evidence_original_name:
+        evidence_filename = uuid.uuid4().hex
+        evidence_dir = os.path.join(
+            current_app.config["UPLOAD_FOLDER"],
+            "profile_report_evidence",
+        )
+        try:
+            os.makedirs(evidence_dir, exist_ok=True)
+            evidence_path = os.path.join(evidence_dir, evidence_filename)
+            evidence.save(evidence_path)
+        except OSError:
+            conn.close()
+            if evidence_path and os.path.exists(evidence_path):
+                os.remove(evidence_path)
+            flash("The evidence file could not be saved. Please try again.", "danger")
+            return redirect(url_for("seller_profile", username=username))
 
-    cur.execute(
-        """INSERT INTO profile_reports
-           (reporter_username, reported_username, description)
-           VALUES (?, ?, ?)""",
-        (session["user"], username, description),
+    committed = False
+    try:
+        cur.execute(
+            """INSERT INTO profile_reports
+               (reporter_username, reported_username, description,
+                evidence_filename, evidence_original_name)
+               VALUES (?, ?, ?, ?, ?)""",
+            (
+                session["user"], username, description,
+                evidence_filename, evidence_original_name,
+            ),
+        )
+        conn.commit()
+        committed = True
+    finally:
+        conn.close()
+        if not committed and evidence_path and os.path.exists(evidence_path):
+            os.remove(evidence_path)
+
+    notification_sent = notify_superadmin(
+        "New Agri-Direct user profile report",
+        (
+            "A user profile has been reported on Agri-Direct.\n\n"
+            f"Reported profile: {username}\n"
+            f"Reported by: {session['user']}\n"
+            f"Report details: {description}\n\n"
+            "Sign in to the Agri-Direct admin console to review the report and any attached evidence:\n"
+            f"{url_for('admin_profile_reports', _external=True)}"
+        ),
     )
-    conn.commit()
-    conn.close()
-    flash("Your report has been sent to the Agri-Direct administrators.")
+    if notification_sent:
+        flash("Your report has been sent to the Agri-Direct super admin.")
+    else:
+        flash(
+            "Your report was submitted and is available in the admin console, "
+            "but its email notification could not be sent. Please contact Agri-Direct support.",
+            "warning",
+        )
     return redirect(url_for("seller_profile", username=username))
 
 
@@ -161,12 +229,22 @@ def update_profile():
         email = request.form.get("email", "").strip().lower()
         phone_number = request.form.get("phone_number", "").strip()
         bio = request.form.get("bio", "").strip()
+        current_role = user["role"] or "seller"
+        account_role = (
+            current_role
+            if current_role == "admin"
+            else request.form.get("role", "seller" if current_role == "user" else current_role)
+        )
         if not first_name or not last_name or not email:
             flash("First name, last name, and email address are required.")
             conn.close()
             return redirect(url_for("update_profile"))
         if "@" not in email:
             flash("Enter a valid email address.")
+            conn.close()
+            return redirect(url_for("update_profile"))
+        if current_role != "admin" and account_role not in {"buyer", "seller"}:
+            flash("Choose either Buyer or Seller as your account role.", "danger")
             conn.close()
             return redirect(url_for("update_profile"))
 
@@ -177,20 +255,25 @@ def update_profile():
             return redirect(url_for("update_profile"))
 
         cur.execute(
-            "UPDATE users SET first_name=?, last_name=?, email=?, phone_number=?, bio=?, updated_at=? "
+            "UPDATE users SET first_name=?, last_name=?, email=?, phone_number=?, bio=?, role=?, updated_at=? "
             "WHERE username=?",
             (
-                first_name, last_name, email, phone_number or None, bio or None,
+                first_name, last_name, email, phone_number or None, bio or None, account_role,
                 datetime.now(timezone.utc).isoformat(), session["user"],
             ),
         )
         conn.commit()
         conn.close()
+        session["role"] = account_role
         flash("Your profile has been updated successfully.")
         return redirect(url_for("profile"))
 
     conn.close()
-    return render_template("update_profile.html", user=user)
+    return render_template(
+        "update_profile.html",
+        user=user,
+        account_role="seller" if user["role"] in (None, "", "user") else user["role"],
+    )
 
 
 def capture_profile_location():

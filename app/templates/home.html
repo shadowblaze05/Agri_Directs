@@ -139,21 +139,33 @@
         background: white;
         border: 1px solid #e0e0e0;
         border-radius: 10px;
-        padding: 16px;
+        overflow: hidden;
         height: 100%;
         transition:
           transform 0.2s,
           box-shadow 0.2s;
       }
-      .market-icon {
-        width: 42px;
-        height: 42px;
-        display: inline-flex;
+      .market-card-image {
+        height: 160px;
+        overflow: hidden;
+        background: #e9f1e7;
+      }
+      .market-card-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .market-card-image-fallback {
+        display: flex;
+        width: 100%;
+        height: 100%;
         align-items: center;
         justify-content: center;
-        background: #e8f5e9;
         color: #2d5016;
-        border-radius: 50%;
+        font-size: 2rem;
+      }
+      .market-card-content {
+        padding: 16px;
       }
       .price-tag {
         font-size: 1.15rem;
@@ -259,9 +271,11 @@
         <a class="nav-link" href="{{ url_for('dashboard') }}"
           ><i class="fas fa-chart-line"></i> Dashboard</a
         >
+        {% if session.get('role') != 'buyer' %}
         <a class="nav-link" href="/upload"
           ><i class="fas fa-upload"></i> Upload Harvest</a
         >
+        {% endif %}
         {% if session.get('role') == 'admin' %}
         <a
           class="nav-link"
@@ -325,11 +339,13 @@
                 >
               </li>
               <li>
+                {% if session.get('role') != 'buyer' %}
                 <a
                   class="dropdown-item"
                   href="{{ url_for('my_marketplace_listings') }}"
                   ><i class="fas fa-list"></i> My Listings</a
                 >
+                {% endif %}
               </li>
               {% if session.get('role') == 'admin' %}
               <li>
@@ -489,20 +505,36 @@
                     href="{{ url_for('marketplace') }}"
                     class="text-decoration-none text-dark"
                     ><div class="market-card">
-                      <div class="market-icon mb-3">
-                        <i class="fas fa-shopping-basket"></i>
+                      <div class="market-card-image">
+                        {% if listing['main_image'] and listing['thumbnail_verified'] %}
+                        <img
+                          src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}"
+                          alt="{{ listing['crop_name'] }} listed by {{ listing['seller_name'] }}"
+                          loading="lazy"
+                          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"
+                        />
+                        {% endif %}
+                        <div
+                          class="market-card-image-fallback"
+                          {% if listing['main_image'] and listing['thumbnail_verified'] %}style="display:none"{% endif %}
+                          aria-hidden="true"
+                        >
+                          <i class="fas fa-shopping-basket"></i>
+                        </div>
                       </div>
-                      <h5 class="mb-1">{{ listing['crop_name'] }}</h5>
-                      <div class="price-tag">
-                        PHP {{ '%.2f'|format(listing['price'] or 0) }}/{{
-                        listing['unit'] or 'kg' }}
-                      </div>
-                      <div class="small text-muted mt-2">
-                        {{ listing['amount'] }} {{ listing['unit'] or 'kg' }}
-                        available
-                      </div>
-                      <div class="small text-muted">
-                        Seller: {{ listing['seller_name'] }}
+                      <div class="market-card-content">
+                        <h5 class="mb-1">{{ listing['crop_name'] }}</h5>
+                        <div class="price-tag">
+                          PHP {{ '%.2f'|format(listing['price'] or 0) }}/{{
+                          listing['unit'] or 'kg' }}
+                        </div>
+                        <div class="small text-muted mt-2">
+                          {{ listing['amount'] }} {{ listing['unit'] or 'kg' }}
+                          available
+                        </div>
+                        <div class="small text-muted">
+                          Seller: {{ listing['seller_name'] }}
+                        </div>
                       </div>
                     </div></a
                   >
@@ -564,6 +596,7 @@
                 >View All Listings <i class="fas fa-arrow-right"></i
               ></a>
             </div>
+            {% if session.get('role') != 'buyer' %}
             <div class="my-listings-card">
               <h5><i class="fas fa-list"></i> My Marketplace Listings</h5>
               <p class="text-muted small">
@@ -579,6 +612,7 @@
                 >Manage My Listings</a
               >
             </div>
+            {% endif %}
           </aside>
         </div>
       </div>

@@ -16,6 +16,7 @@ from ..password_policy import password_policy_error
 from ..legacy import logger
 from ..models.database import get_db, update_analytics
 from ..services.auth_service import generate_jwt_token, token_required, verify_jwt_token
+from ..services.admin_notification_service import send_notification_email
 from ..services.geotag_service import validate_coordinates, verify_crop_location
 from ..services.profile_service import missing_harvest_profile_requirements
 
@@ -99,7 +100,7 @@ def login():
                     pending_user = cur.fetchone()
                     conn.close()
                     if not pending_user:
-                        flash("Your registration expired before email verification. Please register again.")
+                        flash("Your registration expired before email verification. Please register again.", "danger")
                         return render_template("login.html")
                     if _has_pending_email_verification(identifier):
                         session["email_verification_email"] = pending_user["email"]
@@ -146,7 +147,7 @@ def register_user():
         if email and "@" not in email:
             flash("Enter a valid email address")
             return render_template("register.html")
-        password_error = password_policy_error(raw_password, (username, email.split("@", 1)[0]))
+        password_error = password_policy_error(raw_password)
         if password_error:
             flash(password_error)
             return render_template("register.html")
@@ -314,7 +315,7 @@ def verify_email():
     """Accept a verification code or resend one for the pending registration."""
     email = session.get("email_verification_email")
     if not email:
-        flash("Register an account before verifying an email address.")
+        flash("Register an account before verifying an email address.", "danger")
         return redirect(url_for("register"))
     _ensure_password_reset_table()
     conn = get_db()
@@ -324,7 +325,7 @@ def verify_email():
     conn.close()
     if not user:
         session.pop("email_verification_email", None)
-        flash("Your registration expired before verification. Please register again.")
+        flash("Your registration expired before verification. Please register again.", "danger")
         return redirect(url_for("register"))
     if request.method == "POST":
         if request.form.get("action") == "resend":
@@ -333,9 +334,9 @@ def verify_email():
             else:
                 sent = False
             if sent:
-                flash("A new verification code has been sent. (Pls check your spam folder if you don't see it.)")
+                flash("A new verification code has been sent. (Please check your spam folder if you don't see it.)", "success")
             else:
-                flash("We could not send the code. Check your email settings or try again later.")
+                flash("We could not send the code. Check your email settings or try again later.", "danger")
             return redirect(url_for("verify_email"))
 
         code = (request.form.get("code") or "").strip()
@@ -373,7 +374,7 @@ def verify_email():
         )
         conn.commit()
         conn.close()
-        flash("That code is invalid, expired, or has reached its attempt limit.")
+        flash("That code is invalid, expired, or has reached its attempt limit.", "danger")
     return render_template("verify_email.html")
 
 
@@ -529,10 +530,7 @@ def reset_password():
         flash("The account could not be verified. Please request a new code.")
         return redirect(url_for("forgot_password"))
 
-    password_error = password_policy_error(
-        new_password,
-        (user["username"], (user["email"] or "").split("@", 1)[0]),
-    )
+    password_error = password_policy_error(new_password)
     if password_error:
         conn.close()
         flash(password_error)
@@ -542,8 +540,16 @@ def reset_password():
     cur.execute("UPDATE users SET password = ? WHERE id = ?", (hashed_password, user_id))
     conn.commit()
     conn.close()
+    send_notification_email(
+        [user["email"]] if user["email"] else [],
+        "Your Agri-Direct password was changed",
+        (
+            "Your Agri-Direct account password was successfully changed.\n\n"
+            "If you did not make this change, contact Agri-Direct support immediately."
+        ),
+    )
     session.clear()
-    flash("Password reset successful. Please log in with your new password.")
+    flash("Password reset successful. Please log in with your new password.", "success")
     return redirect(url_for("login"))
 
 
@@ -638,7 +644,7 @@ def api_harvest():
         cur.execute(
             "SELECT first_name, last_name, email, profile_picture, profile_photo_captured_at, "
             "location, psgc_location, geotag_location, location_latitude, location_longitude, "
-            "location_verified, is_active "
+            "location_verified, is_active, role "
             "FROM users WHERE username=?",
             (username,),
         )
@@ -649,6 +655,9 @@ def api_harvest():
         if not profile["is_active"]:
             conn.close()
             return jsonify({"error": "The authenticated account is inactive"}), 403
+        if (profile["role"] or "user") not in {"seller", "user", "admin"}:
+            conn.close()
+            return jsonify({"error": "Only Sellers can submit harvest records"}), 403
 
         missing_requirements = missing_harvest_profile_requirements(profile)
         if missing_requirements:

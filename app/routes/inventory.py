@@ -76,6 +76,18 @@ def _current_user_role():
     return role
 
 
+def _seller_access_denied(json_response=False):
+    role = _current_user_role()
+    if role is None:
+        return (jsonify({"error": "Unauthorized"}), 401) if json_response else redirect("/login")
+    if role not in {"seller", "user", "admin"}:
+        if json_response:
+            return jsonify({"error": "Only Sellers can manage harvest inventory"}), 403
+        flash("Only Sellers can manage harvest inventory.", "warning")
+        return redirect("/marketplace")
+    return None
+
+
 def _parse_gps_capture(form):
     latitude_text = form.get("latitude", "").strip()
     longitude_text = form.get("longitude", "").strip()
@@ -102,6 +114,9 @@ def inventory():
     """Display the signed-in user's harvest inventory as a dedicated workspace."""
     if "user" not in session:
         return redirect("/login")
+    access_denied = _seller_access_denied()
+    if access_denied:
+        return access_denied
 
     conn = get_db()
     cur = conn.cursor()
@@ -122,6 +137,9 @@ def inventory():
 def inventory_buy():
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    access_denied = _seller_access_denied(json_response=True)
+    if access_denied:
+        return access_denied
     # Allow any logged-in user to manage their own posted inventory
 
     data = request.get_json() or {}
@@ -173,6 +191,9 @@ def inventory_buy():
 def inventory_edit_crop():
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    access_denied = _seller_access_denied(json_response=True)
+    if access_denied:
+        return access_denied
     # Allow any logged-in user to edit their own posted inventory
 
     data = request.get_json() or {}
@@ -233,6 +254,9 @@ def inventory_edit_crop():
 def inventory_delete_crop():
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    access_denied = _seller_access_denied(json_response=True)
+    if access_denied:
+        return access_denied
     # Allow any logged-in user to delete their own posted inventory
 
     data = request.get_json() or {}
@@ -256,6 +280,9 @@ def edit_inventory(item_id):
     role = _current_user_role()
     if role is None:
         return redirect("/login")
+    if role not in {"seller", "user", "admin"}:
+        flash("Only Sellers can manage harvest inventory.", "warning")
+        return redirect("/marketplace")
 
     conn = get_db()
     cur = conn.cursor()
@@ -303,6 +330,9 @@ def delete_inventory(item_id):
     role = _current_user_role()
     if role is None:
         return redirect("/login")
+    if role not in {"seller", "user", "admin"}:
+        flash("Only Sellers can manage harvest inventory.", "warning")
+        return redirect("/marketplace")
 
     conn = get_db()
     cur = conn.cursor()
@@ -329,6 +359,13 @@ def upload():
 
     if "user" not in session:
         return redirect("/login")
+
+    role = _current_user_role()
+    if role is None:
+        return redirect("/login")
+    if role not in {"seller", "user", "admin"}:
+        flash("Only Sellers can upload harvest records.", "warning")
+        return redirect("/marketplace")
 
     conn = get_db()
     cur = conn.cursor()

@@ -81,6 +81,30 @@ def test_session_role_is_refreshed_from_active_account(tmp_path):
         assert response.get_json()["role"] == "admin"
 
 
+def test_logout_prevents_browser_cached_pages_from_reusing_authenticated_session(tmp_path):
+    application = make_session_security_app(tmp_path / "logout-cache.sqlite")
+
+    with application.test_client() as client:
+        with client.session_transaction() as user_session:
+            user_session["user"] = "session-user"
+            user_session["role"] = "user"
+
+        authenticated_response = client.get("/security/session-probe")
+        assert authenticated_response.status_code == 200
+        assert "no-store" in authenticated_response.headers["Cache-Control"]
+        assert authenticated_response.headers["Pragma"] == "no-cache"
+
+        logout_response = client.get("/logout")
+        assert logout_response.status_code == 302
+        assert "no-store" in logout_response.headers["Cache-Control"]
+
+        with client.session_transaction() as user_session:
+            assert "user" not in user_session
+
+        restored_page_response = client.get("/security/session-probe")
+        assert restored_page_response.status_code == 401
+
+
 def test_message_body_is_not_written_to_application_logs(monkeypatch, caplog):
     class FakeCursor:
         def execute(self, *_args):

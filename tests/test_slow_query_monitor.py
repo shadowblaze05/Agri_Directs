@@ -14,6 +14,7 @@ def test_slow_query_capture_normalizes_sql_and_tracks_cost(tmp_path, monkeypatch
             "TESTING": True,
             "SQLALCHEMY_DATABASE_URI": database_uri,
             "SLOW_QUERY_THRESHOLD_MS": 500,
+            "SUPERADMIN_USERNAME": "admin",
         }
     )
     with application.app_context():

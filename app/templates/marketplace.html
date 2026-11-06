@@ -192,9 +192,9 @@
             <a class="nav-link" href="/dashboard">
                 <i class="fas fa-chart-line"></i> Dashboard
             </a>
-            <a class="nav-link" href="/upload">
+            {% if session.get('role') != 'buyer' %}<a class="nav-link" href="/upload">
                 <i class="fas fa-upload"></i> Upload Harvest
-            </a>
+            </a>{% endif %}
             {% if session.get('role') == 'admin' %}
             <a class="nav-link" href="/market-intelligence">
                 <i class="fas fa-brain"></i> Market Intelligence
@@ -222,7 +222,7 @@
                 {% endif %}
             </a>
             <a class="nav-link" href="/marketplace/my-preorders"><i class="fas fa-clock"></i> My Pre-orders</a>
-            <a class="nav-link" href="/marketplace/my-preorder-requests"><i class="fas fa-inbox"></i> Pre-order Requests</a>
+            {% if session.get('role') != 'buyer' %}<a class="nav-link" href="/marketplace/my-preorder-requests"><i class="fas fa-inbox"></i> Pre-order Requests</a>{% endif %}
             <a class="nav-link" href="/logout">
                 <i class="fas fa-sign-out-alt"></i> Logout
             </a>
@@ -249,13 +249,13 @@
                     <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="profileDropdown">
                         <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge"></i> Profile</a></li>
                         <li><a class="dropdown-item" href="/about"><i class="fas fa-info-circle"></i> About</a></li>
-                        <li><a class="dropdown-item" href="/marketplace/my-listings"><i class="fas fa-list"></i> My Listings</a></li>
+                        {% if session.get('role') != 'buyer' %}<li><a class="dropdown-item" href="/marketplace/my-listings"><i class="fas fa-list"></i> My Listings</a></li>{% endif %}
                         <li><a class="dropdown-item" href="/marketplace/my-purchases"><i class="fas fa-shopping-bag"></i> My Purchases</a></li>
                         {% if session.get('role') == 'admin' %}
                         <li><a class="dropdown-item" href="/admin"><i class="fas fa-shield-alt"></i> Admin Console</a></li>
                         {% endif %}
                         <li><a class="dropdown-item" href="/marketplace/my-preorders"><i class="fas fa-clock"></i> My Pre-orders</a></li>
-                        <li><a class="dropdown-item" href="/marketplace/my-preorder-requests"><i class="fas fa-inbox"></i> Pre-order Requests</a></li>
+                        {% if session.get('role') != 'buyer' %}<li><a class="dropdown-item" href="/marketplace/my-preorder-requests"><i class="fas fa-inbox"></i> Pre-order Requests</a></li>{% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
                     </ul>
@@ -275,12 +275,14 @@
                         <p class="text-muted mb-0">Buy, sell, and trade crops with other farmers</p>
                     </div>
                     <div class="col-auto">
+                        {% if session.get('role') != 'buyer' %}
                         <a href="/marketplace/add" class="btn btn-success">
                             <i class="fas fa-plus"></i> Add Listing
                         </a>
                         <a href="/marketplace/my-listings" class="btn btn-outline-success ms-2">
                             <i class="fas fa-list"></i> My Listings
                         </a>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -407,9 +409,9 @@
                         <i class="fas fa-store fa-3x text-muted mb-3"></i>
                         <h4>No Listings Available</h4>
                         <p class="text-muted">Be the first to list your crops for sale!</p>
-                        <a href="/marketplace/add" class="btn btn-success">
+                        {% if session.get('role') != 'buyer' %}<a href="/marketplace/add" class="btn btn-success">
                             <i class="fas fa-plus"></i> Add Your First Listing
-                        </a>
+                        </a>{% endif %}
                     </div>
                 {% endif %}
             </div>

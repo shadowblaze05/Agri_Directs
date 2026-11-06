@@ -1,8 +1,7 @@
 
 import re
-import unicodedata
 
-MIN_PASSWORD_LENGTH = 12
+MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 128
 
 _COMMON_PASSWORDS = frozenset(
@@ -73,23 +72,17 @@ _SEQUENTIAL_PATTERNS = (
     "lkjhgfdsa",
     "zxcvbnm",
     "mnbvcxz",
+    "abcdefghijklmnopqrstuvwxyz",
 )
 
 
-def password_policy_error(password, identifiers=()):
+def password_policy_error(password):
     if len(password) < MIN_PASSWORD_LENGTH:
         return f"Password must be at least {MIN_PASSWORD_LENGTH} characters long."
     if len(password) > MAX_PASSWORD_LENGTH:
         return f"Password must be no more than {MAX_PASSWORD_LENGTH} characters long."
-
-    character_classes = (
-        any(character.islower() for character in password),
-        any(character.isupper() for character in password),
-        any(character.isdigit() for character in password),
-        any(unicodedata.category(character)[0] in {"P", "S"} for character in password),
-    )
-    if not all(character_classes):
-        return "Password must include uppercase and lowercase letters, a number, and a symbol."
+    if not any(character.isdigit() for character in password):
+        return "Password must include at least one number."
 
     normalized = re.sub(r"[^a-z0-9]", "", password.lower())
     if normalized in _COMMON_PASSWORDS or any(
@@ -102,19 +95,7 @@ def password_policy_error(password, identifiers=()):
         for index in range(len(pattern) - 3)
     ):
         return "Password must not contain common keyboard or sequential patterns."
-    if re.search(r"(.{1,4})\1{2,}", normalized):
-        return "Password must not contain short patterns repeated three or more times."
     if re.search(r"(.)\1{3,}", normalized):
         return "Password must not contain four or more repeated characters in a row."
-
-    for identifier in identifiers:
-        identifier_parts = re.split(r"[^a-z0-9]+", identifier.lower())
-        normalized_identifiers = {
-            re.sub(r"[^a-z0-9]", "", part)
-            for part in identifier_parts
-            if len(part) >= 4
-        }
-        if any(part in normalized for part in normalized_identifiers):
-            return "Password must not contain your username or email address."
 
     return None

@@ -6,6 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import app as app_module
 from app.extensions import db
 from app.models.audit import AuditEvent
+from sqlalchemy import text
 
 
 def make_audit_app(database_uri):
@@ -13,6 +14,7 @@ def make_audit_app(database_uri):
         {
             "TESTING": True,
             "SQLALCHEMY_DATABASE_URI": database_uri,
+            "SUPERADMIN_USERNAME": "admin",
         }
     )
     with application.app_context():
@@ -65,6 +67,9 @@ def test_audit_events_capture_writes_without_form_secrets_and_search(tmp_path):
             assert "do-not-store-this" not in event.details
             assert "password" not in event.details
 
+        with client.session_transaction() as user_session:
+            user_session["user"] = "admin"
+            user_session["role"] = "admin"
         response = client.get("/admin/audit-logs?q=farm-admin&method=POST")
         assert response.status_code == 200
         assert b"Post audit test mutate" in response.data
@@ -104,6 +109,7 @@ def test_audit_log_requires_admin_and_rejects_invalid_date_filter(tmp_path):
         assert client.get("/admin/audit-logs").status_code == 302
 
         with client.session_transaction() as user_session:
+            user_session["user"] = "admin"
             user_session["role"] = "admin"
         assert client.get("/admin/audit-logs?start_date=not-a-date").status_code == 400
 

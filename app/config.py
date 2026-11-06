@@ -98,6 +98,7 @@ class Config:
     MAX_CROP_PHOTO_SIZE_BYTES = 5 * 1024 * 1024
     MAX_PROFILE_PHOTO_SIZE_BYTES = 5 * 1024 * 1024
     MAX_CHAT_ATTACHMENT_SIZE_BYTES = 50 * 1024 * 1024
+    MAX_PROFILE_REPORT_EVIDENCE_SIZE_BYTES = 10 * 1024 * 1024
     MAX_KNOWLEDGE_MEDIA_SIZE_BYTES = 50 * 1024 * 1024
     MAX_CONTENT_LENGTH = 60 * 1024 * 1024
 
@@ -106,7 +107,13 @@ class Config:
     MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
     MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
     MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER") or os.environ.get("MAIL_USERNAME", "noreply@agridirect.local")
+    AGRI_DIRECT_OFFICIAL_EMAIL = os.environ.get("AGRI_DIRECT_OFFICIAL_EMAIL") or MAIL_DEFAULT_SENDER
     INITIAL_ADMIN_USERNAME = os.environ.get("INITIAL_ADMIN_USERNAME", "")
+    SUPERADMIN_USERNAME = (
+        os.environ.get("SUPERADMIN_USERNAME")
+        or INITIAL_ADMIN_USERNAME
+        or "admin"
+    ).strip()
     INITIAL_ADMIN_PASSWORD = os.environ.get("INITIAL_ADMIN_PASSWORD", "")
     MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS", "true").lower() in {"1", "true", "yes", "on"}
     MAIL_USE_SSL = os.environ.get("MAIL_USE_SSL", "false").lower() in {"1", "true", "yes", "on"}

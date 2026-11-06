@@ -110,7 +110,7 @@
     <div class="register-container" style="max-width: 450px; width: 100%; margin: 20px;">
         <!-- Header -->
         <div class="register-header">
-            <h1><i class="fas fa-user-plus"></i> Create Account</h1>
+            <h1><img class="site-brand-logo" src="{{ url_for('static', filename='images/logo.png') }}" alt=""> Create Account</h1>
             <p>Join Agri-Direct Cooperative</p>
         </div>
 
@@ -153,14 +153,14 @@
                 <div class="mb-3">
                     <label class="form-label"><i class="fas fa-lock"></i> Password</label>
                     <input type="password" name="password" class="form-control" placeholder="Create a strong password" 
-                           required minlength="12" maxlength="128" id="password" autocomplete="new-password">
+                           required minlength="8" maxlength="128" id="password" autocomplete="new-password">
                     
                     <div class="password-requirements">
                         <h6>Password Requirements:</h6>
                         <ul class="requirements-list">
-                            <li>At least 12 characters (maximum 128)</li>
-                            <li>Uppercase and lowercase letters, a number, and a symbol (e.g. . ! @ #)</li>
-                            <li>Must not be common, sequential, or contain your username/email</li>
+                            <li>At least 8 characters (maximum 128)</li>
+                            <li>Include at least one number</li>
+                            <li>You may use your name; symbols are optional</li>
                         </ul>
                     </div>
                 </div>
@@ -168,7 +168,7 @@
                 <div class="mb-4">
                     <label class="form-label"><i class="fas fa-lock"></i> Confirm Password</label>
                     <input type="password" name="confirm_password" class="form-control" placeholder="Re-enter your password"
-                           required minlength="12" maxlength="128" autocomplete="new-password">
+                           required minlength="8" maxlength="128" autocomplete="new-password">
                 </div>
 
                 <button type="submit" class="btn btn-register w-100 text-white">

@@ -662,6 +662,8 @@ def init_db():
         reporter_username TEXT NOT NULL,
         reported_username TEXT NOT NULL,
         description TEXT NOT NULL,
+        evidence_filename TEXT,
+        evidence_original_name TEXT,
         status TEXT NOT NULL DEFAULT 'open',
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         reviewed_by TEXT,
@@ -789,7 +791,6 @@ def init_db():
         bootstrap_password = current_app.config.get("INITIAL_ADMIN_PASSWORD", "")
         bootstrap_password_error = password_policy_error(
             bootstrap_password,
-            (bootstrap_username,),
         ) if bootstrap_password else None
         if bootstrap_username and len(bootstrap_username) <= 128 and not bootstrap_password_error:
             cur.execute(

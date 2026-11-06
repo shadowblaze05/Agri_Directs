@@ -212,7 +212,7 @@
                 {% if cart_count > 0 %}<span class="cart-badge">{{ cart_count }}</span>{% endif %}
             </a>
             <a class="nav-link" href="/marketplace/my-preorders"><i class="fas fa-clock"></i> My Pre-orders</a>
-            <a class="nav-link" href="/marketplace/my-preorder-requests"><i class="fas fa-inbox"></i> Pre-order Requests</a>
+            {% if session.get('role') != 'buyer' %}<a class="nav-link" href="/marketplace/my-preorder-requests"><i class="fas fa-inbox"></i> Pre-order Requests</a>{% endif %}
             <a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
         </nav>
     </div>

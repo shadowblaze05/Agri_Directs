@@ -17,7 +17,7 @@
     <a class="breadcrumb-link" href="{{ url_for('admin') }}">← Admin Console</a>
     <div class="mt-2 mb-4">
       <h1 class="h3 mb-1">Profile reports</h1>
-      <p class="text-muted mb-0">Review descriptions submitted by users about profile problems.</p>
+      <p class="text-muted mb-0">Review descriptions and evidence submitted by users about profile problems.</p>
     </div>
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}<div class="alert alert-{{ category }}">{{ message }}</div>{% endfor %}
@@ -25,13 +25,20 @@
     <div class="card shadow-sm border-0">
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
-          <thead><tr><th>Reported</th><th>Reported by</th><th>Description</th><th>Submitted</th><th>Status</th><th>Action</th></tr></thead>
+          <thead><tr><th>Reported</th><th>Reported by</th><th>Description</th><th>Evidence</th><th>Submitted</th><th>Status</th><th>Action</th></tr></thead>
           <tbody>
             {% for report in reports %}
             <tr>
               <td><a href="{{ url_for('seller_profile', username=report.reported_username) }}">@{{ report.reported_username }}</a></td>
               <td>@{{ report.reporter_username }}</td>
               <td class="text-break" style="min-width: 260px; white-space: pre-wrap">{{ report.description }}</td>
+              <td>
+                {% if report.evidence_filename %}
+                <a href="{{ url_for('download_profile_report_evidence', report_id=report.id) }}">{{ report.evidence_original_name or 'Download evidence' }}</a>
+                {% else %}
+                <span class="text-muted">None</span>
+                {% endif %}
+              </td>
               <td>{{ report.created_at|datetime_format }}</td>
               <td><span class="badge text-bg-{{ 'warning' if report.status == 'open' else 'secondary' }}">{{ report.status|title }}</span></td>
               <td>
@@ -45,7 +52,7 @@
               </td>
             </tr>
             {% else %}
-            <tr><td colspan="6" class="text-center py-4 text-muted">No profile reports have been submitted.</td></tr>
+            <tr><td colspan="7" class="text-center py-4 text-muted">No profile reports have been submitted.</td></tr>
             {% endfor %}
           </tbody>
         </table>

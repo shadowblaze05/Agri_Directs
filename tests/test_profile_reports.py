@@ -1,3 +1,4 @@
+import io
 import sys
 from pathlib import Path
 from datetime import datetime, timezone
@@ -9,13 +10,18 @@ from app.extensions import db
 from app.models.audit import AuditEvent
 from app.models.listing_photo_location_alert import ListingPhotoLocationAlert
 from app.models.profile_report import ProfileReport
+from app.services import admin_notification_service
 from sqlalchemy import text
 
 
 def make_profile_report_app(tmp_path):
     database_uri = f"sqlite:///{(tmp_path / 'profile-reports.db').as_posix()}"
     application = app_module.create_app(
-        {"TESTING": True, "SQLALCHEMY_DATABASE_URI": database_uri}
+        {
+            "TESTING": True,
+            "SQLALCHEMY_DATABASE_URI": database_uri,
+            "UPLOAD_FOLDER": str(tmp_path / "uploads"),
+        }
     )
     with application.app_context():
         db.metadata.create_all(
@@ -40,11 +46,16 @@ def make_profile_report_app(tmp_path):
             """))
             connection.execute(text("""
                 INSERT INTO users (id, username, first_name, role)
-                VALUES (1, 'buyer', 'Buyer', 'user'), (2, 'seller', 'Seller', 'user')
+                VALUES
+                    (1, 'buyer', 'Buyer', 'user'),
+                    (2, 'seller', 'Seller', 'user'),
+                    (3, 'admin', 'Admin', 'admin')
             """))
             connection.execute(text("""
                 CREATE TABLE marketplace (
-                    id INTEGER PRIMARY KEY, username TEXT, buyer_rating INTEGER
+                    id INTEGER PRIMARY KEY, username TEXT, buyer_rating INTEGER,
+                    status TEXT, buyer_username TEXT, order_status TEXT,
+                    preorder_status TEXT
                 )
             """))
             connection.execute(text("""
@@ -65,8 +76,21 @@ def make_profile_report_app(tmp_path):
     return application
 
 
-def test_public_profile_can_be_reported_and_admin_can_review_it(tmp_path):
+def test_public_profile_can_be_reported_and_admin_can_review_it(tmp_path, monkeypatch):
     application = make_profile_report_app(tmp_path)
+    application.config.update(
+        MAIL_SUPPRESS_SEND=False,
+        MAIL_DEFAULT_SENDER="noreply@example.test",
+        AGRI_DIRECT_OFFICIAL_EMAIL="official@example.test",
+    )
+    outbox = []
+    monkeypatch.setattr(admin_notification_service.mail, "send", outbox.append)
+
+    with application.app_context():
+        with db.engine.begin() as connection:
+            connection.execute(
+                text("UPDATE users SET email='admin@example.test' WHERE username='admin'")
+            )
 
     with application.test_client() as client:
         with client.session_transaction() as user_session:
@@ -88,18 +112,31 @@ def test_public_profile_can_be_reported_and_admin_can_review_it(tmp_path):
 
         response = client.post(
             "/profile/buyer/report",
-            data={"description": "Buyer did not follow the agreed transaction terms."},
+            data={
+                "description": "Buyer did not follow the agreed transaction terms.",
+                "evidence": (io.BytesIO(b"evidence contents"), "proof.txt"),
+            },
             follow_redirects=True,
         )
         assert response.status_code == 200
         assert b"Your report has been sent" in response.data
+        assert len(outbox) == 1
+        assert outbox[0].recipients == ["official@example.test"]
+        assert "Buyer did not follow the agreed transaction terms." in outbox[0].body
+        assert "/admin/profile-reports" in outbox[0].body
 
         with application.app_context():
             report = db.session.query(ProfileReport).one()
             assert report.reporter_username == "seller"
             assert report.reported_username == "buyer"
             assert report.status == "open"
+            assert report.evidence_original_name == "proof.txt"
             report_id = report.id
+
+        response = client.get(
+            f"/admin/profile-reports/{report_id}/evidence"
+        )
+        assert response.status_code == 302
 
         with client.session_transaction() as user_session:
             user_session["user"] = "admin"
@@ -108,6 +145,13 @@ def test_public_profile_can_be_reported_and_admin_can_review_it(tmp_path):
         response = client.get("/admin/profile-reports")
         assert response.status_code == 200
         assert b"Buyer did not follow the agreed transaction terms." in response.data
+        assert b"proof.txt" in response.data
+        response = client.get(
+            f"/admin/profile-reports/{report_id}/evidence"
+        )
+        assert response.status_code == 200
+        assert response.data == b"evidence contents"
+        assert "attachment" in response.headers["Content-Disposition"]
         response = client.post(f"/admin/profile-reports/{report_id}/review")
         assert response.status_code == 302
 
@@ -115,6 +159,66 @@ def test_public_profile_can_be_reported_and_admin_can_review_it(tmp_path):
             report = db.session.get(ProfileReport, report_id)
             assert report.status == "reviewed"
             assert report.reviewed_by == "admin"
+
+
+def test_report_notification_uses_official_email_when_admin_has_no_email(
+    tmp_path, monkeypatch
+):
+    application = make_profile_report_app(tmp_path)
+    application.config.update(
+        MAIL_SUPPRESS_SEND=False,
+        MAIL_DEFAULT_SENDER="noreply@example.test",
+        AGRI_DIRECT_OFFICIAL_EMAIL="official@example.test",
+    )
+    outbox = []
+    monkeypatch.setattr(admin_notification_service.mail, "send", outbox.append)
+
+    with application.test_client() as client:
+        with client.session_transaction() as user_session:
+            user_session["user"] = "seller"
+            user_session["role"] = "user"
+
+        response = client.post(
+            "/profile/buyer/report",
+            data={"description": "This profile needs administrator review."},
+            follow_redirects=True,
+        )
+
+        assert response.status_code == 200
+        assert b"Your report has been sent" in response.data
+        assert len(outbox) == 1
+        assert outbox[0].recipients == ["official@example.test"]
+
+
+def test_report_stays_submitted_when_email_notification_fails(tmp_path, monkeypatch):
+    application = make_profile_report_app(tmp_path)
+    application.config.update(
+        MAIL_SUPPRESS_SEND=False,
+        MAIL_DEFAULT_SENDER="noreply@example.test",
+        AGRI_DIRECT_OFFICIAL_EMAIL="official@example.test",
+    )
+
+    def fail_delivery(_message):
+        raise OSError("SMTP unavailable")
+
+    monkeypatch.setattr(admin_notification_service.mail, "send", fail_delivery)
+
+    with application.test_client() as client:
+        with client.session_transaction() as user_session:
+            user_session["user"] = "seller"
+            user_session["role"] = "user"
+
+        response = client.post(
+            "/profile/buyer/report",
+            data={"description": "This profile needs administrator review."},
+            follow_redirects=True,
+        )
+
+        assert response.status_code == 200
+        assert b"email notification could not be sent" in response.data
+
+    with application.app_context():
+        assert db.session.query(ProfileReport).count() == 1
 
 
 def test_out_of_range_listing_photo_alert_is_visible_and_reviewable_by_admin(tmp_path):

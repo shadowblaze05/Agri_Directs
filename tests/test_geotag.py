@@ -267,6 +267,7 @@ def test_api_harvest_uses_token_owner_and_manual_review_without_photo(client, mo
                     "location_longitude": 0,
                     "location_verified": True,
                     "is_active": True,
+                    "role": "seller",
                 }
             elif "INSERT INTO inventory(" in query:
                 self.inserted_values = params
@@ -530,6 +531,7 @@ def test_incomplete_profile_cannot_upload_harvest(client, monkeypatch):
                 "location_longitude": None,
                 "location_verified": False,
                 "is_active": True,
+                "role": "seller",
             }
 
     class FakeConnection:
@@ -570,6 +572,7 @@ def test_incomplete_profile_cannot_submit_jwt_harvest(client, monkeypatch):
                 "location_longitude": None,
                 "location_verified": False,
                 "is_active": True,
+                "role": "seller",
             }
 
     class FakeConnection:

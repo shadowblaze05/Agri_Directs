@@ -3,7 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Agri-Direct | Connecting Farmers With Better Opportunities</title>
+    <title>Agri-Direct | Fresh from local farms</title>
+    <meta
+      name="description"
+      content="See what local farmers are selling and compare real marketplace prices. Join Agri-Direct to connect with buyers and sellers."
+    />
     <link
       href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
       rel="stylesheet"
@@ -29,6 +33,12 @@
 
       html {
         scroll-behavior: smooth;
+      }
+
+      .brand-logo {
+        height: 42px;
+        width: auto;
+        object-fit: contain;
       }
 
       body {
@@ -134,9 +144,7 @@
       .hero {
         position: relative;
         overflow: hidden;
-        background:
-          linear-gradient(135deg, rgba(26, 52, 8, 0.88) 0%, rgba(30, 59, 17, 0.8) 100%),
-          url("https://images.unsplash.com/photo-1501004318641-b39e6451bec6?auto=format&fit=crop&w=1400&q=80") center/cover no-repeat;
+        background: linear-gradient(135deg, #1a3408 0%, #355c20 100%);
       }
 
       .hero-inner {
@@ -205,106 +213,210 @@
         color: var(--agri-gold);
       }
 
-      .hero-panel {
-        position: relative;
-        min-height: 500px;
+      .hero-actions .btn {
+        min-height: 54px;
       }
 
-      .hero-card {
-        position: absolute;
-        background: rgba(255, 255, 255, 0.96);
-        border: 1px solid rgba(255, 255, 255, 0.35);
-        border-radius: 12px;
-        box-shadow: var(--agri-shadow);
-        overflow: hidden;
+      .commodities-section {
+        padding: 4.5rem 0;
+        background: #fff;
       }
 
-      .hero-main-card {
-        right: 0;
-        bottom: 0;
-        width: min(100%, 440px);
-        padding: 1.4rem 1.4rem 1.1rem;
-      }
-
-      .hero-card-top {
+      .commodities-heading {
         display: flex;
-        align-items: center;
+        align-items: flex-end;
         justify-content: space-between;
-        padding-bottom: 1rem;
-        border-bottom: 1px solid rgba(21, 58, 15, 0.08);
+        gap: 1.5rem;
+        margin-bottom: 1.75rem;
       }
 
-      .micro-label {
-        color: var(--agri-green-700);
-        font-size: 0.75rem;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
+      .commodities-heading h2 {
+        margin: 0.5rem 0 0;
+        color: var(--agri-green-900);
+        font-size: clamp(1.8rem, 3vw, 2.5rem);
         font-weight: 800;
       }
 
-      .chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        padding: 0.45rem 0.7rem;
-        border-radius: 999px;
-        background: #ecf9ee;
+      .commodities-heading p {
+        margin: 0.6rem 0 0;
+        color: #4b5563;
+        font-size: 1rem;
+        line-height: 1.6;
+      }
+
+      .commodity-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1.25rem;
+      }
+
+      .commodity-card {
+        min-width: 0;
+        overflow: hidden;
+        border: 1px solid var(--agri-border);
+        border-radius: 16px;
+        background: #fff;
+        box-shadow: var(--agri-shadow);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .commodity-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 12px 24px rgba(26, 52, 8, 0.12);
+      }
+
+      .commodity-photo,
+      .commodity-photo-fallback {
+        width: 100%;
+        height: 210px;
+      }
+
+      .commodity-photo {
+        display: block;
+        object-fit: cover;
+        background: #edf4ea;
+      }
+
+      .commodity-photo-fallback {
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, #edf4ea, #dcebd3);
+        color: var(--agri-green-700);
+        font-size: 3.25rem;
+      }
+
+      .commodity-content {
+        padding: 1.2rem;
+      }
+
+      .commodity-name {
+        margin: 0;
+        color: var(--agri-green-900);
+        font-size: 1.3rem;
+        font-weight: 800;
+        overflow-wrap: anywhere;
+      }
+
+      .commodity-price {
+        margin-top: 0.75rem;
         color: var(--agri-green-800);
-        font-size: 0.7rem;
+        font-size: 1.55rem;
+        font-weight: 800;
+      }
+
+      .commodity-price small {
+        font-size: 0.95rem;
         font-weight: 700;
       }
 
-      .market-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 1rem;
-        margin-top: 1.1rem;
-      }
-
-      .metric-box {
-        background: linear-gradient(135deg, #f5f8f2, #eff8ee);
-        border: 1px solid rgba(21, 58, 15, 0.08);
-        border-radius: 18px;
-        padding: 1rem;
-      }
-
-      .metric-box strong {
-        display: block;
-        font-size: 1.5rem;
-        color: var(--agri-green-900);
-      }
-
-      .metric-box span {
-        color: var(--agri-text);
-        font-size: 0.8rem;
-      }
-
-      .floating-list-card {
-        left: 0;
-        top: 30px;
-        width: min(100%, 280px);
-        padding: 1rem 1rem 0.8rem;
-      }
-
-      .pill-list {
-        margin: 0.8rem 0 0;
-        padding: 0;
-        list-style: none;
+      .commodity-meta {
         display: flex;
-        flex-direction: column;
-        gap: 0.7rem;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        margin-top: 0.8rem;
+        color: #4b5563;
+        font-size: 0.95rem;
       }
 
-      .pill-list li {
-        display: flex;
+      .commodity-meta span {
+        display: inline-flex;
         align-items: center;
-        justify-content: space-between;
-        padding: 0.7rem 0.8rem;
-        border-radius: 14px;
-        background: #f6f8f1;
-        border: 1px solid rgba(21, 58, 15, 0.08);
-        font-size: 0.82rem;
-        color: var(--agri-slate);
+        gap: 0.4rem;
+      }
+
+      .commodity-meta i {
+        color: var(--agri-green-700);
+      }
+
+      .commodity-action {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 1rem;
+        color: var(--agri-green-800);
+        font-size: 1rem;
+        font-weight: 800;
+      }
+
+      .commodity-empty {
+        padding: 2rem;
+        border: 1px dashed rgba(26, 52, 8, 0.25);
+        border-radius: 16px;
+        background: #f7faf4;
+        text-align: center;
+      }
+
+      .commodity-empty i {
+        color: var(--agri-green-700);
+        font-size: 2rem;
+      }
+
+      .commodity-empty h3 {
+        margin: 0.75rem 0 0.35rem;
+        color: var(--agri-green-900);
+        font-size: 1.3rem;
+        font-weight: 800;
+      }
+
+      .commodity-empty p {
+        margin: 0 auto;
+        max-width: 540px;
+        color: #4b5563;
+        line-height: 1.65;
+      }
+
+      .hero-panel {
+        position: relative;
+        min-height: 430px;
+      }
+
+      .hero-photo-card {
+        position: absolute;
+        inset: 0 0 0 1rem;
+        overflow: hidden;
+        border: 5px solid rgba(255, 255, 255, 0.2);
+        border-radius: 24px;
+        box-shadow: 0 22px 50px rgba(0, 0, 0, 0.25);
+        background: #e8f0df;
+      }
+
+      .hero-photo-card img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .hero-photo-caption {
+        position: absolute;
+        right: 1rem;
+        bottom: 1rem;
+        left: 1rem;
+        display: grid;
+        gap: 0.35rem;
+        padding: 1.1rem 1.2rem;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.96);
+        box-shadow: var(--agri-shadow);
+      }
+
+      .hero-photo-caption span {
+        color: var(--agri-green-700);
+        font-size: 0.8rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .hero-photo-caption strong {
+        color: var(--agri-green-900);
+        font-size: 1.2rem;
+      }
+
+      .hero-photo-caption a {
+        width: fit-content;
+        color: var(--agri-green-800);
+        font-weight: 800;
       }
 
       .section {
@@ -385,7 +497,7 @@
         min-height: 440px;
         background:
           linear-gradient(160deg, rgba(25, 72, 25, 0.7), rgba(140, 182, 104, 0.42)),
-          url("https://images.unsplash.com/photo-1464226184884-fa52ac9f98b3?auto=format&fit=crop&w=1200&q=80") center/cover no-repeat;
+          url("{{ url_for('static', filename='images/farm-illustration.svg') }}") center/cover no-repeat;
         border-radius: 28px;
         box-shadow: var(--agri-shadow);
         position: relative;
@@ -708,6 +820,10 @@
           grid-template-columns: 1fr;
         }
 
+        .commodity-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
         .hero-panel {
           min-height: 400px;
         }
@@ -719,6 +835,20 @@
       }
 
       @media (max-width: 767px) {
+        .commodities-heading {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .commodity-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .commodity-photo,
+        .commodity-photo-fallback {
+          height: 230px;
+        }
+
         .hero-inner {
           padding-top: 4.5rem;
         }
@@ -747,10 +877,14 @@
     <header class="site-header">
       <nav class="navbar navbar-expand-lg custom-nav">
         <div class="container">
-          <a class="brand" href="{{ url_for('home') }}">
-            <span class="brand-mark"><i class="fa-solid fa-seedling"></i></span>
-            Agri-Direct
-          </a>
+            <a class="brand" href="{{ url_for('home') }}">
+                <img
+                  class="brand-logo"
+                  src="{{ url_for('static', filename='images/logo.png') }}"
+                  alt="Agri-Direct"
+                />
+                Agri-Direct
+              </a>
           <button
             class="navbar-toggler"
             type="button"
@@ -766,12 +900,12 @@
             <ul class="navbar-nav ms-auto mb-2 mb-lg-0">
               <li class="nav-item"><a class="nav-link" href="{{ url_for('home') }}">Home</a></li>
               <li class="nav-item"><a class="nav-link" href="#about">About</a></li>
-              <li class="nav-item"><a class="nav-link" href="#features">Features</a></li>
+              <li class="nav-item"><a class="nav-link" href="#commodities">See produce</a></li>
               <li class="nav-item"><a class="nav-link" href="#updates">Updates</a></li>
             </ul>
             <div class="nav-actions">
-              <a class="btn btn-agri btn-ghost" href="{{ url_for('login') }}">Login</a>
-              <a class="btn btn-agri btn-primary-agri" href="{{ url_for('register') }}">Register</a>
+              <a class="btn btn-agri btn-ghost" href="{{ url_for('login') }}">Log in</a>
+              <a class="btn btn-agri btn-primary-agri" href="{{ url_for('register') }}">Sign up</a>
             </div>
           </div>
         </div>
@@ -782,64 +916,109 @@
       <section class="hero">
         <div class="container hero-inner">
           <div>
-            <span class="hero-badge"><i class="fa-solid fa-wheat-awn"></i> Digital agriculture ecosystem</span>
-            <h1>Connecting Farmers With Better Opportunities.</h1>
+            <span class="hero-badge"><i class="fa-solid fa-wheat-awn"></i> Your local farm marketplace</span>
+            <h1>Good produce. Fair prices. Direct connections.</h1>
             <p>
-              Agri-Direct is a digital agricultural platform that helps farmers and other
-              agricultural users connect with buyers, discover trusted information, manage
-              agricultural products, access market-related insights, communicate with other
-              users, and make better agricultural decisions.
+              See what farmers are selling and the prices they set. Agri-Direct makes it
+              easier to find fresh local produce, meet buyers, and grow your farm business.
             </p>
             <div class="hero-actions">
-              <a class="btn btn-agri btn-primary-agri btn-lg" href="{{ url_for('register') }}">Get Started</a>
-              <a class="btn btn-agri btn-ghost btn-lg" href="#about">Learn More</a>
+              <a class="btn btn-agri btn-primary-agri btn-lg" href="#commodities">See what's for sale <i class="fa-solid fa-arrow-down ms-2"></i></a>
+              <a class="btn btn-agri btn-ghost btn-lg" href="{{ url_for('register') }}">Join Agri-Direct</a>
             </div>
             <ul class="hero-points">
-              <li><i class="fa-solid fa-check"></i> Connect with buyers</li>
-              <li><i class="fa-solid fa-check"></i> Discover agri information</li>
-              <li><i class="fa-solid fa-check"></i> Manage products</li>
-              <li><i class="fa-solid fa-check"></i> Track market insights</li>
+              <li><i class="fa-solid fa-check"></i> See real seller prices</li>
+              <li><i class="fa-solid fa-check"></i> Find nearby produce</li>
+              <li><i class="fa-solid fa-check"></i> Easy to get started</li>
+              <li><i class="fa-solid fa-check"></i> Connect directly</li>
             </ul>
           </div>
 
-          <div class="hero-panel" aria-label="Agri-Direct overview card">
-            <div class="hero-card floating-list-card">
-              <div class="micro-label">Live network</div>
-              <ul class="pill-list">
-                <li><span>Buyers</span><strong>{{ metrics.buyers }}</strong></li>
-                <li><span>Farm profiles</span><strong>{{ metrics.farm_profiles }}</strong></li>
-                <li><span>Product listings</span><strong>{{ metrics.product_listings }}</strong></li>
-              </ul>
-            </div>
-
-            <div class="hero-card hero-main-card">
-              <div class="hero-card-top">
-                <div>
-                  <div class="micro-label">Agri-Direct</div>
-                </div>
-                <span class="chip"><i class="fa-solid fa-circle-dot"></i> Live data</span>
+          <div class="hero-panel">
+            <div class="hero-photo-card">
+              <img
+                src="{{ url_for('static', filename='images/logo.png') }}"
+                alt="A farmer tending green crop rows on a sunny farm"
+              />
+              <div class="hero-photo-caption">
+                <span>Local produce, real prices</span>
+                <strong>See what farmers are selling</strong>
+                <a href="#commodities">Browse available produce <i class="fa-solid fa-arrow-down ms-1"></i></a>
               </div>
-              <div class="market-grid">
-                <div class="metric-box">
-                  <strong>{{ metrics.market_listings }}</strong>
-                  <span>Market listings</span>
-                </div>
-                <div class="metric-box">
-                  <strong>{{ metrics.growth }}</strong>
-                  <span>New listings vs same period last month</span>
-                </div>
-                <div class="metric-box">
-                  <strong>{{ metrics.knowledge_posts }}</strong>
-                  <span>Knowledge posts</span>
-                </div>
-                <div class="metric-box">
-                  <strong>{{ metrics.process_uptime }}</strong>
-                  <span>Process uptime</span>
-                </div>
-              </div>
-              <div class="small text-muted mt-3 text-end">Database counts updated {{ metrics.updated_at }}</div>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section class="commodities-section" id="commodities">
+        <div class="container">
+          <div class="commodities-heading">
+            <div>
+              <span class="eyebrow">From the marketplace</span>
+              <h2>Fresh from local farms</h2>
+              <p>These are real listings and prices posted by sellers on Agri-Direct.</p>
+            </div>
+            <a class="btn btn-agri btn-primary-agri btn-lg" href="{{ url_for('register') }}">
+              Join to connect with sellers <i class="fa-solid fa-arrow-right ms-2"></i>
+            </a>
+          </div>
+
+          {% if featured_commodities %}
+            <div class="commodity-grid">
+              {% for item in featured_commodities %}
+                <article class="commodity-card">
+                  {% if item.main_image and item.thumbnail_verified %}
+                    <img
+                      class="commodity-photo"
+                      src="{{ url_for('static', filename='uploads/marketplace/' + item.main_image) }}"
+                      alt="{{ item.crop_name }} listed by a local seller"
+                      loading="lazy"
+                    />
+                  {% else %}
+                    <div class="commodity-photo-fallback" aria-hidden="true">
+                      <i class="fa-solid fa-seedling"></i>
+                    </div>
+                  {% endif %}
+                  <div class="commodity-content">
+                    <h3 class="commodity-name">{{ item.crop_name or 'Fresh produce' }}</h3>
+                    {% if item.price is not none %}
+                      <div class="commodity-price">
+                        ₱{{ "%.2f"|format(item.price) }}<small> / {{ item.unit or 'kg' }}</small>
+                      </div>
+                    {% else %}
+                      <div class="commodity-price">Ask seller for price</div>
+                    {% endif %}
+                    <div class="commodity-meta">
+                      {% if item.amount %}
+                        <span><i class="fa-solid fa-boxes-stacked"></i>{{ item.amount }} {{ item.unit or 'kg' }} available</span>
+                      {% endif %}
+                      {% if item.location %}
+                        <span><i class="fa-solid fa-location-dot"></i>{{ item.location }}</span>
+                      {% endif %}
+                      {% if item.listing_type == 'preorder' %}
+                        <span><i class="fa-solid fa-calendar-check"></i>Pre-order</span>
+                      {% else %}
+                        <span><i class="fa-solid fa-circle-check"></i>Available now</span>
+                      {% endif %}
+                    </div>
+                    <a class="commodity-action" href="{{ url_for('register') }}">
+                      Sign up to contact seller <i class="fa-solid fa-arrow-right"></i>
+                    </a>
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="commodity-empty">
+              <i class="fa-solid fa-seedling" aria-hidden="true"></i>
+              <h3>New harvests are on the way</h3>
+              <p>There are no active produce listings just yet. Join Agri-Direct to be ready when local farmers post their next harvest.</p>
+              <a class="btn btn-agri btn-primary-agri mt-3" href="{{ url_for('register') }}">Join Agri-Direct</a>
+            </div>
+          {% endif %}
+          <p class="small text-muted mt-3 mb-0">
+            Prices and availability are set by each seller and may change. Please confirm details directly with the seller.
+          </p>
         </div>
       </section>
 
@@ -847,24 +1026,22 @@
         <div class="container">
           <div class="section-header">
             <span class="eyebrow">About Agri-Direct</span>
-            <h2>What is Agri-Direct?</h2>
+            <h2>A simpler way to buy and sell farm produce</h2>
           </div>
 
           <div class="about-grid">
             <div class="about-box">
               <p class="section-copy">
-                Agri-Direct is designed to support agricultural users through digital tools for
-                agricultural trading, information sharing, communication, inventory/product
-                management, and market intelligence. It brings together the people, products,
-                and insights needed to make agricultural participation more efficient and
-                informed.
+                Agri-Direct brings farmers and buyers together in one easy-to-use place.
+                Farmers can post what they have and the price they want. Buyers can browse
+                available produce and connect with sellers directly.
               </p>
 
               <ul class="mini-list">
-                <li><i class="fa-solid fa-arrow-right"></i> Discover and manage agricultural products with confidence.</li>
-                <li><i class="fa-solid fa-arrow-right"></i> Learn from agricultural knowledge, updates, and shared expertise.</li>
-                <li><i class="fa-solid fa-arrow-right"></i> Connect with buyers, sellers, and community members.</li>
-                <li><i class="fa-solid fa-arrow-right"></i> Use data-driven market intelligence to support smarter decisions.</li>
+                <li><i class="fa-solid fa-arrow-right"></i> See produce and prices posted by local sellers.</li>
+                <li><i class="fa-solid fa-arrow-right"></i> Share your harvest with people looking to buy.</li>
+                <li><i class="fa-solid fa-arrow-right"></i> Ask questions and connect directly.</li>
+                <li><i class="fa-solid fa-arrow-right"></i> Get started with a few simple steps.</li>
               </ul>
             </div>
 
@@ -891,31 +1068,31 @@
             <article class="feature-card">
               <div class="feature-icon"><i class="fa-solid fa-store"></i></div>
               <h3>Marketplace</h3>
-              <p>Allows users to discover agricultural products and interact with listings in a more connected trading environment.</p>
+              <p>Browse produce from farmers and see the price, quantity, and location before you connect.</p>
             </article>
 
             <article class="feature-card">
               <div class="feature-icon"><i class="fa-solid fa-book-open-reader"></i></div>
               <h3>Knowledge Hub</h3>
-              <p>Provides agricultural information, educational content, updates, and knowledge-sharing resources for the community.</p>
+              <p>Find practical farming information, helpful updates, and ideas from the community.</p>
             </article>
 
             <article class="feature-card">
               <div class="feature-icon"><i class="fa-solid fa-chart-line"></i></div>
               <h3>Market Intelligence</h3>
-              <p>Provides agricultural market insights and analytical information to help users understand trends and patterns.</p>
+              <p>Explore market information that can help you make more informed decisions.</p>
             </article>
 
             <article class="feature-card">
               <div class="feature-icon"><i class="fa-solid fa-boxes-stacked"></i></div>
               <h3>Inventory Management</h3>
-              <p>Allows agricultural users to manage their agricultural inventory and product records with greater clarity.</p>
+              <p>Keep track of your harvest and the products you have available.</p>
             </article>
 
             <article class="feature-card">
               <div class="feature-icon"><i class="fa-solid fa-comments"></i></div>
               <h3>Communication</h3>
-              <p>Allows users to communicate with other users through the messaging functionality to coordinate and connect.</p>
+              <p>Talk directly with buyers and sellers to ask questions and arrange a sale.</p>
             </article>
 
             <article class="feature-card">
@@ -1004,22 +1181,22 @@
             <article class="step-card">
               <div class="step-number">01</div>
               <h3>Register</h3>
-              <p>Create an Agri-Direct account to join the agricultural community and unlock platform tools.</p>
+              <p>Create an account to join the Agri-Direct community.</p>
             </article>
             <article class="step-card">
               <div class="step-number">02</div>
               <h3>Explore</h3>
-              <p>Explore agricultural products, information, and available platform features tailored to your needs.</p>
+              <p>Browse produce, prices, and helpful farming information.</p>
             </article>
             <article class="step-card">
               <div class="step-number">03</div>
               <h3>Connect</h3>
-              <p>Communicate and connect with other agricultural users to share opportunities and updates.</p>
+              <p>Contact a buyer or seller to ask questions and discuss a sale.</p>
             </article>
             <article class="step-card">
               <div class="step-number">04</div>
               <h3>Make Better Decisions</h3>
-              <p>Use available agricultural information and market insights to support improved decisions.</p>
+              <p>Agree on the details directly with the other person.</p>
             </article>
           </div>
         </div>
@@ -1043,7 +1220,11 @@
         <div class="footer-grid">
           <div>
             <div class="footer-brand">
-              <span class="brand-mark"><i class="fa-solid fa-seedling"></i></span>
+              <img
+                class="brand-logo"
+                src="{{ url_for('static', filename='images/logo.png') }}"
+                alt=""
+              />
               Agri-Direct
             </div>
             <p>Connecting agricultural communities with digital tools for trade, information, insight, and better decision-making.</p>

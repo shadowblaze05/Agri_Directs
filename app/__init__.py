@@ -149,6 +149,17 @@ def create_app(config_overrides=None):
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Permissions-Policy", "geolocation=(self), camera=(self)")
+        if (
+            request.endpoint != "static"
+            and (
+                getattr(g, "audit_actor", None)
+                or session.get("user")
+                or request.endpoint in {"login", "logout"}
+            )
+        ):
+            response.headers["Cache-Control"] = "no-store, private, max-age=0, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
         if app.config.get("SESSION_COOKIE_SECURE"):
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
         return response

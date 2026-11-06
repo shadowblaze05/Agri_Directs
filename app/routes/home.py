@@ -161,8 +161,25 @@ def _public_metrics(now=None):
 def home():
     """Public landing page for visitors before they sign in or register."""
     updates = _latest_updates(limit=3)
-    metrics = _public_metrics()
-    return render_template("public_home.html", updates=updates, metrics=metrics)
+    conn = get_db()
+    try:
+        featured_commodities = conn.cursor().execute("""
+            SELECT id, crop_name, amount, price, unit, location,
+                   main_image, thumbnail_verified, listing_type
+            FROM marketplace
+            WHERE status = 'available'
+              AND (listing_type IS NULL OR listing_type <> 'looking_for')
+              AND (buyer_username IS NULL OR TRIM(buyer_username) = '')
+            ORDER BY listing_date DESC, id DESC
+            LIMIT 6
+        """).fetchall()
+    finally:
+        conn.close()
+    return render_template(
+        "public_home.html",
+        updates=updates,
+        featured_commodities=featured_commodities,
+    )
 
 
 def portal_home():
@@ -175,7 +192,7 @@ def portal_home():
     updates = _latest_updates(limit=3)
     featured_listings = cur.execute("""
         SELECT m.id, m.crop_name, m.amount, m.price, m.unit, m.location,
-               u.username AS seller_name
+               m.main_image, m.thumbnail_verified, u.username AS seller_name
         FROM marketplace m JOIN users u ON u.id = m.user_id
         WHERE m.status = 'available'
         ORDER BY m.listing_date DESC LIMIT 3

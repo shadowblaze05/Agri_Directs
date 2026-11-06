@@ -31,8 +31,8 @@
         <div class="row g-2">
           <div class="col-md-3"><input name="username" class="form-control" placeholder="Username" required></div>
           <div class="col-md-3"><input name="email" type="email" class="form-control" placeholder="Email"></div>
-          <div class="col-md-2"><input name="password" type="password" minlength="12" maxlength="128" class="form-control" placeholder="Password (12+ chars, upper/lower/number/symbol)" required></div>
-          <div class="col-md-2"><select name="role" class="form-select"><option value="user">User</option><option value="admin">Administrator</option></select></div>
+          <div class="col-md-2"><input name="password" type="password" minlength="8" maxlength="128" class="form-control" placeholder="Password (8+ chars, include a number)" required></div>
+          <div class="col-md-2"><select name="role" class="form-select"><option value="buyer">Buyer</option><option value="seller" selected>Seller</option>{% if is_superadmin %}<option value="admin">Administrator</option>{% endif %}</select></div>
           <div class="col-md-2"><button class="btn btn-success w-100">Create</button></div>
         </div>
       </form>
@@ -60,7 +60,7 @@
               <tr>
                 <td><strong>{{ user['first_name'] or user['username'] }}</strong><div class="small text-muted">@{{ user['username'] }}</div></td>
                 <td>{{ user['email'] or '-' }}</td>
-                <td><span class="badge text-bg-{{ 'success' if user['role']=='admin' else 'secondary' }}">{{ user['role'] }}</span></td>
+                <td><span class="badge text-bg-{{ 'success' if user['role']=='admin' else 'secondary' }}">{{ 'Super admin' if user['role'] == 'admin' and user['username'] == superadmin_username else 'Administrator' if user['role'] == 'admin' else 'Seller' if user['role'] in (None, '', 'user', 'seller') else 'Buyer' if user['role'] == 'buyer' else user['role'] }}</span></td>
                 <td>
                   {% if user['pending_verification'] %}
                     <span class="badge text-bg-warning">Pending verification</span>
@@ -73,14 +73,20 @@
                 </td>
                 <td>{{ user['location'] or '-' }}</td>
                 <td>
+                  {% if user['username'] == session.get('user') and is_superadmin %}
+                    <span class="text-muted small">Super admin account</span>
+                  {% elif user['role'] == 'admin' and not is_superadmin %}
+                    <span class="text-muted small">Only the super admin can manage admin accounts</span>
+                  {% else %}
                   <form method="post" action="{{ url_for('edit_admin_user', user_id=user['id']) }}" class="d-inline-flex gap-1">
                     <input type="hidden" name="first_name" value="{{ user['first_name'] or '' }}">
                     <input type="hidden" name="last_name" value="{{ user['last_name'] or '' }}">
                     <input type="hidden" name="email" value="{{ user['email'] or '' }}">
                     <input type="hidden" name="location" value="{{ user['location'] or '' }}">
                     <select name="role" class="form-select form-select-sm" aria-label="Account role">
-                      <option value="user" {% if user['role'] != 'admin' %}selected{% endif %}>User</option>
-                      <option value="admin" {% if user['role'] == 'admin' %}selected{% endif %}>Admin</option>
+                      <option value="buyer" {% if user['role'] == 'buyer' %}selected{% endif %}>Buyer</option>
+                      <option value="seller" {% if user['role'] in (None, '', 'user', 'seller') %}selected{% endif %}>Seller</option>
+                      {% if is_superadmin or user['username'] == session.get('user') %}<option value="admin" {% if user['role'] == 'admin' %}selected{% endif %}>Admin</option>{% endif %}
                     </select>
                     {% if user['pending_verification'] %}
                       <select class="form-select form-select-sm" aria-label="Account status" disabled><option>Pending</option></select>
@@ -93,10 +99,11 @@
                     {% endif %}
                     <button class="btn btn-sm btn-outline-primary">Save</button>
                   </form>
-                  {% if user['username'] != session.get('user') %}
+                  {% if user['username'] != session.get('user') and (user['role'] != 'admin' or is_superadmin) %}
                     <form method="post" action="{{ url_for('delete_admin_user', user_id=user['id']) }}" class="d-inline" onsubmit="return confirm('Delete this account?')">
                       <button class="btn btn-sm btn-outline-danger">Delete</button>
                     </form>
+                  {% endif %}
                   {% endif %}
                 </td>
               </tr>

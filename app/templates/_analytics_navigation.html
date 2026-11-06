@@ -1,11 +1,13 @@
 <aside class="analytics-sidebar" aria-label="Main navigation">
   <a class="analytics-brand" href="{{ url_for('portal_home') }}">
-    <i class="fas fa-leaf"></i><span>Agri-Direct</span>
+    <img class="site-brand-logo" src="{{ url_for('static', filename='images/logo.png') }}" alt=""><span>Agri-Direct</span>
   </a>
   <nav class="nav flex-column">
     <a class="nav-link" href="{{ url_for('portal_home') }}"><i class="fas fa-house"></i><span>Home</span></a>
     <a class="nav-link active" href="{{ url_for('dashboard') }}"><i class="fas fa-chart-line"></i><span>Dashboard</span></a>
+    {% if session.get('role') != 'buyer' %}
     <a class="nav-link" href="/upload"><i class="fas fa-arrow-up-from-bracket"></i><span>Upload Harvest</span></a>
+    {% endif %}
     {% if session.get('role') == 'admin' %}
     <a class="nav-link" href="/market-intelligence"><i class="fas fa-brain"></i><span>Market Intelligence</span></a>
     {% endif %}

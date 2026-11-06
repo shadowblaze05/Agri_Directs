@@ -3,10 +3,11 @@ from functools import wraps
 import csv
 import io
 import math
+import os
 from zipfile import BadZipFile
 from xml.etree.ElementTree import ParseError
 
-from flask import Response, abort, current_app, flash, redirect, render_template, request, session, stream_with_context, url_for
+from flask import Response, abort, current_app, flash, redirect, render_template, request, send_from_directory, session, stream_with_context, url_for
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy import func, or_, select
@@ -59,6 +60,13 @@ def _current_user_is_admin():
     return True
 
 
+def _current_user_is_superadmin():
+    return (
+        _current_user_is_admin()
+        and session.get("user") == current_app.config["SUPERADMIN_USERNAME"]
+    )
+
+
 def _admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -66,6 +74,19 @@ def _admin_required(view):
             return redirect(url_for("login"))
         if not _current_user_is_admin():
             flash("Admin access required", "warning")
+            return redirect(url_for("dashboard"))
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def _superadmin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if "user" not in session:
+            return redirect(url_for("login"))
+        if not _current_user_is_superadmin():
+            flash("Super admin access required", "warning")
             return redirect(url_for("dashboard"))
         return view(*args, **kwargs)
 
@@ -85,16 +106,21 @@ def create_admin_user():
     username = _form_value("username")
     email = _form_value("email").lower()
     password = request.form.get("password", "")
-    role = _form_value("role") or "user"
+    role = _form_value("role") or "seller"
+    if role == "user":
+        role = "seller"
     if not username or not password:
         flash("Username and password are required", "danger")
         return _redirect_admin("admin_users")
-    password_error = password_policy_error(password, (username, email.split("@", 1)[0]))
+    password_error = password_policy_error(password)
     if password_error:
         flash(password_error, "danger")
         return _redirect_admin("admin_users")
-    if role not in {"user", "admin"}:
+    if role not in {"buyer", "seller", "admin"}:
         flash("Invalid account role", "danger")
+        return _redirect_admin("admin_users")
+    if role == "admin" and not _current_user_is_superadmin():
+        flash("Only the super admin can create administrator accounts", "danger")
         return _redirect_admin("admin_users")
 
     conn = get_db()
@@ -127,7 +153,7 @@ def edit_admin_user(user_id):
     conn = get_db()
     cur = conn.cursor()
     user = cur.execute(
-        "SELECT id, username, email, is_active FROM users WHERE id=?",
+        "SELECT id, username, email, role, is_active FROM users WHERE id=?",
         (user_id,),
     ).fetchone()
     if not user:
@@ -135,10 +161,30 @@ def edit_admin_user(user_id):
         flash("User not found", "danger")
         return _redirect_admin("admin_users")
 
+    is_superadmin = _current_user_is_superadmin()
+    if (
+        user["role"] == "admin"
+        and user["username"] != session.get("user")
+        and not is_superadmin
+    ):
+        conn.close()
+        flash("Only the super admin can manage administrator accounts", "danger")
+        return _redirect_admin("admin_users")
+
     role = _form_value("role") or "user"
-    if role not in {"user", "admin"}:
+    if role == "user":
+        role = "seller"
+    if role not in {"buyer", "seller", "admin"}:
         conn.close()
         flash("Invalid account role", "danger")
+        return _redirect_admin("admin_users")
+    if role == "admin" and not is_superadmin and user["role"] != "admin":
+        conn.close()
+        flash("Only the super admin can assign administrator access", "danger")
+        return _redirect_admin("admin_users")
+    if user["username"] == session.get("user") and user["role"] == "admin" and role != "admin":
+        conn.close()
+        flash("You cannot remove your own administrator access", "danger")
         return _redirect_admin("admin_users")
     is_active = request.form.get("is_active", str(int(user["is_active"])))
     if is_active not in {"0", "1"}:
@@ -161,10 +207,7 @@ def edit_admin_user(user_id):
                 is_active=?"""
     fields.append(is_active)
     if password:
-        password_error = password_policy_error(
-            password,
-            (user["username"], (_form_value("email") or user["email"] or "").split("@", 1)[0]),
-        )
+        password_error = password_policy_error(password)
         if password_error:
             conn.close()
             flash(password_error, "danger")
@@ -188,10 +231,16 @@ def edit_admin_user(user_id):
 def delete_admin_user(user_id):
     conn = get_db()
     cur = conn.cursor()
-    user = cur.execute("SELECT username FROM users WHERE id=?", (user_id,)).fetchone()
+    user = cur.execute(
+        "SELECT username, role FROM users WHERE id=?", (user_id,)
+    ).fetchone()
     if not user:
         conn.close()
         flash("User not found", "danger")
+        return _redirect_admin("admin_users")
+    if user["role"] == "admin" and not _current_user_is_superadmin():
+        conn.close()
+        flash("Only the super admin can manage administrator accounts", "danger")
         return _redirect_admin("admin_users")
     if user["username"] == session.get("user"):
         conn.close()
@@ -932,6 +981,7 @@ def admin():
     return render_template(
         "admin.html",
         stats=stats,
+        is_superadmin=_current_user_is_superadmin(),
     )
 
 
@@ -976,6 +1026,8 @@ def admin_users():
             not bool(user["is_active"]) and not bool(user["pending_verification"])
             for user in users
         ),
+        is_superadmin=_current_user_is_superadmin(),
+        superadmin_username=current_app.config["SUPERADMIN_USERNAME"],
     )
 
 
@@ -1097,7 +1149,10 @@ def admin_marketplace():
            ORDER BY m.listing_date DESC, m.id DESC""",
         (search, f"%{search}%", f"%{search}%", f"%{search}%"),
     ).fetchall()
-    users = cur.execute("SELECT id, username, location FROM users ORDER BY username").fetchall()
+    users = cur.execute(
+        "SELECT id, username, location FROM users "
+        "WHERE COALESCE(role, 'user') <> 'buyer' ORDER BY username"
+    ).fetchall()
     crops = cur.execute("SELECT id, crops_name FROM crops ORDER BY crops_name").fetchall()
     conn.close()
     return render_template(
@@ -1218,14 +1273,14 @@ def create_admin_marketplace_listing():
     conn = get_db()
     cur = conn.cursor()
     user = cur.execute(
-        "SELECT id, username, location FROM users WHERE username=?",
+        "SELECT id, username, location, role FROM users WHERE username=?",
         (username,),
     ).fetchone()
     crop = cur.execute(
         "SELECT id, crops_name FROM crops WHERE id=?",
         (crop_id,),
     ).fetchone()
-    if not user or not crop:
+    if not user or not crop or user["role"] == "buyer":
         conn.close()
         flash("Choose an existing seller and crop.", "danger")
         return _redirect_admin("admin_marketplace")
@@ -1285,14 +1340,14 @@ def edit_admin_marketplace_listing(listing_id):
         return _redirect_admin("admin_marketplace")
 
     user = cur.execute(
-        "SELECT id, username, location FROM users WHERE username=?",
+        "SELECT id, username, location, role FROM users WHERE username=?",
         (username,),
     ).fetchone()
     crop = cur.execute(
         "SELECT id, crops_name FROM crops WHERE id=?",
         (crop_id,),
     ).fetchone()
-    if not user or not crop:
+    if not user or not crop or user["role"] == "buyer":
         conn.close()
         flash("Choose an existing seller and crop.", "danger")
         return _redirect_admin("admin_marketplace")
@@ -1494,7 +1549,7 @@ def _csv_cell(value):
     return text
 
 
-@_admin_required
+@_superadmin_required
 def admin_audit_logs():
     filter_values = _audit_log_filters()
     filters = filter_values["filters"]
@@ -1585,7 +1640,7 @@ def admin_audit_logs():
     )
 
 
-@_admin_required
+@_superadmin_required
 def admin_slow_queries():
     stats = db.session.execute(
         select(
@@ -1623,6 +1678,24 @@ def admin_profile_reports():
         )
     ).all()
     return render_template("admin_profile_reports.html", reports=reports)
+
+
+@_admin_required
+def download_profile_report_evidence(report_id):
+    report = db.session.get(ProfileReport, report_id)
+    if not report or not report.evidence_filename:
+        abort(404)
+    evidence_dir = os.path.join(
+        current_app.config["UPLOAD_FOLDER"],
+        "profile_report_evidence",
+    )
+    return send_from_directory(
+        evidence_dir,
+        report.evidence_filename,
+        as_attachment=True,
+        download_name=report.evidence_original_name or "evidence",
+        mimetype="application/octet-stream",
+    )
 
 
 @_admin_required
@@ -1679,6 +1752,7 @@ def register(application):
     application.add_url_rule('/admin', endpoint='admin', view_func=admin)
     application.add_url_rule('/admin/audit-logs', endpoint='admin_audit_logs', view_func=admin_audit_logs)
     application.add_url_rule('/admin/profile-reports', endpoint='admin_profile_reports', view_func=admin_profile_reports)
+    application.add_url_rule('/admin/profile-reports/<int:report_id>/evidence', endpoint='download_profile_report_evidence', view_func=download_profile_report_evidence)
     application.add_url_rule('/admin/profile-reports/<int:report_id>/review', endpoint='review_profile_report', view_func=review_profile_report, methods=['POST'])
     application.add_url_rule('/admin/listing-photo-alerts', endpoint='admin_listing_photo_alerts', view_func=admin_listing_photo_alerts)
     application.add_url_rule('/admin/listing-photo-alerts/<int:alert_id>/review', endpoint='review_listing_photo_alert', view_func=review_listing_photo_alert, methods=['POST'])

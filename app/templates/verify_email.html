@@ -90,15 +90,24 @@
 <body>
     <main class="verify-container">
         <header class="verify-header">
-            <h1><i class="fas fa-leaf me-1"></i> Agri-Direct</h1>
+            <h1><img class="site-brand-logo" src="{{ url_for('static', filename='images/logo.png') }}" alt=""> Agri-Direct</h1>
             <p><i class="fas fa-envelope-open-text me-1"></i> Email verification</p>
         </header>
 
         <div class="verify-body">
-            {% with messages = get_flashed_messages() %}
+            {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
-                    <div class="alert alert-info alert-dismissible fade show" role="alert">
-                        <i class="fas fa-info-circle me-1"></i> {{ messages[0] }}
+                    {% set category, message = messages[0] %}
+                    {% set alert_class = category if category in ['success', 'warning', 'info'] else 'danger' %}
+                    <div class="alert alert-{{ alert_class }} alert-dismissible fade show" role="alert">
+                        {% if alert_class == 'success' %}
+                            <i class="fas fa-check-circle me-1"></i>
+                        {% elif alert_class == 'warning' %}
+                            <i class="fas fa-exclamation-triangle me-1"></i>
+                        {% else %}
+                            <i class="fas fa-exclamation-circle me-1"></i>
+                        {% endif %}
+                        {{ message }}
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
                 {% endif %}

@@ -9,14 +9,17 @@ from app.routes import home as home_routes
 
 
 class MetricsCursor:
-    def __init__(self, current_period=3, previous_period=2):
+    def __init__(self, current_period=3, previous_period=2, featured_commodities=None):
         self.current_period = current_period
         self.previous_period = previous_period
+        self.featured_commodities = featured_commodities or []
         self.calls = []
 
     def execute(self, query, params=()):
         self.calls.append((query, params))
-        if "SELECT username AS buyer" in query:
+        if "SELECT id, crop_name, amount, price, unit, location" in query:
+            self.result = self.featured_commodities
+        elif "SELECT username AS buyer" in query:
             self.result = {"count": 1250}
         elif "profile_photo_captured_at IS NOT NULL" in query:
             self.result = {"count": 38}
@@ -36,6 +39,9 @@ class MetricsCursor:
         return self
 
     def fetchone(self):
+        return self.result
+
+    def fetchall(self):
         return self.result
 
 
@@ -75,7 +81,7 @@ def test_public_metrics_use_database_counts_and_comparable_listing_growth(monkey
     )
 
 
-def test_public_metrics_render_on_landing_page_with_live_values(monkeypatch):
+def test_public_landing_page_shows_helpful_empty_marketplace_state(monkeypatch):
     cursor = MetricsCursor(current_period=0, previous_period=0)
     connection = MetricsConnection(cursor)
     monkeypatch.setattr(home_routes, "get_db", lambda: connection)
@@ -91,12 +97,59 @@ def test_public_metrics_render_on_landing_page_with_live_values(monkeypatch):
         response = client.get("/")
 
     assert response.status_code == 200
-    assert b"1,250" in response.data
-    assert b"38" in response.data
-    assert b"New listings vs same period last month" in response.data
-    assert b"Process uptime" in response.data
-    assert b"96%" not in response.data
-    assert b"1.2K" not in response.data
+    assert b"Good produce. Fair prices. Direct connections." in response.data
+    assert b"Fresh from local farms" in response.data
+    assert b"New harvests are on the way" in response.data
+    assert b"Join Agri-Direct" in response.data
+
+
+def test_public_landing_page_shows_real_available_marketplace_prices(monkeypatch):
+    cursor = MetricsCursor(featured_commodities=[
+        {
+            "id": 17,
+            "crop_name": "Tomatoes",
+            "amount": 25,
+            "price": 58.5,
+            "unit": "kg",
+            "location": "Sariaya, Quezon",
+            "main_image": "tomatoes.jpg",
+            "thumbnail_verified": True,
+            "listing_type": "standard",
+        },
+        {
+            "id": 18,
+            "crop_name": "Fresh corn",
+            "amount": 10,
+            "price": None,
+            "unit": "bundle",
+            "location": "Lucena City",
+            "main_image": None,
+            "thumbnail_verified": False,
+            "listing_type": "preorder",
+        },
+    ])
+    connection = MetricsConnection(cursor)
+    monkeypatch.setattr(home_routes, "get_db", lambda: connection)
+    monkeypatch.setattr(home_routes, "_latest_updates", lambda limit=3: [])
+
+    with app_module.app.test_client() as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert b"Tomatoes" in response.data
+    assert b"\xe2\x82\xb158.50" in response.data
+    assert b"25 kg available" in response.data
+    assert b"Sariaya, Quezon" in response.data
+    assert b"uploads/marketplace/tomatoes.jpg" in response.data
+    assert b"Fresh corn" in response.data
+    assert b"Ask seller for price" in response.data
+    assert b"10 bundle available" in response.data
+    assert b"Pre-order" in response.data
+    query = next(query for query, _ in cursor.calls if "SELECT id, crop_name, amount, price, unit, location" in query)
+    assert "status = 'available'" in query
+    assert "listing_type <> 'looking_for'" in query
+    assert "LIMIT 6" in query
+    assert connection.closed
 
 
 def test_signed_in_mobile_stylesheet_keeps_navigation_visible_and_scrollable():

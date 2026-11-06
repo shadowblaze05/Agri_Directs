@@ -6,14 +6,8 @@ from app.password_policy import password_policy_error
 @pytest.mark.parametrize(
     "password",
     [
-        "121212",
-        "123456",
-        "123123123123",
-        "River!123123123Moon",
-        "qwerty",
-        "Qwerty!River82",
-        "River!1234Moon",
-        "Riverrrr!7Moon",
+        "Farmer1",
+        "Farmername",
     ],
 )
 def test_password_policy_rejects_weak_passwords(password):
@@ -21,33 +15,35 @@ def test_password_policy_rejects_weak_passwords(password):
 
 
 @pytest.mark.parametrize(
-    ("password", "identifiers"),
+    ("password", "error"),
     [
-        ("River!Harvest7Moon", ()),
-        ("River.Harvest7Moon", ()),
-        ("Green!Market8Sun", ("farmer-one", "farmer@example.test")),
+        ("password1", "Choose a password that is not common or easy to guess."),
+        ("12345678", "Choose a password that is not common or easy to guess."),
+        ("Qwerty123", "Choose a password that is not common or easy to guess."),
+        (
+            "Farmer1234",
+            "Password must not contain common keyboard or sequential patterns.",
+        ),
     ],
 )
-def test_password_policy_accepts_strong_passwords(password, identifiers):
-    assert password_policy_error(password, identifiers) is None
+def test_password_policy_rejects_common_and_sequential_passwords(password, error):
+    assert password_policy_error(password) == error
 
 
-def test_password_policy_rejects_password_containing_account_identifier():
-    assert password_policy_error(
-        "Farmer!Harvest7Moon",
-        ("farmer-one", "farmer@example.test"),
-    ) == "Password must not contain your username or email address."
+@pytest.mark.parametrize("password", ["Farmer12", "Juanito8", "River Harvest7Moon"])
+def test_password_policy_accepts_names_with_eight_characters_and_a_number(password):
+    assert password_policy_error(password) is None
 
 
-def test_password_policy_enforces_maximum_length():
-    password = "Aa1!" + "x" * 125
-
-    assert password_policy_error(password) == (
-        "Password must be no more than 128 characters long."
+def test_password_policy_requires_a_number():
+    assert password_policy_error("FarmerName") == (
+        "Password must include at least one number."
     )
 
 
-def test_whitespace_does_not_satisfy_symbol_requirement():
-    assert password_policy_error("River Harvest7Moon") == (
-        "Password must include uppercase and lowercase letters, a number, and a symbol."
+def test_password_policy_enforces_maximum_length():
+    password = "A1" + "x" * 127
+
+    assert password_policy_error(password) == (
+        "Password must be no more than 128 characters long."
     )

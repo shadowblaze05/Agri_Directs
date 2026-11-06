@@ -134,9 +134,9 @@
         <a class="nav-link" href="/home"><i class="fas fa-home"></i> Home</a
         ><a class="nav-link" href="/dashboard"
           ><i class="fas fa-chart-line"></i> Dashboard</a
-        ><a class="nav-link" href="/upload"
+        >{% if session.get('role') != 'buyer' %}<a class="nav-link" href="/upload"
           ><i class="fas fa-upload"></i> Upload Harvest</a
-        >{% if session.get('role') == 'admin' %}<a
+        >{% endif %}{% if session.get('role') == 'admin' %}<a
           class="nav-link"
           href="/market-intelligence"
           ><i class="fas fa-brain"></i> Market Intelligence</a

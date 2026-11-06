@@ -15,6 +15,7 @@ from ..services.geotag_service import (
 )
 from ..services.crop_pricing import price_bounds, seller_price_error
 from ..services.upload_service import save_sanitized_public_image
+from ..services.auth_service import get_active_user_role
 
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
 
@@ -22,6 +23,20 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_IMAGES = 5
 MAX_LISTING_PHOTO_DISTANCE_METERS = 10_000
 MARKETPLACE_IMAGE_FORMATS = {'png': 'PNG', 'jpg': 'JPEG', 'jpeg': 'JPEG', 'gif': 'GIF', 'webp': 'WEBP'}
+
+
+def _seller_access_denied(json_response=False):
+    role = get_active_user_role(session.get("user"), get_db)
+    if role is None:
+        session.clear()
+        return (jsonify({"error": "Unauthorized"}), 401) if json_response else redirect("/login")
+    session["role"] = role
+    if role not in {"seller", "user", "admin"}:
+        if json_response:
+            return jsonify({"error": "Only Sellers can manage marketplace listings"}), 403
+        flash("Only Sellers can manage marketplace listings.", "warning")
+        return redirect("/marketplace")
+    return None
 
 
 class ListingThumbnailOutOfRange(ValueError):
@@ -155,6 +170,9 @@ def _validate_listing_thumbnail_capture(form, user, thumbnail):
 def validate_listing_thumbnail_location():
     if "user" not in session:
         return jsonify({"error": "Sign in before validating a listing photo."}), 401
+    access_denied = _seller_access_denied(json_response=True)
+    if access_denied:
+        return access_denied
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
@@ -302,6 +320,9 @@ def marketplace():
 def add_marketplace_listing():
     if "user" not in session:
         return redirect("/login")
+    access_denied = _seller_access_denied()
+    if access_denied:
+        return access_denied
 
     if request.method == "POST":
         crop_id = request.form.get("crop_id")
@@ -740,6 +761,9 @@ def _delivery_address_from_payload(payload):
 def update_marketplace_order_status(listing_id):
     if "user" not in session:
         return redirect("/login")
+    access_denied = _seller_access_denied()
+    if access_denied:
+        return access_denied
 
     requested_status = request.form.get("order_status")
     allowed_statuses = {"packing", "to_ship", "to_receive"}
@@ -821,6 +845,9 @@ def update_marketplace_order_status(listing_id):
 def complete_marketplace_order(listing_id):
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    access_denied = _seller_access_denied(json_response=True)
+    if access_denied:
+        return access_denied
 
     conn = get_db()
     cur = conn.cursor()
@@ -1045,6 +1072,9 @@ def rate_marketplace_seller(listing_id):
 def my_marketplace_listings():
     if "user" not in session:
         return redirect("/login")
+    access_denied = _seller_access_denied()
+    if access_denied:
+        return access_denied
 
     promote_due_preorders()
     cart_count = get_cart_count(session["user"])
@@ -1101,6 +1131,9 @@ def my_marketplace_listings():
 def my_marketplace_transactions():
     if "user" not in session:
         return redirect("/login")
+    access_denied = _seller_access_denied()
+    if access_denied:
+        return access_denied
 
     conn = get_db()
     cur = conn.cursor()
@@ -1142,6 +1175,9 @@ def my_marketplace_transactions():
 def delete_marketplace_listing(listing_id):
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    access_denied = _seller_access_denied()
+    if access_denied:
+        return jsonify({"error": "Only Sellers can manage marketplace listings"}), 403
 
     conn = get_db()
     cur = conn.cursor()
@@ -1173,6 +1209,9 @@ def delete_marketplace_listing(listing_id):
 def trade_marketplace_item(listing_id):
     if "user" not in session:
         return redirect("/login")
+    access_denied = _seller_access_denied()
+    if access_denied:
+        return access_denied
 
     conn = get_db()
     cur = conn.cursor()
@@ -1377,6 +1416,9 @@ def save_images_to_db(listing_id, files):
 def delete_listing_image(image_id):
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    access_denied = _seller_access_denied(json_response=True)
+    if access_denied:
+        return access_denied
 
     conn = get_db()
     cur = conn.cursor()
@@ -1427,6 +1469,9 @@ def delete_listing_image(image_id):
 def set_listing_thumbnail(image_id):
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    access_denied = _seller_access_denied(json_response=True)
+    if access_denied:
+        return access_denied
 
     conn = get_db()
     cur = conn.cursor()
@@ -1808,6 +1853,9 @@ def product_detail(listing_id):
 def edit_marketplace_listing(listing_id):
     if "user" not in session:
         return redirect("/login")
+    access_denied = _seller_access_denied()
+    if access_denied:
+        return access_denied
 
     conn = get_db()
     cur = conn.cursor()
@@ -2087,6 +2135,9 @@ def create_preorder(listing_id):
 def accept_preorder(order_id):
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    access_denied = _seller_access_denied(json_response=True)
+    if access_denied:
+        return access_denied
 
     conn = get_db()
     cur = conn.cursor()
@@ -2130,6 +2181,9 @@ def accept_preorder(order_id):
 def reject_preorder(order_id):
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
+    access_denied = _seller_access_denied(json_response=True)
+    if access_denied:
+        return access_denied
 
     data = request.get_json() or {}
     reason = (data.get("reason") or "").strip()
@@ -2310,6 +2364,9 @@ def my_preorders():
 def my_preorder_requests():
     if "user" not in session:
         return redirect("/login")
+    access_denied = _seller_access_denied()
+    if access_denied:
+        return access_denied
 
     promote_due_preorders()
 

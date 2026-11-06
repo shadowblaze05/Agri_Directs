@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-labelledby="title description">
+  <title id="title">A sunny farm ready for harvest</title>
+  <desc id="description">Green crop rows stretch across a sunny farm with a farmer tending the field.</desc>
+  <defs>
+    <linearGradient id="sky" x2="0" y2="1">
+      <stop stop-color="#b9e8f2"/>
+      <stop offset="1" stop-color="#eff8df"/>
+    </linearGradient>
+    <linearGradient id="field" x2="0" y2="1">
+      <stop stop-color="#83bd52"/>
+      <stop offset="1" stop-color="#386b2c"/>
+    </linearGradient>
+    <linearGradient id="sunlight" x2="1" y2="1">
+      <stop stop-color="#fff5c7"/>
+      <stop offset="1" stop-color="#f6c55c"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#sky)"/>
+  <circle cx="935" cy="170" r="78" fill="url(#sunlight)"/>
+  <g fill="#fff" opacity=".8">
+    <ellipse cx="212" cy="190" rx="78" ry="25"/>
+    <ellipse cx="173" cy="184" rx="34" ry="30"/>
+    <ellipse cx="230" cy="174" rx="42" ry="38"/>
+    <ellipse cx="715" cy="250" rx="66" ry="19"/>
+    <ellipse cx="683" cy="244" rx="29" ry="27"/>
+    <ellipse cx="731" cy="233" rx="35" ry="32"/>
+  </g>
+  <path d="M0 470 210 310l180 155 180-175 228 193 170-147 232 155v190H0Z" fill="#9acb85"/>
+  <path d="M0 515q220-120 420-20t390 0 390 4v175H0Z" fill="#5c9b47"/>
+  <path d="M0 594q220-90 440-8t390 0 370-5v319H0Z" fill="url(#field)"/>
+  <path d="M0 694q230-80 480 15t720-18" fill="none" stroke="#b6d976" stroke-width="16" opacity=".75"/>
+  <path d="M0 789q245-80 490 16t710-13" fill="none" stroke="#b6d976" stroke-width="13" opacity=".65"/>
+  <g transform="translate(168 420)">
+    <path d="M0 65 96 0l98 65v105H0Z" fill="#f3cf86"/>
+    <path d="M-12 69 96-7l111 76Z" fill="#b85e3e"/>
+    <rect x="76" y="106" width="43" height="64" rx="4" fill="#7e4c32"/>
+    <rect x="21" y="91" width="38" height="34" rx="3" fill="#b9e8f2"/>
+    <rect x="139" y="91" width="38" height="34" rx="3" fill="#b9e8f2"/>
+  </g>
+  <g transform="translate(730 405)">
+    <path d="M52 204q18-104 87-153" fill="none" stroke="#385e2d" stroke-width="20" stroke-linecap="round"/>
+    <path d="M122 74q-72 0-84-58 66-13 104 33M121 61q10-70 77-89 16 67-47 104" fill="#397b3d"/>
+    <path d="M-28 214q20-37 52-43l30-57q12-23 32-13 14 7 3 28l-15 30 55-2q28-1 35 19l9 36Z" fill="#24533b"/>
+    <circle cx="46" cy="132" r="29" fill="#bd7749"/>
+    <path d="M16 132q1-38 34-40 28 2 31 31l-65 9Z" fill="#e7b94f"/>
+    <path d="M19 219 9 264m126-45 19 45" stroke="#37533e" stroke-width="18" stroke-linecap="round"/>
+  </g>
+  <g fill="#377b3c">
+    <path d="M89 900q-12-123 33-200 35 88 10 200m70 0q-10-149 41-233 31 102 2 233m854 0q-14-134 31-212 36 96 9 212"/>
+  </g>
+  <g fill="#ec694d">
+    <circle cx="130" cy="752" r="22"/>
+    <circle cx="1044" cy="790" r="25"/>
+    <circle cx="1110" cy="844" r="19"/>
+  </g>
+  <g fill="#4a8f3f">
+    <path d="M130 730q-8-22-25-23 9 22 25 23m2 0q8-22 25-23-8 22-25 23"/>
+    <path d="M1044 765q-9-24-26-24 9 23 26 24m2 0q9-24 26-24-9 23-26 24"/>
+    <path d="M1110 824q-7-19-21-19 7 19 21 19m2 0q7-19 21-19-7 19-21 19"/>
+  </g>
+</svg>

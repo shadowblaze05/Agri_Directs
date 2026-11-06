@@ -18,6 +18,7 @@ def test_registration_requires_email_code_before_login(tmp_path, monkeypatch):
         "SQLALCHEMY_DATABASE_URI": f"sqlite:///{(tmp_path / 'verification.sqlite').as_posix()}",
         "MAIL_SUPPRESS_SEND": False,
         "MAIL_DEFAULT_SENDER": "noreply@example.test",
+        "AGRI_DIRECT_OFFICIAL_EMAIL": "official@example.test",
         "INITIAL_ADMIN_USERNAME": "verification-admin",
         "INITIAL_ADMIN_PASSWORD": "Verify!GardenBloom9",
     })
@@ -38,20 +39,21 @@ def test_registration_requires_email_code_before_login(tmp_path, monkeypatch):
             "confirm_password": "121212",
         })
         assert weak_response.status_code == 200
-        assert b"at least 12 characters" in weak_response.data
-        repeated_numbers_response = client.post("/register", data={
-            "username": "repeatednumbers",
+        assert b"at least 8 characters" in weak_response.data
+        missing_number_response = client.post("/register", data={
+            "username": "missingnumber",
             "first_name": "Repeated",
             "last_name": "Numbers",
-            "email": "repeatednumbers@example.test",
-            "password": "123123123123",
-            "confirm_password": "123123123123",
+            "email": "missingnumber@example.test",
+            "password": "FarmerName",
+            "confirm_password": "FarmerName",
         })
-        assert repeated_numbers_response.status_code == 200
+        assert missing_number_response.status_code == 200
+        assert b"at least one number" in missing_number_response.data
         with application.app_context():
             assert db.session.execute(text(
                 "SELECT COUNT(*) FROM users "
-                "WHERE username IN ('weakfarmer', 'repeatednumbers')"
+                "WHERE username IN ('weakfarmer', 'missingnumber')"
             )).scalar_one() == 0
 
         response = client.post("/register", data={
@@ -59,8 +61,8 @@ def test_registration_requires_email_code_before_login(tmp_path, monkeypatch):
             "first_name": "Verify",
             "last_name": "Farmer",
             "email": "verifyfarmer@example.test",
-            "password": "River!Harvest7Moon",
-            "confirm_password": "River!Harvest7Moon",
+            "password": "VerifyFarmer7",
+            "confirm_password": "VerifyFarmer7",
         })
         assert response.status_code == 302
         assert response.headers["Location"].endswith("/verify-email")
@@ -110,6 +112,12 @@ def test_registration_requires_email_code_before_login(tmp_path, monkeypatch):
         response = client.post("/verify-email", data={"code": code})
         assert response.status_code == 302
         assert response.headers["Location"].endswith("/login")
+        assert len(outbox) == 1
+        assert outbox[0].recipients == ["verifyfarmer@example.test"]
+        assert all(
+            message.subject != "Agri-Direct account successfully registered"
+            for message in outbox
+        )
         login_page = client.get("/login")
         assert b"alert-success" in login_page.data
         assert b"fa-check-circle" in login_page.data
@@ -127,7 +135,7 @@ def test_registration_requires_email_code_before_login(tmp_path, monkeypatch):
 
         response = client.post("/login", data={
             "username": "verifyfarmer",
-            "password": "River!Harvest7Moon",
+            "password": "VerifyFarmer7",
         })
         assert response.status_code == 302
         assert response.headers["Location"].endswith("/home")

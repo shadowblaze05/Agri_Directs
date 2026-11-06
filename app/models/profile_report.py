@@ -30,6 +30,8 @@ class ProfileReport(Model):
         nullable=True,
     )
     description = Column(Text, nullable=False)
+    evidence_filename = Column(String(255), nullable=True)
+    evidence_original_name = Column(String(255), nullable=True)
     status = Column(String(24), nullable=False, default="open", server_default="open")
     created_at = Column(
         DateTime(timezone=True),

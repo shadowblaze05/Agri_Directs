@@ -150,11 +150,13 @@
           ><i class="fas fa-leaf me-2"></i>Agri-Direct</a
         >
         <div class="d-flex gap-2">
+          {% if session.get('role') != 'buyer' %}
           <a
             class="btn btn-outline-light btn-sm"
             href="{{ url_for('my_marketplace_listings') }}"
             ><i class="fas fa-list me-1"></i>My Listings</a
           >
+          {% endif %}
           <a
             class="btn btn-outline-light btn-sm"
             href="{{ url_for('my_marketplace_purchases') }}"
