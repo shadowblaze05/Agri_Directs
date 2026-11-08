@@ -9,7 +9,6 @@ from .. import legacy as core
 from ..algorithms.market_analysis import build_market_analysis
 from ..legacy import logger
 from ..models.database import get_db, update_analytics
-from ..services.geo_service import geocode_location
 from ..services.market_intelligence import analyze_market_intelligence
 from ..services.market_intelligence.crop_recommendation import CropRecommendationService
 from ..services.market_intelligence.data_sources.price_data import build_price_snapshot
@@ -217,6 +216,19 @@ def portal_home():
 
 def about():
     return render_template("about.html")
+
+
+def terms_of_service():
+    return render_template("", legal_page="terms")
+
+
+def privacy_notice():
+    return render_template("", legal_page="privacy")
+
+
+def cookie_notice():
+    return render_template("", legal_page="cookies")
+
 
 def crop_types():
     if "user" not in session:
@@ -1130,56 +1142,21 @@ def locations():
     locations_data = cur.fetchall()
     location_count = len(locations_data)
 
-    # User locations
-    is_admin = session.get("role") == "admin"
-    if is_admin:
-        cur.execute("""
-        SELECT username, location
-        FROM users
-        WHERE location IS NOT NULL
-          AND location != ''
-        """)
-    else:
-        cur.execute("""
-        SELECT username, location
-        FROM users
-        WHERE location IS NOT NULL
-          AND location != ''
-          AND username = ?
-        """, (session["user"],))
-
-    user_locations_raw = cur.fetchall()
-
-    user_locations = []
-
-    for user in user_locations_raw:
-        lat, lng = geocode_location(user["location"])
-
-        user_locations.append({
-            "username": user["username"],
-            "location": user["location"],
-            "lat": lat,
-            "lng": lng
-        })
-
     conn.close()
 
     return render_template(
         "locations.html",
         locations=locations_data,
         location_count=location_count,
-        user_locations=user_locations
     )
 
 def messages_page():
-    """Display the main messaging page"""
     if "user" not in session:
         return redirect("/login")
     
     return render_template("messages.html")
 
 def get_conversations():
-    """Get list of conversations for current user"""
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
     
@@ -1244,7 +1221,6 @@ def get_conversations():
     return jsonify(conversations)
 
 def users_search():
-    """Search for users by username. Returns up to 20 matches excluding the current user."""
     if "user" not in session:
         return jsonify([])
 
@@ -1260,7 +1236,6 @@ def users_search():
     return jsonify([r[0] for r in rows])
 
 def get_messages(person):
-    """Get conversation history with a specific person"""
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
     
@@ -1292,7 +1267,6 @@ def get_messages(person):
     ])
 
 def send_chat_message():
-    """Send a message to a recipient"""
     if "user" not in session:
         return jsonify({"status": "error", "message": "Unauthorized"}), 401
     
@@ -1535,6 +1509,9 @@ def register(application):
     application.add_url_rule('/', endpoint='home', view_func=home)
     application.add_url_rule('/home', endpoint='portal_home', view_func=portal_home)
     application.add_url_rule('/about', endpoint='about', view_func=about)
+    application.add_url_rule('/terms', endpoint='terms_of_service', view_func=terms_of_service)
+    application.add_url_rule('/privacy', endpoint='privacy_notice', view_func=privacy_notice)
+    application.add_url_rule('/cookies', endpoint='cookie_notice', view_func=cookie_notice)
     application.add_url_rule('/crop-types', endpoint='crop_types', view_func=crop_types)
     application.add_url_rule('/market-intelligence', endpoint='market_intelligence', view_func=market_intelligence)
     application.add_url_rule('/market-intelligence/price-monitoring', endpoint='market_intelligence_price_monitoring', view_func=market_intelligence_price_monitoring)
@@ -1568,4 +1545,4 @@ def register(application):
         setattr(core, _name, globals()[_name])
 
 
-__all__ = ['home', 'portal_home', 'about', 'crop_types', 'market_intelligence', 'market_intelligence_price_monitoring', 'market_intelligence_crop_recommendations', 'market_intelligence_demand_forecasting', 'market_intelligence_supply_balance', 'dashboard', 'dashboard_data', 'api_market_insights', 'api_forecast', 'api_stats', 'get_users', 'bot_response', 'get_messagess', 'send_message', 'total_harvest', 'top_crop', 'locations', 'messages_page', 'get_conversations', 'users_search', 'get_messages', 'send_chat_message', 'message_attachment', 'api_current_user', 'notifications', 'notifications_unread_count', 'notification_center', 'notifications_mark_read']
+__all__ = ['home', 'portal_home', 'about', 'terms_of_service', 'privacy_notice', 'cookie_notice', 'crop_types', 'market_intelligence', 'market_intelligence_price_monitoring', 'market_intelligence_crop_recommendations', 'market_intelligence_demand_forecasting', 'market_intelligence_supply_balance', 'dashboard', 'dashboard_data', 'api_market_insights', 'api_forecast', 'api_stats', 'get_users', 'bot_response', 'get_messagess', 'send_message', 'total_harvest', 'top_crop', 'locations', 'messages_page', 'get_conversations', 'users_search', 'get_messages', 'send_chat_message', 'message_attachment', 'api_current_user', 'notifications', 'notifications_unread_count', 'notification_center', 'notifications_mark_read']

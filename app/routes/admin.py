@@ -11,7 +11,7 @@ from flask import Response, abort, current_app, flash, redirect, render_template
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy import func, or_, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.security import generate_password_hash
 
 from .. import legacy as core
@@ -448,6 +448,120 @@ def save_crop_pricing(crop_id):
 
 
 @_admin_required
+def save_crop_pricing_batch():
+    crop_ids = request.form.getlist("crop_id")
+    pricing_modes = request.form.getlist("pricing_mode")
+    reference_prices = request.form.getlist("reference_price")
+    price_ranges = request.form.getlist("price_range")
+    minimum_prices = request.form.getlist("minimum_price")
+    maximum_prices = request.form.getlist("maximum_price")
+    row_count = len(crop_ids)
+
+    if not row_count or row_count > 100 or any(
+        len(values) != row_count
+        for values in (
+            pricing_modes,
+            reference_prices,
+            price_ranges,
+            minimum_prices,
+            maximum_prices,
+        )
+    ):
+        flash("Add between 1 and 100 complete crop price rules.", "danger")
+        return _redirect_admin("admin_catalog")
+
+    prepared_rules = []
+    seen_crop_ids = set()
+    try:
+        for index, crop_id_value in enumerate(crop_ids):
+            crop_id = int(crop_id_value)
+            if crop_id <= 0 or crop_id in seen_crop_ids:
+                raise ValueError("Choose a different crop for each price rule.")
+            seen_crop_ids.add(crop_id)
+            pricing_mode = pricing_modes[index]
+            if pricing_mode == "none":
+                rule = None
+            elif pricing_mode in {"range", "bounds"}:
+                rule = parse_pricing_rule(
+                    pricing_mode,
+                    "kg",
+                    reference_prices[index].strip(),
+                    price_ranges[index].strip(),
+                    minimum_prices[index].strip(),
+                    maximum_prices[index].strip(),
+                )
+            else:
+                raise ValueError("Select a valid crop pricing method.")
+            prepared_rules.append((crop_id, pricing_mode, rule))
+    except (TypeError, ValueError) as error:
+        flash(f"Crop price rule validation failed: {error}", "danger")
+        return _redirect_admin("admin_catalog")
+
+    imported_crop_ids = {
+        int(crop_id)
+        for crop_id in session.get("crop_pricing_import_crop_ids", [])
+    }
+    if not imported_crop_ids or not seen_crop_ids.issubset(imported_crop_ids):
+        flash("Choose crops from the most recently imported file.", "danger")
+        return _redirect_admin("admin_catalog")
+
+    conn = get_db()
+    cur = conn.cursor()
+    placeholders = ", ".join("?" for _ in seen_crop_ids)
+    existing_crop_ids = {
+        row["id"]
+        for row in cur.execute(
+            f"SELECT id FROM crops WHERE id IN ({placeholders})",
+            tuple(seen_crop_ids),
+        ).fetchall()
+    }
+    if existing_crop_ids != seen_crop_ids:
+        conn.close()
+        flash("One or more selected crops no longer exist. No rules were saved.", "danger")
+        return _redirect_admin("admin_catalog")
+
+    try:
+        for crop_id, pricing_mode, rule in prepared_rules:
+            if pricing_mode == "none":
+                cur.execute("DELETE FROM crop_pricing WHERE crop_id=?", (crop_id,))
+                continue
+            cur.execute(
+                """INSERT INTO crop_pricing(
+                       crop_id, pricing_mode, reference_price, price_range,
+                       minimum_price, maximum_price, price_unit
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(crop_id) DO UPDATE SET
+                       pricing_mode=excluded.pricing_mode,
+                       reference_price=excluded.reference_price,
+                       price_range=excluded.price_range,
+                       minimum_price=excluded.minimum_price,
+                       maximum_price=excluded.maximum_price,
+                       price_unit=excluded.price_unit""",
+                (
+                    crop_id,
+                    rule["pricing_mode"],
+                    rule["reference_price"],
+                    rule["price_range"],
+                    rule["minimum_price"],
+                    rule["maximum_price"],
+                    rule["price_unit"],
+                ),
+            )
+        conn.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+        current_app.logger.exception("Batch crop pricing save failed")
+        conn.close()
+        flash("Crop price rules could not be saved. No changes were committed.", "danger")
+        return _redirect_admin("admin_catalog")
+
+    conn.close()
+    session.pop("crop_pricing_import_crop_ids", None)
+    flash(f"Saved price rules for {row_count} crop(s).", "success")
+    return _redirect_admin("admin_catalog")
+
+
+@_admin_required
 def download_crop_pricing_template():
     output = io.StringIO(newline="")
     writer = csv.writer(output)
@@ -456,8 +570,11 @@ def download_crop_pricing_template():
             "crop_name",
             "category_name",
             "price_unit",
+            "price",
         )
     )
+    writer.writerow(("Rice", "Grains", "kg", "50"))
+    writer.writerow(("Tomato", "Vegetables", "kg", "40"))
     return Response(
         output.getvalue(),
         mimetype="text/csv",
@@ -510,7 +627,7 @@ def import_crop_pricing():
             flash("The Excel file is invalid or cannot be opened.", "danger")
             return _redirect_admin("admin_catalog")
 
-    expected_headers = {"crop_name", "category_name", "price_unit"}
+    expected_headers = {"crop_name", "category_name", "price_unit", "price"}
     headers = [
         str(header).strip().lower().replace(" ", "_") if header is not None else ""
         for header in (header_row or ())
@@ -529,7 +646,7 @@ def import_crop_pricing():
             workbook.close()
         flash(
             "The file must contain only these columns: "
-            "crop_name, category_name, price_unit.",
+            "crop_name, category_name, price_unit, price.",
             "danger",
         )
         return _redirect_admin("admin_catalog")
@@ -566,12 +683,24 @@ def import_crop_pricing():
                 raise ValueError(
                     f"Row {row_number} ({crop_name}): price_unit must be kg."
                 )
+            try:
+                price_rule = parse_pricing_rule(
+                    "range",
+                    "kg",
+                    record.get("price"),
+                    request.form.get("price_range", ""),
+                    "",
+                    "",
+                )
+            except ValueError as error:
+                raise ValueError(f"Row {row_number} ({crop_name}): {error}") from error
             prepared_rows.append(
                 {
                     "row_number": row_number,
                     "crop_name": crop_name,
                     "category_name": category_name,
                     "price_unit": "kg",
+                    "price_rule": price_rule,
                 }
             )
     except (csv.Error, ParseError, ValueError) as error:
@@ -585,21 +714,6 @@ def import_crop_pricing():
     if not prepared_rows:
         flash("The file contains no crop pricing rows to import.", "danger")
         return _redirect_admin("admin_catalog")
-
-    shared_rule = None
-    if request.form.get("apply_pricing_rule") == "1":
-        try:
-            shared_rule = parse_pricing_rule(
-                _form_value("pricing_mode"),
-                "kg",
-                _form_value("reference_price"),
-                _form_value("price_range"),
-                _form_value("minimum_price"),
-                _form_value("maximum_price"),
-            )
-        except ValueError as error:
-            flash(f"Shared price rule: {error}", "danger")
-            return _redirect_admin("admin_catalog")
 
     conn = get_db()
     cur = conn.cursor()
@@ -669,45 +783,41 @@ def import_crop_pricing():
         record["crop_id"] = cur.fetchone()["id"]
         new_crop_count += 1
 
-    if shared_rule:
-        for record in prepared_rows:
-            cur.execute(
-                """INSERT INTO crop_pricing(
-                       crop_id, pricing_mode, reference_price, price_range,
-                       minimum_price, maximum_price, price_unit
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(crop_id) DO UPDATE SET
-                       pricing_mode=excluded.pricing_mode,
-                       reference_price=excluded.reference_price,
-                       price_range=excluded.price_range,
-                       minimum_price=excluded.minimum_price,
-                       maximum_price=excluded.maximum_price,
-                       price_unit=excluded.price_unit""",
-                (
-                    record["crop_id"],
-                    shared_rule["pricing_mode"],
-                    shared_rule["reference_price"],
-                    shared_rule["price_range"],
-                    shared_rule["minimum_price"],
-                    shared_rule["maximum_price"],
-                    shared_rule["price_unit"],
-                ),
-            )
+    for record in prepared_rows:
+        rule = record["price_rule"]
+        cur.execute(
+            """INSERT INTO crop_pricing(
+                   crop_id, pricing_mode, reference_price, price_range,
+                   minimum_price, maximum_price, price_unit
+               ) VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(crop_id) DO UPDATE SET
+                   pricing_mode=excluded.pricing_mode,
+                   reference_price=excluded.reference_price,
+                   price_range=excluded.price_range,
+                   minimum_price=excluded.minimum_price,
+                   maximum_price=excluded.maximum_price,
+                   price_unit=excluded.price_unit""",
+            (
+                record["crop_id"],
+                rule["pricing_mode"],
+                rule["reference_price"],
+                rule["price_range"],
+                rule["minimum_price"],
+                rule["maximum_price"],
+                rule["price_unit"],
+            ),
+        )
 
     conn.commit()
     conn.close()
-    if shared_rule:
-        flash(
-            f"Imported {len(prepared_rows)} crop(s), added {new_crop_count} "
-            "new crop(s), and applied the shared price rule.",
-            "success",
-        )
-    else:
-        flash(
-            f"Imported {len(prepared_rows)} crop(s); added {new_crop_count} "
-            "new crop(s). Set each crop's price rule in the catalog.",
-            "success",
-        )
+    session["crop_pricing_import_crop_ids"] = [
+        record["crop_id"] for record in prepared_rows
+    ]
+    flash(
+        f"Import successful: added {new_crop_count} new crop(s) and updated "
+        f"prices for {len(prepared_rows)} crop(s).",
+        "success",
+    )
     return _redirect_admin("admin_catalog")
 
 
@@ -1095,6 +1205,12 @@ def admin_catalog():
            ORDER BY crops.crops_name"""
     ).fetchall()
     conn.close()
+    imported_crop_ids = session.get("crop_pricing_import_crop_ids", [])
+    if imported_crop_ids:
+        imported_crop_ids = {int(crop_id) for crop_id in imported_crop_ids}
+        all_crops = [crop for crop in all_crops if crop["id"] in imported_crop_ids]
+    else:
+        all_crops = []
     crop_price_bounds = {
         crop["id"]: price_bounds(crop)
         for crop in crops
@@ -1110,6 +1226,8 @@ def admin_catalog():
         search=search,
         category_filter=category_filter,
         crop_filter=crop_filter,
+        pricing_rule_row_count=1,
+        has_imported_crops=bool(imported_crop_ids),
     )
 
 
@@ -1778,6 +1896,7 @@ def register(application):
     application.add_url_rule('/admin/crops/create', endpoint='create_crop', view_func=create_crop, methods=['POST'])
     application.add_url_rule('/admin/crops/edit/<int:crop_id>', endpoint='edit_crop', view_func=edit_crop, methods=['POST'])
     application.add_url_rule('/admin/crops/<int:crop_id>/pricing', endpoint='save_crop_pricing', view_func=save_crop_pricing, methods=['POST'])
+    application.add_url_rule('/admin/catalog/pricing/batch', endpoint='save_crop_pricing_batch', view_func=save_crop_pricing_batch, methods=['POST'])
     application.add_url_rule('/admin/crops/delete/<int:crop_id>', endpoint='delete_crop', view_func=delete_crop, methods=['POST'])
     application.add_url_rule('/admin/knowledge-categories/create', endpoint='create_knowledge_category', view_func=create_knowledge_category, methods=['POST'])
     application.add_url_rule('/admin/knowledge-categories/edit/<int:category_id>', endpoint='edit_knowledge_category', view_func=edit_knowledge_category, methods=['POST'])
@@ -1798,7 +1917,7 @@ __all__ = [
     'admin_review_geotag', 'admin_knowledge_categories',
     'create_admin_user', 'edit_admin_user', 'delete_admin_user',
     'create_crop_category', 'edit_crop_category', 'delete_crop_category',
-    'create_crop', 'edit_crop', 'save_crop_pricing', 'import_crop_pricing',
+    'create_crop', 'edit_crop', 'save_crop_pricing', 'save_crop_pricing_batch', 'import_crop_pricing',
     'download_crop_pricing_template', 'delete_crop',
     'create_knowledge_category', 'edit_knowledge_category', 'delete_knowledge_category',
     'page_not_found', 'internal_error'

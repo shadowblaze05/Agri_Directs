@@ -52,14 +52,31 @@ def validate_security_config(config):
         raise RuntimeError("DEBUG must be disabled in production")
     if not config.get("SESSION_COOKIE_SECURE"):
         raise RuntimeError("SESSION_COOKIE_SECURE must be enabled in production")
-    if not str(config.get("APP_BASE_URL", "")).lower().startswith("https://"):
+    base_url = urlsplit(str(config.get("APP_BASE_URL", "")))
+    if base_url.scheme.lower() != "https" or not base_url.hostname:
         raise RuntimeError("APP_BASE_URL must use HTTPS in production")
 
     database_url = make_url(config["SQLALCHEMY_DATABASE_URI"])
     if database_url.get_backend_name() != "postgresql":
         raise RuntimeError("Production must use PostgreSQL")
+    if not database_url.username or not database_url.database:
+        raise RuntimeError("Production requires a named PostgreSQL role and database")
     if (database_url.username or "").lower() == "postgres":
         raise RuntimeError("Production must use a least-privilege PostgreSQL role, not postgres")
+    if not config.get("SESSION_COOKIE_HTTPONLY"):
+        raise RuntimeError("SESSION_COOKIE_HTTPONLY must be enabled in production")
+    if str(config.get("SESSION_COOKIE_SAMESITE", "")).lower() not in {"lax", "strict"}:
+        raise RuntimeError("SESSION_COOKIE_SAMESITE must be Lax or Strict in production")
+
+    mail_server = str(config.get("MAIL_SERVER", "")).strip().lower()
+    if not mail_server or mail_server == "localhost":
+        raise RuntimeError("Production requires a configured SMTP MAIL_SERVER")
+    if not str(config.get("MAIL_DEFAULT_SENDER", "")).strip():
+        raise RuntimeError("Production requires MAIL_DEFAULT_SENDER")
+    if config.get("MAIL_SUPPRESS_SEND"):
+        raise RuntimeError("MAIL_SUPPRESS_SEND must be disabled in production")
+    if bool(config.get("MAIL_USE_TLS")) == bool(config.get("MAIL_USE_SSL")):
+        raise RuntimeError("Production SMTP must enable exactly one of TLS or SSL")
 
 
 class Config:

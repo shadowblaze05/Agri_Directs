@@ -3,11 +3,26 @@ from pathlib import Path
 import sys
 
 from PIL import Image
+import pytest
+from flask import session as flask_session
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app as app_module
 from app.routes import home as home_routes
+
+
+@pytest.fixture(autouse=True)
+def session_role_lookup(monkeypatch):
+    monkeypatch.setattr(
+        app_module,
+        "get_active_user_role",
+        lambda username: (
+            flask_session.get("role", "user")
+            if flask_session.get("user") == username
+            else None
+        ),
+    )
 
 
 class FakeCursor:

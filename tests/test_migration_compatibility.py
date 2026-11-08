@@ -27,6 +27,15 @@ def run_upgrade(connection, migration, monkeypatch):
     migration.upgrade()
 
 
+def run_downgrade(connection, migration, monkeypatch):
+    monkeypatch.setattr(
+        migration,
+        "op",
+        Operations(MigrationContext.configure(connection)),
+    )
+    migration.downgrade()
+
+
 def test_schema_ahead_of_revision_can_upgrade_without_duplicate_columns_or_data_loss(monkeypatch):
     engine = create_engine("sqlite://")
     with engine.begin() as connection:
@@ -190,3 +199,30 @@ def test_profile_report_migration_creates_report_table_and_review_index(monkeypa
             "reviewed_at",
         } <= report_columns
         assert "ix_profile_reports_status_created" in report_indexes
+
+
+def test_profile_report_evidence_migration_can_be_rolled_back(monkeypatch):
+    engine = create_engine("sqlite://")
+    migration = load_migration("71a6d9c2e8f4_add_profile_report_evidence.py")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE profile_reports (id INTEGER PRIMARY KEY)"
+        ))
+
+        run_upgrade(connection, migration, monkeypatch)
+        assert {
+            "evidence_filename",
+            "evidence_original_name",
+        } <= {
+            column["name"]
+            for column in inspect(connection).get_columns("profile_reports")
+        }
+
+        run_downgrade(connection, migration, monkeypatch)
+        assert {
+            "evidence_filename",
+            "evidence_original_name",
+        }.isdisjoint({
+            column["name"]
+            for column in inspect(connection).get_columns("profile_reports")
+        })

@@ -171,6 +171,12 @@
                            required minlength="8" maxlength="128" autocomplete="new-password">
                 </div>
 
+                <p class="small text-muted">
+                    Please review our draft
+                    <a href="{{ url_for('terms_of_service') }}">Terms</a>,
+                    <a href="{{ url_for('privacy_notice') }}">Privacy Notice</a>,
+                    and <a href="{{ url_for('cookie_notice') }}">Cookie Notice</a>.
+                </p>
                 <button type="submit" class="btn btn-register w-100 text-white">
                     <i class="fas fa-check"></i> Create Account
                 </button>

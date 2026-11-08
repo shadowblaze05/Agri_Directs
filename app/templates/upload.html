@@ -272,6 +272,17 @@
                   class="d-none"
                 />
               </div>
+              <div class="text-center mt-3">
+                <a
+                  class="btn btn-outline-success btn-sm"
+                  href="{{ url_for('download_harvest_template') }}"
+                >
+                  <i class="fas fa-download"></i> Download CSV template
+                </a>
+                <p class="form-text mb-0">
+                  Use the columns crop_name, quantity, and date_received (YYYY-MM-DD).
+                </p>
+              </div>
               <div class="file-name" id="fileName">
                 <small
                   ><i class="fas fa-file"></i> Selected:

@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+from flask import session as flask_session
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app as app_module
@@ -79,9 +81,16 @@ class FakeConnection:
         return None
 
 
+def _session_role_for_test(username):
+    if flask_session.get("user") != username:
+        return None
+    return flask_session.get("role", "user")
+
+
 def test_admin_transactions_lists_completed_and_incomplete_orders(monkeypatch):
     connection = FakeConnection()
     monkeypatch.setattr(admin_routes, "get_db", lambda: connection)
+    monkeypatch.setattr(app_module, "get_active_user_role", _session_role_for_test)
     app_module.app.config.update(TESTING=True)
 
     with app_module.app.test_client() as client:
@@ -104,6 +113,7 @@ def test_admin_transactions_lists_completed_and_incomplete_orders(monkeypatch):
 def test_admin_transactions_requires_admin_role(monkeypatch):
     connection = FakeConnection(role="user")
     monkeypatch.setattr(admin_routes, "get_db", lambda: connection)
+    monkeypatch.setattr(app_module, "get_active_user_role", _session_role_for_test)
     with app_module.app.test_client() as client:
         with client.session_transaction() as session:
             session["user"] = "regular-user"
@@ -118,6 +128,7 @@ def test_admin_transactions_requires_admin_role(monkeypatch):
 def test_demoted_admin_session_loses_admin_console_access(monkeypatch):
     connection = FakeConnection(role="user")
     monkeypatch.setattr(admin_routes, "get_db", lambda: connection)
+    monkeypatch.setattr(app_module, "get_active_user_role", _session_role_for_test)
 
     with app_module.app.test_client() as client:
         with client.session_transaction() as session:

@@ -73,6 +73,15 @@ def create_app(config_overrides=None):
     from . import routes
     routes.register_routes(app)
 
+    @app.cli.command("init-db")
+    def initialize_database():
+        """Create compatibility tables and bootstrap the initial administrator."""
+        from .models.database import init_db as initialize_legacy_database
+
+        with app.app_context():
+            initialize_legacy_database()
+        app.logger.info("Database initialization completed")
+
     @app.before_request
     def start_request_timer():
         g.request_started_at = time.perf_counter()

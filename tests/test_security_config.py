@@ -19,8 +19,15 @@ def production_config(**overrides):
         "JWT_SECRET": "j" * 48,
         "SQLALCHEMY_DATABASE_URI": "postgresql+psycopg2://agridirect_app@db/agri_direct",
         "SESSION_COOKIE_SECURE": True,
+        "SESSION_COOKIE_HTTPONLY": True,
+        "SESSION_COOKIE_SAMESITE": "Lax",
         "APP_BASE_URL": "https://agridirect.example",
         "RATELIMIT_STORAGE_URI": "redis://redis:6379/0",
+        "MAIL_SERVER": "smtp.example.test",
+        "MAIL_DEFAULT_SENDER": "noreply@example.test",
+        "MAIL_SUPPRESS_SEND": False,
+        "MAIL_USE_TLS": True,
+        "MAIL_USE_SSL": False,
     }
     config.update(overrides)
     return config
@@ -38,10 +45,21 @@ def test_production_configuration_accepts_secure_values():
         ("DEBUG", True),
         ("SESSION_COOKIE_SECURE", False),
         ("APP_BASE_URL", "http://agridirect.example"),
+        ("APP_BASE_URL", "https://"),
         ("RATELIMIT_STORAGE_URI", "memory://"),
+        ("SESSION_COOKIE_HTTPONLY", False),
+        ("SESSION_COOKIE_SAMESITE", "None"),
+        ("MAIL_SERVER", "localhost"),
+        ("MAIL_DEFAULT_SENDER", ""),
+        ("MAIL_SUPPRESS_SEND", True),
+        ("MAIL_USE_SSL", True),
         (
             "SQLALCHEMY_DATABASE_URI",
             "postgresql+psycopg2://postgres@db/agri_direct",
+        ),
+        (
+            "SQLALCHEMY_DATABASE_URI",
+            "postgresql+psycopg2:///agri_direct",
         ),
     ],
 )
@@ -65,9 +83,6 @@ def test_browser_mutations_require_same_origin(monkeypatch, tmp_path):
     )
 
     with application.test_client() as client:
-        with client.session_transaction() as user_session:
-            user_session["user"] = "farmer"
-
         assert client.post("/csrf-probe").status_code == 403
         assert client.post("/csrf-probe", headers={"Origin": "https://attacker.example"}).status_code == 403
         assert client.post("/csrf-probe", headers={"Origin": "http://localhost"}).status_code == 200
@@ -102,8 +117,8 @@ def test_login_rate_limit_returns_429(monkeypatch, tmp_path):
             for _ in range(6)
         ]
 
-    assert [response.status_code for response in responses[:5]] == [200] * 5
-    assert responses[5].status_code == 429
+    assert [response.status_code for response in responses[:3]] == [200] * 3
+    assert [response.status_code for response in responses[3:]] == [429] * 3
 
 
 def test_security_headers_are_set_and_hsts_requires_secure_cookie_config(tmp_path):

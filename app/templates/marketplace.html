@@ -289,7 +289,7 @@
 
             <!-- Filters -->
             <div class="row mb-4">
-                <div class="col-md-6">
+                <div class="col-md-3">
                     <input type="text" class="form-control" id="searchMarketplace" placeholder="Search listings..." oninput="filterListings()">
                 </div>
                 <div class="col-md-3">
@@ -298,6 +298,14 @@
                         {% for crop in crops %}
                         <option value="{{ crop['crops_name'] }}">{{ crop['crops_name'] }}</option>
                         {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="filterListingType" onchange="filterListings()" aria-label="Filter by listing type">
+                        <option value="" {% if not default_listing_type %}selected{% endif %}>All Listing Types</option>
+                        <option value="standard" {% if default_listing_type == 'standard' %}selected{% endif %}>Standard</option>
+                        <option value="preorder" {% if default_listing_type == 'preorder' %}selected{% endif %}>Pre-order</option>
+                        <option value="looking_for" {% if default_listing_type == 'looking_for' %}selected{% endif %}>Looking For</option>
                     </select>
                 </div>
                 <div class="col-md-3">
@@ -317,6 +325,7 @@
                     {% for listing in listings %}
                     <div class="listing-item" 
                          data-crop="{{ listing['crop_name'] }}"
+                         data-listing-type="{{ listing['listing_type'] or 'standard' }}"
                          data-price="{{ listing['price'] }}"
                          data-amount="{{ listing['amount'] }}"
                          data-date="{{ listing['listing_date'] }}">
@@ -423,6 +432,7 @@
         function filterListings() {
             const search = document.getElementById('searchMarketplace').value.toLowerCase();
             const cropFilter = document.getElementById('filterCrop').value;
+            const listingTypeFilter = document.getElementById('filterListingType').value;
             const sort = document.getElementById('filterSort').value;
             
             const items = document.querySelectorAll('.listing-item');
@@ -436,6 +446,7 @@
                 let show = true;
                 if (search && !searchText.includes(search)) show = false;
                 if (cropFilter && crop !== cropFilter.toLowerCase()) show = false;
+                if (listingTypeFilter && item.dataset.listingType !== listingTypeFilter) show = false;
                 
                 item.style.display = show ? 'block' : 'none';
                 if (show) visibleItems.push(item);
@@ -462,6 +473,8 @@
                 visibleItems.forEach(item => container.appendChild(item));
             }
         }
+
+        filterListings();
     </script>
 </body>
 </html>

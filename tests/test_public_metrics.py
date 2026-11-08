@@ -193,6 +193,11 @@ def test_dashboard_inventory_refresh_is_scoped_for_users_and_global_for_admins(m
 
     connection = InventoryConnection()
     monkeypatch.setattr(home_routes, "get_db", lambda: connection)
+    monkeypatch.setattr(
+        app_module,
+        "get_active_user_role",
+        lambda username: "admin" if username == "admin" else "user",
+    )
     app_module.app.config.update(TESTING=True)
 
     with app_module.app.test_client() as client:
@@ -205,6 +210,7 @@ def test_dashboard_inventory_refresh_is_scoped_for_users_and_global_for_admins(m
         assert connection.fake_cursor.params == ("farmer-one",)
 
         with client.session_transaction() as user_session:
+            user_session["user"] = "admin"
             user_session["role"] = "admin"
         connection.fake_cursor.role = "admin"
         response = client.get("/dashboard-data")
@@ -249,6 +255,7 @@ def test_stats_api_scopes_every_inventory_query_to_non_admin(monkeypatch):
 
     connection = StatsConnection()
     monkeypatch.setattr(home_routes, "get_db", lambda: connection)
+    monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "user")
     app_module.app.config.update(TESTING=True)
 
     with app_module.app.test_client() as client:
@@ -267,7 +274,7 @@ def test_stats_api_scopes_every_inventory_query_to_non_admin(monkeypatch):
     assert all("farmer-one" in params for _, params in inventory_queries)
 
 
-def test_locations_map_only_includes_other_users_for_admins(monkeypatch):
+def test_locations_page_scopes_harvest_by_user_without_a_map(monkeypatch):
     class LocationCursor:
         def __init__(self, role):
             self.calls = []
@@ -302,7 +309,11 @@ def test_locations_map_only_includes_other_users_for_admins(monkeypatch):
         return connection
 
     monkeypatch.setattr(home_routes, "get_db", create_connection)
-    monkeypatch.setattr(home_routes, "geocode_location", lambda _location: (0, 0))
+    monkeypatch.setattr(
+        app_module,
+        "get_active_user_role",
+        lambda username: "admin" if username == "admin" else "user",
+    )
     app_module.app.config.update(TESTING=True)
 
     with app_module.app.test_client() as client:
@@ -311,8 +322,11 @@ def test_locations_map_only_includes_other_users_for_admins(monkeypatch):
             user_session["role"] = "user"
         response = client.get("/locations")
         assert response.status_code == 200
-    user_query, user_params = connections[1].fake_cursor.calls[-1]
-    assert "username = ?" in user_query
+        assert b"Farmer Locations Map" not in response.data
+        assert b"Location Inventory" in response.data
+    user_query, user_params = connections[1].fake_cursor.calls[0]
+    assert "FROM inventory" in user_query
+    assert "farmer = ?" in user_query
     assert user_params == ("farmer-one",)
 
     with app_module.app.test_client() as client:
@@ -321,6 +335,8 @@ def test_locations_map_only_includes_other_users_for_admins(monkeypatch):
             admin_session["role"] = "admin"
         response = client.get("/locations")
         assert response.status_code == 200
-    admin_query, admin_params = connections[3].fake_cursor.calls[-1]
-    assert "username = ?" not in admin_query
+        assert b"Farmer Locations Map" not in response.data
+    admin_query, admin_params = connections[3].fake_cursor.calls[0]
+    assert "FROM inventory" in admin_query
+    assert "farmer = ?" not in admin_query
     assert admin_params == ()

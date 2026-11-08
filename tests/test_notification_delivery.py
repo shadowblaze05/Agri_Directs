@@ -54,6 +54,7 @@ def test_unread_notification_count_is_scoped_to_signed_in_user(monkeypatch):
             pass
 
     monkeypatch.setattr(home_routes, "get_db", Connection)
+    monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "user")
     with app_module.app.test_client() as client:
         with client.session_transaction() as user_session:
             user_session["user"] = "farmer-one"

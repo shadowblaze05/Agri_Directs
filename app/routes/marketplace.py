@@ -314,7 +314,12 @@ def marketplace():
                          crops=crops,
                          pending_ratings=pending_ratings,
                          cart_count=cart_count,
-                         image_counts=image_counts)
+                         image_counts=image_counts,
+                         default_listing_type=(
+                             "standard"
+                             if session.get("role") == "buyer"
+                             else "looking_for"
+                         ))
 
 
 def add_marketplace_listing():

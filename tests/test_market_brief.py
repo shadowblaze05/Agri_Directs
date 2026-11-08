@@ -93,6 +93,7 @@ def test_market_intelligence_apis_use_the_shared_harvest_dataset(
 
     monkeypatch.setattr(home_routes, "get_db", _inventory_connection)
     monkeypatch.setattr(home_routes, "analyze_market_intelligence", analyze)
+    monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "user")
 
     with app_module.app.test_client() as client:
         with client.session_transaction() as user_session:
@@ -148,6 +149,7 @@ def test_market_intelligence_page_is_admin_only(monkeypatch):
     monkeypatch.setattr(
         home_routes, "get_active_user_role", lambda *_args: "user"
     )
+    monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "user")
     with app_module.app.test_client() as client:
         with client.session_transaction() as user_session:
             user_session["user"] = "farmer"
@@ -165,6 +167,7 @@ def test_market_brief_remains_visible_on_dashboard_for_regular_users(monkeypatch
     monkeypatch.setattr(
         home_routes, "get_active_user_role", lambda *_args: "user"
     )
+    monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "user")
     monkeypatch.setattr(
         home_routes, "_market_analysis_context", _sample_market_analysis
     )
@@ -190,6 +193,7 @@ def test_dashboard_displays_the_market_brief(monkeypatch):
     monkeypatch.setattr(
         home_routes, "_market_analysis_context", _sample_market_analysis
     )
+    monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "user")
     with app_module.app.test_client() as client:
         with client.session_transaction() as user_session:
             user_session["user"] = "farmer"
@@ -208,6 +212,7 @@ def test_signed_in_home_displays_the_market_brief(monkeypatch):
     monkeypatch.setattr(
         home_routes, "_market_analysis_context", _sample_market_analysis
     )
+    monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "user")
     with app_module.app.test_client() as client:
         with client.session_transaction() as user_session:
             user_session["user"] = "farmer"
@@ -287,6 +292,7 @@ def test_market_charts_remain_admin_only(monkeypatch):
     monkeypatch.setattr(
         home_routes, "get_active_user_role", lambda *_args: "user"
     )
+    monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "user")
     with app_module.app.test_client() as client:
         with client.session_transaction() as user_session:
             user_session["user"] = "farmer"
@@ -302,6 +308,7 @@ def test_admin_market_summary_keeps_the_detailed_chart(monkeypatch):
     monkeypatch.setattr(
         home_routes, "_market_analysis_context", _sample_market_analysis
     )
+    monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "admin")
     with app_module.app.test_client() as client:
         with client.session_transaction() as user_session:
             user_session["user"] = "admin"

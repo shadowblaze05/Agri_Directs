@@ -25,6 +25,16 @@
             </div>
         </div>
 
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+            {% set alert_class = category if category in ['success', 'danger', 'warning', 'info'] else 'info' %}
+            <div class="alert alert-{{ alert_class }} alert-dismissible fade show mt-3" role="status">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endfor %}
+        {% endwith %}
+
         <form method="get" class="row g-2 my-3 align-items-end" id="catalogFilters">
             <div class="col-md-4">
                 <label class="form-label" for="cropSearch">Search</label>
@@ -61,97 +71,99 @@
             <div class="card-body">
                 <h2 class="h5">Import crop prices</h2>
                 <p class="text-muted">
-                    Upload a CSV or Excel workbook (.xlsx) to add new crops or update crop categories.
-                    All rows and any selected shared price rule are validated before anything is saved.
+                    Upload a CSV or Excel workbook (.xlsx) to add crops or update crop categories and prices.
+                    Every row is validated before anything is saved.
                 </p>
                 <p class="small mb-3">
                     The file must contain only these columns:
-                    <code>crop_name, category_name, price_unit</code>.
-                    Enter <code>kg</code> for every price unit. Category may be blank; new categories in the file are added automatically.
+                    <code>crop_name, category_name, price_unit, price</code>.
+                    Enter <code>kg</code> for every price unit and a specific price (₱/kg) for each crop.
+                    Category may be blank; new categories in the file are added automatically.
                     For an existing crop, a supplied category must match its current category.
-                    If no shared rule is selected, the file adds crops/categories without changing existing prices; use the crop rule editor below to set rules individually.
+                    The range below applies to each crop's price from the file.
                 </p>
                 <form method="post" enctype="multipart/form-data" action="{{ url_for('import_crop_pricing') }}" id="cropPricingImportForm">
                     <div class="d-flex flex-wrap gap-2 align-items-center">
                         <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('download_crop_pricing_template') }}">Download CSV template</a>
                         <label class="visually-hidden" for="cropPricingFile">CSV or Excel pricing file</label>
                         <input id="cropPricingFile" name="file" class="form-control form-control-sm" type="file" accept=".csv,.xlsx" required>
-                        <button class="btn btn-success btn-sm">Validate and import</button>
                     </div>
-                    <div class="form-check mt-3">
-                        <input class="form-check-input" type="checkbox" value="1" id="applyImportPriceRule" name="apply_pricing_rule">
-                        <label class="form-check-label fw-semibold" for="applyImportPriceRule">Apply one price rule to every crop in this file</label>
-                    </div>
-                    <div class="row g-2 mt-1" id="importPriceRuleFields">
+                    <div class="row g-2 align-items-end mt-2">
                         <div class="col-md-3">
                             <label class="form-label small" for="importPricingMode">Price rule</label>
-                            <select id="importPricingMode" name="pricing_mode" class="form-select form-select-sm" disabled>
-                                <option value="range">Specific price + range</option>
-                                <option value="bounds">Minimum + maximum</option>
-                            </select>
+                            <input id="importPricingMode" class="form-control form-control-sm" value="Specific price + range" readonly>
                         </div>
-                        <div class="col-md-2">
-                            <label class="form-label small" for="importReferencePrice">Reference price (₱/kg)</label>
-                            <input id="importReferencePrice" name="reference_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01" disabled>
-                        </div>
-                        <div class="col-md-2">
+                        <div class="col-md-3">
                             <label class="form-label small" for="importPriceRange">Range (₱/kg)</label>
-                            <input id="importPriceRange" name="price_range" class="form-control form-control-sm" type="number" min="0" step="0.01" disabled>
+                            <input id="importPriceRange" name="price_range" class="form-control form-control-sm" type="number" min="0" step="0.01" required>
                         </div>
-                        <div class="col-md-2">
-                            <label class="form-label small" for="importMinimumPrice">Minimum (₱/kg)</label>
-                            <input id="importMinimumPrice" name="minimum_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01" disabled>
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label small" for="importMaximumPrice">Maximum (₱/kg)</label>
-                            <input id="importMaximumPrice" name="maximum_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01" disabled>
-                        </div>
-                        <div class="col-12"><small class="text-muted">When checked, this validated rule is applied to every crop in the upload. Otherwise, it is ignored.</small></div>
+                        <div class="col-12"><small class="text-muted">A crop's allowed seller price is its CSV price plus or minus this range.</small></div>
                     </div>
+                    <button class="btn btn-success btn-sm mt-3">Validate and import</button>
                 </form>
                 <hr>
-                <h3 class="h6">Set a rule for one crop</h3>
-                <form method="post" data-pricing-url="{{ url_for('save_crop_pricing', crop_id=0) }}" id="selectedCropPricingForm" class="row g-2 align-items-end">
-                    <div class="col-md-3">
-                        <label class="form-label small" for="selectedPricingCrop">Crop</label>
-                        <select id="selectedPricingCrop" class="form-select form-select-sm" required>
-                            <option value="">Choose a crop</option>
-                            {% for crop in all_crops %}
-                            <option value="{{ crop['id'] }}"
-                                    data-mode="{{ crop['pricing_mode'] or 'none' }}"
-                                    data-reference="{{ crop['reference_price'] if crop['reference_price'] is not none else '' }}"
-                                    data-range="{{ crop['price_range'] if crop['price_range'] is not none else '' }}"
-                                    data-minimum="{{ crop['minimum_price'] if crop['minimum_price'] is not none else '' }}"
-                                    data-maximum="{{ crop['maximum_price'] if crop['maximum_price'] is not none else '' }}">{{ crop['crops_name'] }}</option>
-                            {% endfor %}
-                        </select>
+                <h3 class="h6">Set rules for crops</h3>
+                <p class="small text-muted">
+                    {% if has_imported_crops %}
+                    Choose from crops in the most recently imported file. Add multiple crops and save their rules together.
+                    {% else %}
+                    Import a file first to choose crops here. Add multiple crops and save their rules together.
+                    {% endif %}
+                    After saving, another blank row is ready for more.
+                </p>
+                <form method="post" action="{{ url_for('save_crop_pricing_batch') }}" id="selectedCropPricingForm">
+                    <div id="cropPricingRuleRows">
+                        {% for row_index in range(pricing_rule_row_count) %}
+                        <div class="row g-2 align-items-end mb-2 pricing-rule-row">
+                            <div class="col-md-3">
+                                <label class="form-label small" for="ruleCrop{{ row_index }}">Crop</label>
+                                <select id="ruleCrop{{ row_index }}" name="crop_id" class="form-select form-select-sm pricing-rule-crop" required>
+                                    <option value="">Choose a crop</option>
+                                    {% for crop in all_crops %}
+                                    <option value="{{ crop['id'] }}"
+                                            data-mode="{{ crop['pricing_mode'] or 'none' }}"
+                                            data-reference="{{ crop['reference_price'] if crop['reference_price'] is not none else '' }}"
+                                            data-range="{{ crop['price_range'] if crop['price_range'] is not none else '' }}"
+                                            data-minimum="{{ crop['minimum_price'] if crop['minimum_price'] is not none else '' }}"
+                                            data-maximum="{{ crop['maximum_price'] if crop['maximum_price'] is not none else '' }}">{{ crop['crops_name'] }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small" for="ruleMode{{ row_index }}">Price rule</label>
+                                <select id="ruleMode{{ row_index }}" name="pricing_mode" class="form-select form-select-sm pricing-rule-mode">
+                                    <option value="none">No restriction</option>
+                                    <option value="range">Specific price + range</option>
+                                    <option value="bounds">Minimum + maximum</option>
+                                </select>
+                            </div>
+                            <input type="hidden" name="price_unit" value="kg">
+                            <div class="col-md-2">
+                                <label class="form-label small" for="ruleReference{{ row_index }}">Reference price (₱/kg)</label>
+                                <input id="ruleReference{{ row_index }}" name="reference_price" class="form-control form-control-sm pricing-rule-value" data-rule-field="reference_price" type="number" min="0.01" step="0.01">
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-label small" for="ruleRange{{ row_index }}">Range</label>
+                                <input id="ruleRange{{ row_index }}" name="price_range" class="form-control form-control-sm pricing-rule-value" data-rule-field="price_range" type="number" min="0" step="0.01">
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-label small" for="ruleMinimum{{ row_index }}">Minimum</label>
+                                <input id="ruleMinimum{{ row_index }}" name="minimum_price" class="form-control form-control-sm pricing-rule-value" data-rule-field="minimum_price" type="number" min="0.01" step="0.01">
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-label small" for="ruleMaximum{{ row_index }}">Maximum</label>
+                                <input id="ruleMaximum{{ row_index }}" name="maximum_price" class="form-control form-control-sm pricing-rule-value" data-rule-field="maximum_price" type="number" min="0.01" step="0.01">
+                            </div>
+                            <div class="col-md-2">
+                                <button type="button" class="btn btn-outline-danger btn-sm w-100 remove-pricing-rule">Remove</button>
+                            </div>
+                        </div>
+                        {% endfor %}
                     </div>
-                    <div class="col-md-2">
-                        <label class="form-label small" for="selectedPricingMode">Price rule</label>
-                        <select id="selectedPricingMode" name="pricing_mode" class="form-select form-select-sm" required>
-                            <option value="none">No restriction</option>
-                            <option value="range">Specific price + range</option>
-                            <option value="bounds">Minimum + maximum</option>
-                        </select>
+                    <div class="d-flex gap-2 mt-3">
+                        <button type="button" id="addCropPricingRule" class="btn btn-outline-secondary btn-sm" {% if not has_imported_crops %}disabled{% endif %}>+ Add another crop</button>
+                        <button type="submit" class="btn btn-outline-success btn-sm" {% if not has_imported_crops %}disabled{% endif %}>Save crop rules</button>
                     </div>
-                    <input type="hidden" name="price_unit" value="kg">
-                    <div class="col-md-2">
-                        <label class="form-label small" for="selectedReferencePrice">Reference price (₱/kg)</label>
-                        <input id="selectedReferencePrice" name="reference_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01">
-                    </div>
-                    <div class="col-md-1">
-                        <label class="form-label small" for="selectedPriceRange">Range</label>
-                        <input id="selectedPriceRange" name="price_range" class="form-control form-control-sm" type="number" min="0" step="0.01">
-                    </div>
-                    <div class="col-md-1">
-                        <label class="form-label small" for="selectedMinimumPrice">Minimum</label>
-                        <input id="selectedMinimumPrice" name="minimum_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01">
-                    </div>
-                    <div class="col-md-1">
-                        <label class="form-label small" for="selectedMaximumPrice">Maximum</label>
-                        <input id="selectedMaximumPrice" name="maximum_price" class="form-control form-control-sm" type="number" min="0.01" step="0.01">
-                    </div>
-                    <div class="col-md-2"><button id="saveSelectedCropPricing" class="btn btn-outline-success btn-sm w-100" disabled>Save crop rule</button></div>
                 </form>
             </div>
         </section>
@@ -304,62 +316,68 @@
         categoryFilter.addEventListener('change', filterCropOptions);
         filterCropOptions();
 
-        const importRuleToggle = document.getElementById('applyImportPriceRule');
-        const importRuleMode = document.getElementById('importPricingMode');
-        const importRuleInputs = [
-            document.getElementById('importReferencePrice'),
-            document.getElementById('importPriceRange'),
-            document.getElementById('importMinimumPrice'),
-            document.getElementById('importMaximumPrice')
-        ];
-        const updateImportRuleFields = () => {
-            const enabled = importRuleToggle.checked;
-            importRuleMode.disabled = !enabled;
-            importRuleInputs.forEach(input => { input.disabled = !enabled; });
-            importRuleMode.required = enabled;
-            const rangeMode = importRuleMode.value === 'range';
-            importRuleInputs[0].required = enabled && rangeMode;
-            importRuleInputs[1].required = enabled && rangeMode;
-            importRuleInputs[2].required = enabled && !rangeMode;
-            importRuleInputs[3].required = enabled && !rangeMode;
-        };
-        importRuleToggle.addEventListener('change', updateImportRuleFields);
-        importRuleMode.addEventListener('change', updateImportRuleFields);
-        updateImportRuleFields();
-
-        const selectedCropPricingForm = document.getElementById('selectedCropPricingForm');
-        const selectedPricingCrop = document.getElementById('selectedPricingCrop');
-        const selectedPricingMode = document.getElementById('selectedPricingMode');
-        const selectedPricingInputs = {
-            reference_price: document.getElementById('selectedReferencePrice'),
-            price_range: document.getElementById('selectedPriceRange'),
-            minimum_price: document.getElementById('selectedMinimumPrice'),
-            maximum_price: document.getElementById('selectedMaximumPrice')
-        };
-        const selectedPricingSubmit = document.getElementById('saveSelectedCropPricing');
-        const updateSelectedPricingFields = () => {
-            const mode = selectedPricingMode.value;
-            const rangeMode = mode === 'range';
-            const boundsMode = mode === 'bounds';
-            selectedPricingInputs.reference_price.required = rangeMode;
-            selectedPricingInputs.price_range.required = rangeMode;
-            selectedPricingInputs.minimum_price.required = boundsMode;
-            selectedPricingInputs.maximum_price.required = boundsMode;
-        };
-        selectedPricingMode.addEventListener('change', updateSelectedPricingFields);
-        updateSelectedPricingFields();
-        selectedPricingCrop.addEventListener('change', () => {
-            const option = selectedPricingCrop.selectedOptions[0];
-            selectedPricingSubmit.disabled = !selectedPricingCrop.value;
-            if (!selectedPricingCrop.value) return;
-            selectedPricingForm.action = selectedCropPricingForm.dataset.pricingUrl.replace(
-                '/0/pricing',
-                `/${selectedPricingCrop.value}/pricing`
+        const pricingRuleRows = document.getElementById('cropPricingRuleRows');
+        const addPricingRuleButton = document.getElementById('addCropPricingRule');
+        let pricingRuleRowIndex = pricingRuleRows.querySelectorAll('.pricing-rule-row').length;
+        const updatePricingRuleRow = (row) => {
+            const mode = row.querySelector('.pricing-rule-mode');
+            const crop = row.querySelector('.pricing-rule-crop');
+            const values = Object.fromEntries(
+                Array.from(row.querySelectorAll('.pricing-rule-value'))
+                    .map(input => [input.dataset.ruleField, input])
             );
-            selectedPricingMode.value = option.dataset.mode;
-            for (const [field, input] of Object.entries(selectedPricingInputs)) {
-                input.value = option.dataset[field] || '';
-            }
+            const optionFields = {
+                reference_price: 'reference',
+                price_range: 'range',
+                minimum_price: 'minimum',
+                maximum_price: 'maximum'
+            };
+            const updateRequiredFields = () => {
+                values.reference_price.required = mode.value === 'range';
+                values.price_range.required = mode.value === 'range';
+                values.minimum_price.required = mode.value === 'bounds';
+                values.maximum_price.required = mode.value === 'bounds';
+            };
+            mode.addEventListener('change', updateRequiredFields);
+            crop.addEventListener('change', () => {
+                const option = crop.selectedOptions[0];
+                mode.value = option.dataset.mode || 'none';
+                for (const [field, input] of Object.entries(values)) {
+                    input.value = option.dataset[optionFields[field]] || '';
+                }
+                updateRequiredFields();
+            });
+            updateRequiredFields();
+        };
+        const updatePricingRuleRemoveButtons = () => {
+            const rows = pricingRuleRows.querySelectorAll('.pricing-rule-row');
+            rows.forEach(row => {
+                row.querySelector('.remove-pricing-rule').disabled = rows.length === 1;
+            });
+            addPricingRuleButton.disabled = rows.length >= 100;
+        };
+        pricingRuleRows.querySelectorAll('.pricing-rule-row').forEach(updatePricingRuleRow);
+        updatePricingRuleRemoveButtons();
+        addPricingRuleButton.addEventListener('click', () => {
+            const row = pricingRuleRows.querySelector('.pricing-rule-row').cloneNode(true);
+            row.querySelectorAll('[id]').forEach(element => {
+                element.id = element.id.replace(/\d+$/, pricingRuleRowIndex);
+            });
+            row.querySelectorAll('label[for]').forEach(label => {
+                label.htmlFor = label.htmlFor.replace(/\d+$/, pricingRuleRowIndex);
+            });
+            row.querySelector('.pricing-rule-crop').value = '';
+            row.querySelector('.pricing-rule-mode').value = 'none';
+            row.querySelectorAll('.pricing-rule-value').forEach(input => { input.value = ''; });
+            pricingRuleRows.appendChild(row);
+            pricingRuleRowIndex += 1;
+            updatePricingRuleRow(row);
+            updatePricingRuleRemoveButtons();
+        });
+        pricingRuleRows.addEventListener('click', event => {
+            if (!event.target.classList.contains('remove-pricing-rule')) return;
+            event.target.closest('.pricing-rule-row').remove();
+            updatePricingRuleRemoveButtons();
         });
     </script>
 </body>

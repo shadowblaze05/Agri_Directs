@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from flask import session as flask_session
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from PIL import Image
@@ -148,8 +149,16 @@ def test_psgc_resolver_matches_reverse_geocoded_city_and_province(monkeypatch):
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     app_module.app.config.update(TESTING=True)
+    role_lookup = lambda username, _connection_factory=None: (
+        flask_session.get("role", "user")
+        if flask_session.get("user") == username
+        else None
+    )
+    monkeypatch.setattr(app_module, "get_active_user_role", role_lookup)
+    monkeypatch.setattr(inventory_routes, "get_active_user_role", role_lookup)
+    monkeypatch.setattr(marketplace_routes, "get_active_user_role", role_lookup)
     with app_module.app.test_client() as test_client:
         yield test_client
 
@@ -609,6 +618,7 @@ def test_profile_editor_uses_camera_capture_without_file_picker(client, monkeypa
                 "bio": None,
                 "profile_picture": None,
                 "location": None,
+                "role": "user",
             }
 
     class FakeConnection:
@@ -646,7 +656,7 @@ def test_marketplace_seller_link_opens_contact_profile(client, monkeypatch):
                 "last_name": "Owner",
                 "email": "seller@example.com",
                 "phone_number": "+639123456789",
-                "role": "farmer",
+                "role": "seller",
                 "profile_picture": None,
                 "location": None,
                 "psgc_location": "Sample City",
@@ -674,7 +684,7 @@ def test_marketplace_seller_link_opens_contact_profile(client, monkeypatch):
     assert b"Seller Profile" in response.data
     assert b"seller@example.com" in response.data
     assert b"mailto:seller@example.com" in response.data
-    assert b"Email seller" in response.data
+    assert b"Email Address" in response.data
     assert b"Edit Profile" not in response.data
     assert b"Recent Inventory" not in response.data
 
@@ -784,6 +794,8 @@ def test_listing_form_uses_camera_for_thumbnail_and_upload_for_gallery(client, m
         def execute(self, query, _params=()):
             if "FROM inventory i JOIN crops c" in query:
                 self.result = []
+            elif "FROM crops c LEFT JOIN crop_pricing cp" in query:
+                self.result = []
             elif query.startswith("SELECT id, crops_name FROM crops"):
                 self.result = []
             elif query.startswith("SELECT location_verified FROM users"):
@@ -854,8 +866,21 @@ def test_admin_marketplace_lists_and_creates_listings(client, monkeypatch):
                 }]
             elif query.startswith("SELECT id, username, location FROM users ORDER BY"):
                 self.result = [{"id": 2, "username": "seller", "location": "Sample City"}]
+            elif query.startswith(
+                "SELECT id, username, location FROM users WHERE COALESCE"
+            ):
+                self.result = [{"id": 2, "username": "seller", "location": "Sample City"}]
             elif query.startswith("SELECT id, crops_name FROM crops ORDER BY"):
                 self.result = [{"id": 3, "crops_name": "Rice"}]
+            elif query.startswith(
+                "SELECT id, username, location, role FROM users WHERE username="
+            ):
+                self.result = {
+                    "id": 3 if params[0] == "other" else 2,
+                    "username": params[0],
+                    "location": "Sample City",
+                    "role": "seller",
+                }
             elif query.startswith("SELECT id, username, location FROM users WHERE"):
                 self.result = {
                     "id": 3 if params[0] == "other" else 2,
@@ -864,6 +889,8 @@ def test_admin_marketplace_lists_and_creates_listings(client, monkeypatch):
                 }
             elif query.startswith("SELECT id, crops_name FROM crops WHERE"):
                 self.result = {"id": 3, "crops_name": "Rice"}
+            elif query.startswith("SELECT pricing_mode, price_unit, reference_price"):
+                self.result = None
             elif query.startswith("INSERT INTO marketplace"):
                 self.inserted = params
                 self.result = None

@@ -225,74 +225,184 @@ def test_catalog_has_selected_crop_pricing_editor(tmp_path):
     response = admin_client.get("/admin/catalog")
 
     assert response.status_code == 200
-    assert b"Set a rule for one crop" in response.data
-    assert b"selectedPricingCrop" in response.data
-    assert b"Apply one price rule to every crop in this file" in response.data
+    assert b"Set rules for crops" in response.data
+    assert b"addCropPricingRule" in response.data
+    assert b'name="crop_id"' in response.data
+    assert b"Specific price + range" in response.data
+    assert b"Import a file first to choose crops here." in response.data
+
+
+def test_batch_crop_pricing_saves_rules_then_clears_imported_crops(tmp_path):
+    application = _application(tmp_path)
+    admin_client = application.test_client()
+    _set_user(admin_client, "admin")
+    with admin_client.session_transaction() as session:
+        session["crop_pricing_import_crop_ids"] = [1, 2]
+    with application.app_context():
+        db.session.execute(
+            text("INSERT INTO crops(id, crops_name, category_id) VALUES (2, 'Potato', 1)")
+        )
+        db.session.commit()
+
+    response = admin_client.post(
+        "/admin/catalog/pricing/batch",
+        data={
+            "crop_id": ["1", "2"],
+            "pricing_mode": ["range", "bounds"],
+            "reference_price": ["50", ""],
+            "price_range": ["8", ""],
+            "minimum_price": ["", "12"],
+            "maximum_price": ["", "24"],
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Saved price rules for 2 crop(s)." in response.data
+    assert response.data.count(b"class=\"row g-2 align-items-end mb-2 pricing-rule-row\"") == 1
+    assert b"Import a file first to choose crops here." in response.data
+    crop_rule_select = response.data.split(b'id="ruleCrop0"', 1)[1].split(
+        b"</select>", 1
+    )[0]
+    assert b"Tomato" not in crop_rule_select
+    assert b"Potato" not in crop_rule_select
+    with admin_client.session_transaction() as session:
+        assert "crop_pricing_import_crop_ids" not in session
+    with application.app_context():
+        rules = db.session.execute(
+            text(
+                "SELECT crop_id, pricing_mode FROM crop_pricing ORDER BY crop_id"
+            )
+        ).all()
+        assert [(rule.crop_id, rule.pricing_mode) for rule in rules] == [
+            (1, "range"),
+            (2, "bounds"),
+        ]
+
+
+def test_batch_crop_pricing_rejects_invalid_rule_without_partial_save(tmp_path):
+    application = _application(tmp_path)
+    admin_client = application.test_client()
+    _set_user(admin_client, "admin")
+    with admin_client.session_transaction() as session:
+        session["crop_pricing_import_crop_ids"] = [1, 2]
+    with application.app_context():
+        db.session.execute(
+            text("INSERT INTO crops(id, crops_name, category_id) VALUES (2, 'Potato', 1)")
+        )
+        db.session.commit()
+
+    response = admin_client.post(
+        "/admin/catalog/pricing/batch",
+        data={
+            "crop_id": ["1", "2"],
+            "pricing_mode": ["range", "bounds"],
+            "reference_price": ["50", ""],
+            "price_range": ["8", ""],
+            "minimum_price": ["", "24"],
+            "maximum_price": ["", "12"],
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"Minimum price must be positive and no greater than maximum price" in response.data
+    with application.app_context():
+        assert db.session.execute(
+            text("SELECT COUNT(*) FROM crop_pricing")
+        ).scalar_one() == 0
 
 
 def test_admin_can_import_csv_and_rejects_invalid_rows_without_partial_save(tmp_path):
     application = _application(tmp_path)
     admin_client = application.test_client()
     _set_user(admin_client, "admin")
+    with application.app_context():
+        db.session.execute(
+            text("INSERT INTO crops(id, crops_name, category_id) VALUES (2, 'Potato', 1)")
+        )
+        db.session.commit()
 
     template_response = admin_client.get("/admin/catalog/pricing/template")
     assert template_response.status_code == 200
-    assert b"crop_name,category_name,price_unit" in template_response.data
+    assert b"crop_name,category_name,price_unit,price" in template_response.data
+    assert b"Rice,Grains,kg,50" in template_response.data
+    assert b"Tomato,Vegetables,kg,40" in template_response.data
 
     csv_data = (
-        "crop_name,category_name,price_unit\n"
-        "Tomato,Vegetables,kg\n"
+        "crop_name,category_name,price_unit,price\n"
+        "Tomato,Vegetables,kg,48\n"
     )
     response = admin_client.post(
         "/admin/catalog/pricing/import",
-        data={"file": (BytesIO(csv_data.encode("utf-8")), "prices.csv")},
+        data={
+            "file": (BytesIO(csv_data.encode("utf-8")), "prices.csv"),
+            "price_range": "8",
+        },
         content_type="multipart/form-data",
+        follow_redirects=True,
     )
-    assert response.status_code == 302
+    assert response.status_code == 200
+    assert b"updated prices for 1 crop(s)" in response.data
+    assert b"Tomato" in response.data
+    assert b"Import a file first to choose crops here." not in response.data
+    crop_rule_select = response.data.split(b'id="ruleCrop0"', 1)[1].split(
+        b"</select>", 1
+    )[0]
+    assert b"Tomato" in crop_rule_select
+    assert b"Potato" not in crop_rule_select
     with application.app_context():
-        assert db.session.execute(
-            text("SELECT COUNT(*) FROM crop_pricing WHERE crop_id=1")
-        ).scalar_one() == 0
+        imported_price = db.session.execute(
+            text(
+                "SELECT pricing_mode, reference_price, price_range "
+                "FROM crop_pricing WHERE crop_id=1"
+            )
+        ).one()
+        assert imported_price.pricing_mode == "range"
+        assert float(imported_price.reference_price) == 48
+        assert float(imported_price.price_range) == 8
         assert db.session.execute(
             text("SELECT crops_name FROM crops WHERE id=1")
         ).scalar_one() == "Tomato"
 
     invalid_csv = (
-        "crop_name,category_name,price_unit\n"
-        "New Crop,New Category,kg\n"
-        "Tomato,Vegetables,piece\n"
+        "crop_name,category_name,price_unit,price\n"
+        "New Crop,New Category,kg,30\n"
+        "Tomato,Vegetables,piece,48\n"
     )
     response = admin_client.post(
         "/admin/catalog/pricing/import",
-        data={"file": (BytesIO(invalid_csv.encode("utf-8")), "prices.csv")},
+        data={
+            "file": (BytesIO(invalid_csv.encode("utf-8")), "prices.csv"),
+            "price_range": "5",
+        },
         content_type="multipart/form-data",
+        follow_redirects=True,
     )
-    assert response.status_code == 302
-    assert any(
-        "price_unit must be kg" in message
-        for message in _flash_messages(admin_client)
-    )
+    assert response.status_code == 200
+    assert b"price_unit must be kg" in response.data
     with application.app_context():
-        assert db.session.execute(
-            text("SELECT COUNT(*) FROM crop_pricing")
-        ).scalar_one() == 0
-        assert db.session.execute(text("SELECT COUNT(*) FROM crops")).scalar_one() == 1
+        assert db.session.execute(text("SELECT COUNT(*) FROM crop_pricing")).scalar_one() == 1
+        assert db.session.execute(text("SELECT COUNT(*) FROM crops")).scalar_one() == 2
         assert db.session.execute(
             text("SELECT COUNT(*) FROM crop_categories")
         ).scalar_one() == 1
 
     valid_new_crop_csv = (
-        "crop_name,category_name,price_unit\n"
-        "New Crop,New Category,kg\n"
+        "crop_name,category_name,price_unit,price\n"
+        "New Crop,New Category,kg,32\n"
     )
     response = admin_client.post(
         "/admin/catalog/pricing/import",
         data={
-            "file": (BytesIO(valid_new_crop_csv.encode("utf-8")), "new-crops.csv")
+            "file": (BytesIO(valid_new_crop_csv.encode("utf-8")), "new-crops.csv"),
+            "price_range": "5",
         },
         content_type="multipart/form-data",
+        follow_redirects=True,
     )
-    assert response.status_code == 302
+    assert response.status_code == 200
+    assert b"New Crop" in response.data
     with application.app_context():
         new_crop = db.session.execute(
             text(
@@ -305,7 +415,7 @@ def test_admin_can_import_csv_and_rejects_invalid_rows_without_partial_save(tmp_
         assert db.session.execute(
             text("SELECT COUNT(*) FROM crop_pricing WHERE crop_id=:id"),
             {"id": new_crop.id},
-        ).scalar_one() == 0
+        ).scalar_one() == 1
 
 
 def test_admin_can_import_excel_crop_prices(tmp_path):
@@ -320,16 +430,17 @@ def test_admin_can_import_excel_crop_prices(tmp_path):
             "crop_name",
             "category_name",
             "price_unit",
+            "price",
         )
     )
-    worksheet.append(("Tomato", "Vegetables", "kg"))
+    worksheet.append(("Tomato", "Vegetables", "kg", 48))
     file_data = BytesIO()
     workbook.save(file_data)
     file_data.seek(0)
 
     response = admin_client.post(
         "/admin/catalog/pricing/import",
-        data={"file": (file_data, "prices.xlsx")},
+        data={"file": (file_data, "prices.xlsx"), "price_range": "8"},
         content_type="multipart/form-data",
     )
     assert response.status_code == 302
@@ -337,9 +448,13 @@ def test_admin_can_import_excel_crop_prices(tmp_path):
         assert db.session.execute(
             text("SELECT crops_name FROM crops WHERE id=1")
         ).scalar_one() == "Tomato"
-        assert db.session.execute(
-            text("SELECT COUNT(*) FROM crop_pricing WHERE crop_id=1")
-        ).scalar_one() == 0
+        imported_price = db.session.execute(
+            text(
+                "SELECT reference_price, price_range FROM crop_pricing WHERE crop_id=1"
+            )
+        ).one()
+        assert float(imported_price.reference_price) == 48
+        assert float(imported_price.price_range) == 8
 
 
 def test_admin_can_apply_shared_price_rule_to_all_imported_crops(tmp_path):
@@ -347,24 +462,25 @@ def test_admin_can_apply_shared_price_rule_to_all_imported_crops(tmp_path):
     admin_client = application.test_client()
     _set_user(admin_client, "admin")
     csv_data = (
-        "crop_name,category_name,price_unit\n"
-        "Tomato,Vegetables,kg\n"
-        "New Crop,Vegetables,kg\n"
+        "crop_name,category_name,price_unit,price\n"
+        "Tomato,Vegetables,kg,50\n"
+        "New Crop,Vegetables,kg,35\n"
     )
 
     response = admin_client.post(
         "/admin/catalog/pricing/import",
         data={
             "file": (BytesIO(csv_data.encode("utf-8")), "crops.csv"),
-            "apply_pricing_rule": "1",
-            "pricing_mode": "range",
-            "reference_price": "50",
             "price_range": "8",
         },
         content_type="multipart/form-data",
+        follow_redirects=True,
     )
 
-    assert response.status_code == 302
+    assert response.status_code == 200
+    assert b"Import successful" in response.data
+    assert b"updated prices for 2 crop(s)" in response.data
+    assert b"New Crop" in response.data
     with application.app_context():
         rules = db.session.execute(
             text(
@@ -374,34 +490,32 @@ def test_admin_can_apply_shared_price_rule_to_all_imported_crops(tmp_path):
         ).all()
         assert len(rules) == 2
         assert all(rule.pricing_mode == "range" for rule in rules)
-        assert all(float(rule.reference_price) == 50 for rule in rules)
+        assert [float(rule.reference_price) for rule in rules] == [50, 35]
         assert all(float(rule.price_range) == 8 for rule in rules)
         assert all(rule.price_unit == "kg" for rule in rules)
 
 
-def test_invalid_shared_price_rule_does_not_import_crops(tmp_path):
+def test_invalid_price_range_does_not_import_crops(tmp_path):
     application = _application(tmp_path)
     admin_client = application.test_client()
     _set_user(admin_client, "admin")
     csv_data = (
-        "crop_name,category_name,price_unit\n"
-        "New Crop,New Category,kg\n"
+        "crop_name,category_name,price_unit,price\n"
+        "New Crop,New Category,kg,20\n"
     )
 
     response = admin_client.post(
         "/admin/catalog/pricing/import",
         data={
             "file": (BytesIO(csv_data.encode("utf-8")), "crops.csv"),
-            "apply_pricing_rule": "1",
-            "pricing_mode": "bounds",
-            "minimum_price": "60",
-            "maximum_price": "40",
+            "price_range": "20",
         },
         content_type="multipart/form-data",
+        follow_redirects=True,
     )
 
-    assert response.status_code == 302
-    assert any("Shared price rule" in message for message in _flash_messages(admin_client))
+    assert response.status_code == 200
+    assert b"Allowed range must be less than the specific price" in response.data
     with application.app_context():
         assert db.session.execute(text("SELECT COUNT(*) FROM crops")).scalar_one() == 1
         assert db.session.execute(

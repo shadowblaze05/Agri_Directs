@@ -114,6 +114,11 @@ def test_csv_upload_uses_temporary_server_filename_and_cleans_file(monkeypatch, 
             return None
 
     connection = FakeConnection()
+    role_lookup = lambda username, _connection_factory=None: (
+        "seller" if username == "farmer" else None
+    )
+    monkeypatch.setattr(app_module, "get_active_user_role", role_lookup)
+    monkeypatch.setattr(inventory_routes, "get_active_user_role", role_lookup)
     monkeypatch.setattr(inventory_routes, "get_db", lambda: connection)
     monkeypatch.setattr(inventory_routes, "update_analytics", lambda: None)
     monkeypatch.setitem(app_module.app.config, "UPLOAD_FOLDER", str(tmp_path))
@@ -127,12 +132,14 @@ def test_csv_upload_uses_temporary_server_filename_and_cleans_file(monkeypatch, 
             "/upload",
             data={
                 "file": (
-                    BytesIO(b"crop_name,quantity,date_received\nRice,5,2026-10-13\n"),
+                    BytesIO(b"crop_name,quantity(kg),date_received\nRice,5,2026-10-13\n"),
                     "../../harvest.csv",
                 )
             },
             content_type="multipart/form-data",
         )
+        with client.session_transaction() as session:
+            assert session["_flashes"][-1] == ("success", "CSV upload successful")
 
     assert response.status_code == 302
     assert list(tmp_path.iterdir()) == []

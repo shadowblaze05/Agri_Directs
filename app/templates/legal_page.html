@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>
+      {% if legal_page == 'terms' %}Terms of Service
+      {% elif legal_page == 'privacy' %}Privacy Notice
+      {% else %}Cookie Notice{% endif %} | Agri-Direct
+    </title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+      body { background: #f5f7f3; color: #283328; }
+      .legal-content { max-width: 900px; margin: 2rem auto; }
+      .legal-content h2 { margin-top: 2rem; color: #1a3408; font-size: 1.25rem; }
+      .draft-notice { border-left: 5px solid #a65c00; }
+    </style>
+  </head>
+  <body>
+    <main class="container legal-content">
+      <a class="text-success" href="{{ url_for('home') }}">&larr; Agri-Direct home</a>
+      <article class="card border-0 shadow-sm mt-3">
+        <div class="card-body p-4 p-md-5">
+          {% if legal_page == 'terms' %}
+            <h1>Terms of Service</h1>
+          {% elif legal_page == 'privacy' %}
+            <h1>Privacy Notice</h1>
+          {% else %}
+            <h1>Cookie Notice</h1>
+          {% endif %}
+          <p class="text-muted">Effective date: <strong>[SET EFFECTIVE DATE]</strong></p>
+          <div class="alert alert-warning draft-notice" role="alert">
+            <strong>Draft — not ready for publication.</strong>
+            The bracketed items must be completed and these pages reviewed for
+            the organization’s location and applicable law before launch.
+          </div>
+
+          {% if legal_page == 'terms' %}
+            <p>
+              These terms govern use of Agri-Direct, operated by
+              <strong>[LEGAL NAME OF OPERATOR]</strong> (“Agri-Direct,” “we,”
+              or “us”). By using the service, you agree to these terms.
+            </p>
+            <h2>1. Who may use the service</h2>
+            <p>
+              You must be at least <strong>[MINIMUM AGE]</strong> and legally
+              able to accept these terms. If you use an account for an
+              organization, you confirm that you may act for it.
+            </p>
+            <h2>2. Accounts and accurate information</h2>
+            <p>
+              Keep your sign-in details secure, provide accurate account
+              information, and tell us promptly if you suspect unauthorized
+              account use. You are responsible for activity under your
+              account, subject to applicable law.
+            </p>
+            <h2>3. Listings and transactions</h2>
+            <p>
+              Sellers are responsible for the accuracy and legality of their
+              listings, including crop, quantity, price, location, photos, and
+              availability. Buyers and sellers should confirm quality,
+              delivery, payment, and other terms with each other before
+              completing a transaction. The platform’s role, transaction
+              responsibilities, and any fees must be finalized by
+              <strong>[OPERATOR — CONFIRM LEGAL AND COMMERCIAL ROLE]</strong>.
+            </p>
+            <h2>4. Acceptable use and content</h2>
+            <p>
+              Do not misuse the service, interfere with its security, upload
+              unlawful or harmful content, or infringe another person’s rights.
+              You retain rights you have in content you submit and grant
+              <strong>[OPERATOR — DEFINE REQUIRED CONTENT LICENSE]</strong>
+              solely as needed to operate and display the service.
+            </p>
+            <h2>5. Availability, suspension, and changes</h2>
+            <p>
+              We may maintain, change, or suspend parts of the service. State
+              the grounds, notice, appeal process, and any account/data
+              consequences here:
+              <strong>[OPERATOR — COMPLETE SUSPENSION AND NOTICE TERMS]</strong>.
+            </p>
+            <h2>6. Disclaimers and liability</h2>
+            <p>
+              The service, agricultural information, and analytics may be
+              incomplete or unavailable and are not a substitute for
+              independent verification. Any warranty disclaimers, liability
+              limits, consumer protections, and exceptions must be reviewed
+              and completed for applicable law:
+              <strong>[LEGAL REVIEW REQUIRED]</strong>.
+            </p>
+            <h2>7. Governing law and contact</h2>
+            <p>
+              Governing law, dispute venue, and required dispute procedures:
+              <strong>[JURISDICTION AND PROCESS]</strong>. Contact:
+              <strong>[SUPPORT EMAIL AND POSTAL ADDRESS]</strong>.
+            </p>
+          {% elif legal_page == 'privacy' %}
+            <p>
+              This notice describes how <strong>[LEGAL NAME OF OPERATOR]</strong>
+              handles personal information when you use Agri-Direct. Privacy
+              contact: <strong>[PRIVACY CONTACT EMAIL]</strong>.
+            </p>
+            <h2>Information the service may handle</h2>
+            <ul>
+              <li>Account details such as name, username, email, and contact information.</li>
+              <li>Listings, messages, orders, uploaded images or evidence, and related activity.</li>
+              <li>Farm or listing location and, when enabled, device or photo location data.</li>
+              <li>Security, access, and performance records needed to operate and protect the service.</li>
+              <li>Analytics and advertising identifiers, subject to the provider and cookie details below.</li>
+            </ul>
+            <p>
+              Some listing information and images may be visible to other users
+              or the public. Do not include private information in a public
+              listing.
+            </p>
+            <h2>Purposes, legal basis, and retention</h2>
+            <p>
+              We use information to provide accounts, marketplace features,
+              communications, security, and service improvement. Applicable
+              legal bases and retention periods must be specified:
+              <strong>[COMPLETE PURPOSES, LEGAL BASES, AND RETENTION PERIODS]</strong>.
+            </p>
+            <h2>Service providers and international transfers</h2>
+            <p>
+              Hosting, database, email, mapping, analytics, and advertising
+              providers may process information to provide their services.
+              Name each provider, its role, relevant location, and transfer
+              safeguards here:
+              <strong>[COMPLETE PROVIDER AND TRANSFER DETAILS]</strong>.
+            </p>
+            <h2>Your choices and rights</h2>
+            <p>
+              Describe the rights, identity verification steps, response
+              timing, complaint authority, and account deletion process that
+              apply in the operating jurisdiction:
+              <strong>[COMPLETE LOCAL PRIVACY RIGHTS AND REQUEST PROCESS]</strong>.
+              Cookie choices are described in the
+              <a href="{{ url_for('cookie_notice') }}">Cookie Notice</a>.
+            </p>
+            <h2>Security and children</h2>
+            <p>
+              We use safeguards appropriate to the service, but no online
+              service can promise absolute security. State the minimum age and
+              process for handling children’s information:
+              <strong>[COMPLETE AGE AND CHILDREN’S PRIVACY TERMS]</strong>.
+            </p>
+          {% else %}
+            <p>
+              Agri-Direct intends to use analytics and advertising cookies or
+              similar technologies. The provider names, exact cookie names,
+              purposes, and lifetimes have not been supplied and must be
+              completed before this notice is published.
+            </p>
+            <h2>Cookie categories</h2>
+            <ul>
+              <li><strong>Necessary:</strong> session and security functions needed to provide the service.</li>
+              <li><strong>Analytics:</strong> [NAME EACH PROVIDER, COOKIE/IDENTIFIER, PURPOSE, AND LIFETIME].</li>
+              <li><strong>Advertising:</strong> [NAME EACH PROVIDER, COOKIE/IDENTIFIER, PURPOSE, AND LIFETIME].</li>
+            </ul>
+            <h2>Consent and controls</h2>
+            <p>
+              Explain how users can accept, reject, and change optional cookie
+              choices, and confirm that non-essential technologies are blocked
+              until any legally required consent is obtained:
+              <strong>[IMPLEMENT AND DOCUMENT THE CONSENT CONTROL]</strong>.
+            </p>
+            <h2>Provider details</h2>
+            <p>
+              Add links to each provider’s privacy and opt-out information,
+              cross-border processing details, and retention settings:
+              <strong>[COMPLETE PROVIDER LINKS AND SETTINGS]</strong>.
+            </p>
+          {% endif %}
+
+          <hr class="my-4">
+          <nav aria-label="Legal pages">
+            <a class="me-3" href="{{ url_for('terms_of_service') }}">Terms</a>
+            <a class="me-3" href="{{ url_for('privacy_notice') }}">Privacy</a>
+            <a href="{{ url_for('cookie_notice') }}">Cookies</a>
+          </nav>
+        </div>
+      </article>
+    </main>
+  </body>
+</html>

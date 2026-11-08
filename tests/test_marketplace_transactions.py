@@ -1,10 +1,24 @@
 import sys
 from pathlib import Path
 
+import pytest
+from flask import session as flask_session
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app as app_module
 from app.routes import marketplace as marketplace_routes
+
+
+@pytest.fixture(autouse=True)
+def session_role_lookup(monkeypatch):
+    role_lookup = lambda username, _connection_factory=None: (
+        flask_session.get("role", "user")
+        if flask_session.get("user") == username
+        else None
+    )
+    monkeypatch.setattr(app_module, "get_active_user_role", role_lookup)
+    monkeypatch.setattr(marketplace_routes, "get_active_user_role", role_lookup)
 
 
 def test_seller_transactions_page_shows_buyer_details_and_current_order_state(monkeypatch):
@@ -41,6 +55,8 @@ def test_seller_transactions_page_shows_buyer_details_and_current_order_state(mo
             return self
 
         def fetchone(self):
+            if "SELECT role, is_active FROM users" in self.query:
+                return {"role": "seller", "is_active": True}
             return {"id": 4}
 
         def fetchall(self):

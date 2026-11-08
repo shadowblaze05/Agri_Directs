@@ -120,7 +120,8 @@ def create_schema(connection):
 def test_erd_reconciliation_is_the_single_alembic_head():
     config = Config()
     config.set_main_option("script_location", str(ROOT / "migrations"))
-    assert ScriptDirectory.from_config(config).get_heads() == ["d3a6f1c8b920"]
+    heads = ScriptDirectory.from_config(config).get_heads()
+    assert heads == ["71a6d9c2e8f4"]
 
 
 def test_location_schema_upgrade_repairs_integer_flag_and_non_cascading_fk(monkeypatch):

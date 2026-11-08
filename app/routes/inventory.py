@@ -4,11 +4,12 @@ Handlers retain the legacy SQL and template behavior while living in a domain mo
 """
 
 import csv
+import io
 import os
 import uuid
 from datetime import datetime, timezone
 
-from flask import current_app, flash, jsonify, redirect, render_template, request, send_from_directory, session
+from flask import Response, current_app, flash, jsonify, redirect, render_template, request, send_from_directory, session
 from PIL import Image, UnidentifiedImageError
 from werkzeug.utils import secure_filename
 
@@ -429,7 +430,9 @@ def upload():
 
                             crop_id = crop_record[0]
                             
-                            quantity_str = cleaned_row.get("quantity", "").strip()
+                            quantity_str = cleaned_row.get(
+                                "quantity(kg)", cleaned_row.get("quantity", "")
+                            ).strip()
 
                             if not crop:
                                 logger.warning(f"Skipped row with empty crop_name")
@@ -488,12 +491,7 @@ def upload():
                 if processed_any:
                     conn.commit()
                     update_analytics()
-                    flash(
-                        "CSV upload successful. Imported harvest records are "
-                        "pending manual verification because CSV files do not "
-                        "include GPS capture evidence.",
-                        "warning",
-                    )
+                    flash("CSV upload successful", "success")
                     logger.info(f"User {session['user']} uploaded {filename}")
                 else:
                     flash(
@@ -625,6 +623,27 @@ def upload():
     )
 
 
+def download_harvest_template():
+    if "user" not in session:
+        return redirect("/login")
+
+    access_denied = _seller_access_denied()
+    if access_denied:
+        return access_denied
+
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(("crop_name", "quantity(kg)", "date_received"))
+    writer.writerow(("Rice", "5", datetime.now().strftime("%Y-%m-%d")))
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="harvest-upload-template.csv"'
+        },
+    )
+
+
 def crop_evidence(filename):
     """Serve an evidence photo only to its owner or an administrator."""
     if "user" not in session:
@@ -661,9 +680,10 @@ def register(application):
     application.add_url_rule('/inventory/edit/<int:item_id>', endpoint='edit_inventory', view_func=edit_inventory, methods=['GET', 'POST'])
     application.add_url_rule('/inventory/delete/<int:item_id>', endpoint='delete_inventory', view_func=delete_inventory, methods=['POST'])
     application.add_url_rule('/upload', endpoint='upload', view_func=upload, methods=['GET', 'POST'])
+    application.add_url_rule('/upload/template', endpoint='download_harvest_template', view_func=download_harvest_template)
     application.add_url_rule('/harvest-evidence/<filename>', endpoint='crop_evidence', view_func=crop_evidence)
     for _name in __all__:
         setattr(core, _name, globals()[_name])
 
 
-__all__ = ['inventory', 'inventory_buy', 'inventory_edit_crop', 'inventory_delete_crop', 'edit_inventory', 'delete_inventory', 'upload', 'crop_evidence']
+__all__ = ['inventory', 'inventory_buy', 'inventory_edit_crop', 'inventory_delete_crop', 'edit_inventory', 'delete_inventory', 'upload', 'download_harvest_template', 'crop_evidence']
