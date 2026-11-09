@@ -22,6 +22,52 @@ globals().update({key: value for key, value in core.__dict__.items() if not key.
 
 _PROCESS_STARTED_MONOTONIC = time.monotonic()
 
+# ==========================================
+# AGRIBOT COMMAND REGISTRY
+# ==========================================
+BOT_COMMANDS = {
+    "upload": "To upload harvest data, use the Upload page and submit a valid CSV. Each crop entry will be stored with your user name.",
+    "harvest": "To upload harvest data, use the Upload page and submit a valid CSV. Each crop entry will be stored with your user name.",
+    "admin": "Admin users can access the Admin page to manage inventory and users. Only admins have full modify rights.",
+    "manager": "Admin users can access the Admin page to manage inventory and users. Only admins have full modify rights.",
+    "profile": "You can view your profile from the top-right menu. It shows your user role and account details.",
+    "about": "Visit the About page to learn more about Agri-Direct and how it helps buyers, farmers, and administrators.",
+    "preorder": "Pre-orders let you reserve crops before harvest. Go to Marketplace and select 'Pre-order' when adding a listing.",
+    "look": "Looking For listings let you post what you want to buy. Go to Marketplace and select 'Looking For' when adding a listing."
+}
+
+def get_welcome_message():
+    """Returns the formatted welcome message with the command list."""
+    commands_list = "\n".join([f"- `/{cmd}` or `{cmd}`" for cmd in BOT_COMMANDS.keys()])
+    return (
+        "👋 **Greetings! Welcome to Agri-Direct.**\n\n"
+        "I am AgriBot, your virtual assistant. Here are my commands:\n"
+        f"{commands_list}\n\n"
+        "Type `/help` to see this message again. Let me know if you need anything!"
+    )
+
+def get_bot_reply(message_text):
+    """Determine the bot's response based on the input."""
+    question = message_text.lower().strip()
+    
+    # Check for greetings or the /help command FIRST
+    if not question or question in ["/help", "help", "hello", "hi", "greetings"]:
+        return get_welcome_message()
+
+    # Strip the slash if they used one (e.g., "/about" -> "about")
+    command_trigger = question.lstrip("/")
+
+    # Check if the trigger matches any of our registered commands
+    if command_trigger in BOT_COMMANDS:
+        return BOT_COMMANDS[command_trigger]
+
+    # Fallback for unrecognized commands
+    return (
+        "I didn't quite catch that. I am a simple bot, so I only understand specific commands. "
+        "Type `/help` to see what I can do!"
+    )
+
+# ==========================================
 
 def _refresh_session_role():
     role = get_active_user_role(session.get("user"), get_db)
@@ -935,22 +981,10 @@ def bot_response():
         return jsonify({"error": "Unauthorized"}), 401
 
     data = request.json
-    message = data.get("message", "").strip().lower()
+    message_text = data.get("message", "").strip()
 
-    if not message:
-        reply = "Hello! I am AgriBot. Ask me about uploads, crops or page features."
-    elif "upload" in message or "harvest" in message:
-        reply = "To upload harvest data, use the Upload page and submit a valid CSV. Each crop entry will be stored with your user name."
-    elif "admin" in message or "manager" in message:
-        reply = "Admin users can access the Admin page to manage inventory and users. Only admins have full modify rights."
-    elif "hello" in message or "hi" in message:
-        reply = "Hello! I am AgriBot. How can I assist you today?"
-    elif "profile" in message:
-        reply = "You can view your profile from the top-right menu. It shows your user role and account details."
-    elif "about" in message:
-        reply = "Visit the About page to learn more about Agri-Direct and how it helps buyers, farmers, and administrators."
-    else:
-        reply = "AgriBot here! I can help you with uploads, dashboards, profiles, and account roles."
+    # Generate reply using the registry
+    reply = get_bot_reply(message_text)
 
     # Store the bot's response in the database
     conn = get_db()
@@ -1024,22 +1058,7 @@ def send_message():
     
     # If sending to AgriBot, generate and store bot response
     if recipient == "AgriBot":
-        bot_message = message.lower()
-        if not bot_message:
-            reply = "Hello! I am AgriBot. Ask me about uploads, crops or page features."
-        elif "upload" in bot_message or "harvest" in bot_message:
-            reply = "To upload harvest data, use the Upload page and submit a valid CSV. Each crop entry will be stored with your user name."
-        elif "admin" in bot_message or "manager" in bot_message:
-            reply = "Admin users can access the Admin page to manage inventory and users. Only admins have full modify rights."
-        elif "hello" in bot_message or "hi" in bot_message:
-            reply = "Hello! I am AgriBot. How can I assist you today?"
-        elif "profile" in bot_message:
-            reply = "You can view your profile from the top-right menu. It shows your user role and account details."
-        elif "about" in bot_message:
-            reply = "Visit the About page to learn more about Agri-Direct and how it helps buyers, farmers, and administrators."
-        else:
-            reply = "AgriBot here! I can help you with uploads, dashboards, profiles, and account roles."
-        
+        reply = get_bot_reply(message)
         cur.execute("INSERT INTO messages(sender, recipient, message, timestamp) VALUES (?, ?, ?, ?)",
                     ("AgriBot", session["user"], reply, datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")))
     
@@ -1355,24 +1374,9 @@ def send_chat_message():
             logger.exception("Failed to create notification for message")
 
         if recipient.lower() == "agribot":
-
-            question = message_text.lower()
-
-            if not question:
-                reply = "Hello! I am AgriBot. Ask me about uploads, crops or page features."
-            elif "upload" in question or "harvest" in question:
-                reply = "To upload harvest data, use the Upload page and submit a valid CSV. Each crop entry will be stored with your user name."
-            elif "admin" in question or "manager" in question:
-                reply = "Admin users can access the Admin page to manage inventory and users. Only admins have full modify rights."
-            elif "hello" in question or "hi" in question:
-                reply = "Hello! I am AgriBot. How can I assist you today?"
-            elif "profile" in question:
-                reply = "You can view your profile from the top-right menu. It shows your user role and account details."
-            elif "about" in question:
-                reply = "Visit the About page to learn more about Agri-Direct and how it helps buyers, farmers, and administrators."
-            else:
-                reply = "AgriBot here! I can help you with uploads, dashboards, profiles, and account roles."
-
+            # Generate reply using the registry
+            reply = get_bot_reply(message_text)
+            
             cur.execute("INSERT INTO messages(sender, recipient, message, timestamp) VALUES (?, ?, ?, ?)",
                                 ("AgriBot", session["user"], reply, datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")))
             # Create a notification for the user receiving the AgriBot reply
@@ -1545,4 +1549,4 @@ def register(application):
         setattr(core, _name, globals()[_name])
 
 
-__all__ = ['home', 'portal_home', 'about', 'terms_of_service', 'privacy_notice', 'cookie_notice', 'crop_types', 'market_intelligence', 'market_intelligence_price_monitoring', 'market_intelligence_crop_recommendations', 'market_intelligence_demand_forecasting', 'market_intelligence_supply_balance', 'dashboard', 'dashboard_data', 'api_market_insights', 'api_forecast', 'api_stats', 'get_users', 'bot_response', 'get_messagess', 'send_message', 'total_harvest', 'top_crop', 'locations', 'messages_page', 'get_conversations', 'users_search', 'get_messages', 'send_chat_message', 'message_attachment', 'api_current_user', 'notifications', 'notifications_unread_count', 'notification_center', 'notifications_mark_read']
+__all__ = ['home', 'portal_home', 'about', 'terms_of_service', 'privacy_notice', 'cookie_notice', 'crop_types', 'market_intelligence', 'market_intelligence_price_monitoring', 'market_intelligence_crop_recommendations', 'market_intelligence_demand_forecasting', 'market_intelligence_supply_balance', 'dashboard', 'dashboard_data', 'api_market_insights', 'api_forecast', 'api_stats', 'get_users', 'bot_response', 'get_messagess', 'send_message', 'total_harvest', 'top_crop', 'locations', 'messages_page', 'get_conversations', 'users_search', 'get_messages', 'send_chat_message', 'message_attachment', 'api_current_user', 'notifications', 'notifications_unread_count', 'notification_center', 'notifications_mark_read', 'get_bot_reply', 'get_welcome_message']
