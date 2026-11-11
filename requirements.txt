@@ -6,26 +6,30 @@ Flask-Bcrypt==1.0.1
 Flask-WTF==1.2.2
 Flask-Limiter[redis]==4.1.1
 Flask-Mail==0.10.0
+Werkzeug==3.1.9
 
 SQLAlchemy==2.0.43
 alembic==1.19.0
 psycopg2-binary==2.9.10
 
-python-dotenv==1.1.1
+certifi==2026.10.18
+dnspython==2.9.0
+python-dotenv==1.2.2
+defusedxml==0.7.1
 email-validator==2.3.0
 WTForms==3.2.1
 
-requests==2.32.5
-Pillow==11.3.0
-geopy==2.4.1
+requests==2.33.0
+urllib3==2.8.0
+Pillow==13.0.0
+geopy==2.5.0
 
 gunicorn==23.0.0
 
-PyJWT==2.12.1
+PyJWT==2.15.0
 numpy==2.5.2
 pandas==3.0.5
 openpyxl==3.1.5
 scikit-learn==1.9.0
 statsmodels==0.15.0
-pyDecision==5.1.1
-pytest==8.3.3
+pytest==9.0.3

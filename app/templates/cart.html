@@ -405,7 +405,7 @@
                     <div class="cart-item" id="cart-item-{{ item['id'] }}">
                         <div class="row align-items-center">
                             <div class="col-auto">
-                                {% if item['main_image'] and item['thumbnail_verified'] %}
+                                {% if item['main_image'] %}
                                 <img src="{{ url_for('static', filename='uploads/marketplace/' + item['main_image']) }}"
                                      class="cart-item-image" alt="{{ item['crop_name'] }}">
                                 {% else %}

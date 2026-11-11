@@ -967,7 +967,7 @@
             <div class="commodity-grid">
               {% for item in featured_commodities %}
                 <article class="commodity-card">
-                  {% if item.main_image and item.thumbnail_verified %}
+                  {% if item.main_image %}
                     <img
                       class="commodity-photo"
                       src="{{ url_for('static', filename='uploads/marketplace/' + item.main_image) }}"

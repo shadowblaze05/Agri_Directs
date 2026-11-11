@@ -88,6 +88,13 @@ class User(Model):
         nullable=False
     )
 
+    auth_version = Column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
+
     location = Column(
         String(255),
         nullable=True

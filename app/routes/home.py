@@ -152,7 +152,7 @@ def _public_metrics(now=None):
           AND email IS NOT NULL AND TRIM(email) <> ''
           AND profile_picture IS NOT NULL AND TRIM(profile_picture) <> ''
           AND profile_photo_captured_at IS NOT NULL
-          AND location_verified = TRUE
+          AND location_latitude IS NOT NULL AND location_longitude IS NOT NULL
           AND geotag_location IS NOT NULL AND TRIM(geotag_location) <> ''
     """).fetchone()["count"]
     product_listing_count = cur.execute("""
@@ -638,11 +638,12 @@ def dashboard():
     conn = get_db()
     cur = conn.cursor()
     is_admin = current_role == "admin"
+    # Scope fragments are fixed literals selected by server-side role; values remain bound.
     inventory_scope = "" if is_admin else " AND i.farmer = ?"
     scope_params = () if is_admin else (session["user"],)
 
     cur.execute(
-        "SELECT i.farmer, c.crops_name AS crop_name, i.quantity, i.location, i.date_received "
+        "SELECT i.farmer, c.crops_name AS crop_name, i.quantity, i.location, i.date_received "  # nosec B608
         "FROM inventory i JOIN crops c ON c.id=i.crop_id "
         "WHERE (i.source IS NULL OR i.source = 'harvest')" + inventory_scope +
         " ORDER BY i.date_received DESC LIMIT 20",
@@ -653,7 +654,7 @@ def dashboard():
     update_analytics()
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
         "FROM inventory i JOIN crops c ON c.id=i.crop_id "
         "WHERE (i.source IS NULL OR i.source = 'harvest')" + inventory_scope +
         " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC",
@@ -663,7 +664,7 @@ def dashboard():
 
     location_scope = "" if is_admin else " AND farmer = ?"
     cur.execute(
-        "SELECT location, SUM(quantity) AS total FROM inventory "
+        "SELECT location, SUM(quantity) AS total FROM inventory "  # nosec B608
         "WHERE (source IS NULL OR source = 'harvest') AND location IS NOT NULL AND location != ''" +
         location_scope + " GROUP BY location ORDER BY total DESC",
         scope_params,
@@ -739,12 +740,13 @@ def dashboard_data():
     
     conn = get_db()
     cur = conn.cursor()
-    
+
     is_admin = current_role == "admin"
+    # Role-selected SQL fragments are fixed; usernames remain bound parameters.
     scope = "" if is_admin else " AND i.farmer = ?"
     params = () if is_admin else (session["user"],)
     cur.execute(
-        "SELECT i.farmer, c.crops_name AS crop_name, i.quantity, i.location, i.date_received "
+        "SELECT i.farmer, c.crops_name AS crop_name, i.quantity, i.location, i.date_received "  # nosec B608
         "FROM inventory i JOIN crops c ON c.id=i.crop_id "
         "WHERE (i.source IS NULL OR i.source = 'harvest')" + scope +
         " ORDER BY i.date_received DESC LIMIT 20",
@@ -813,13 +815,14 @@ def api_stats():
     cur = conn.cursor()
     is_admin = current_role == "admin"
     owner = session["user"]
+    # These role-selected SQL fragments are fixed; usernames remain bound.
     aliased_owner_filter = "" if is_admin else " AND i.farmer = ?"
     plain_owner_filter = "" if is_admin else " AND farmer = ?"
     owner_params = () if is_admin else (owner,)
 
     # Total quantity
     cur.execute(
-        "SELECT COALESCE(SUM(quantity), 0) AS total FROM inventory "
+        "SELECT COALESCE(SUM(quantity), 0) AS total FROM inventory "  # nosec B608
         "WHERE (source IS NULL OR source = 'harvest')" + plain_owner_filter,
         owner_params,
     )
@@ -827,7 +830,7 @@ def api_stats():
 
     # Crop summary
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
         "FROM inventory i JOIN crops c ON c.id=i.crop_id "
         "WHERE (i.source IS NULL OR i.source = 'harvest')" + aliased_owner_filter +
         " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC",
@@ -840,14 +843,14 @@ def api_stats():
 
     # Number of entries
     cur.execute(
-        "SELECT COUNT(*) AS count FROM inventory WHERE 1=1" + plain_owner_filter,
+        "SELECT COUNT(*) AS count FROM inventory WHERE 1=1" + plain_owner_filter,  # nosec B608
         owner_params,
     )
     entry_count = cur.fetchone()["count"]
 
     # Unique location count (using location entries from inventory)
     cur.execute(
-        "SELECT COUNT(DISTINCT location) AS location_count FROM inventory "
+        "SELECT COUNT(DISTINCT location) AS location_count FROM inventory "  # nosec B608
         "WHERE location IS NOT NULL AND location != ''" + plain_owner_filter,
         owner_params,
     )
@@ -866,7 +869,7 @@ def api_stats():
     previous_year_end = datetime(selected_year - 1, 12, 31, 23, 59, 59)
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
         "FROM inventory i JOIN crops c ON c.id=i.crop_id "
         "WHERE i.date_received >= ? AND i.date_received <= ?" + aliased_owner_filter +
         " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC LIMIT 10",
@@ -876,7 +879,7 @@ def api_stats():
     top_monthly = [{"name": row["crop_name"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
-        "SELECT location, SUM(quantity) AS total FROM inventory "
+        "SELECT location, SUM(quantity) AS total FROM inventory "  # nosec B608
         "WHERE location IS NOT NULL AND location != '' AND date_received >= ? AND date_received <= ?" +
         plain_owner_filter + " GROUP BY location ORDER BY total DESC LIMIT 10",
         (selected_month_start.strftime("%Y-%m-%d %H:%M:%S"),
@@ -885,7 +888,7 @@ def api_stats():
     top_monthly_locations = [{"name": row["location"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
         "FROM inventory i JOIN crops c ON c.id=i.crop_id "
         "WHERE i.date_received >= ? AND i.date_received <= ?" + aliased_owner_filter +
         " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC LIMIT 10",
@@ -895,7 +898,7 @@ def api_stats():
     top_yearly = [{"name": row["crop_name"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
-        "SELECT location, SUM(quantity) AS total FROM inventory "
+        "SELECT location, SUM(quantity) AS total FROM inventory "  # nosec B608
         "WHERE location IS NOT NULL AND location != '' AND date_received >= ? AND date_received <= ?" +
         plain_owner_filter + " GROUP BY location ORDER BY total DESC LIMIT 10",
         (selected_year_start.strftime("%Y-%m-%d %H:%M:%S"),
@@ -904,7 +907,7 @@ def api_stats():
     top_yearly_locations = [{"name": row["location"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
         "FROM inventory i JOIN crops c ON c.id=i.crop_id "
         "WHERE i.date_received >= ? AND i.date_received <= ?" + aliased_owner_filter +
         " GROUP BY i.crop_id, c.crops_name",
@@ -914,7 +917,7 @@ def api_stats():
     current_month = {row["crop_name"]: row["total"] for row in cur.fetchall()}
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
         "FROM inventory i JOIN crops c ON c.id=i.crop_id "
         "WHERE i.date_received >= ? AND i.date_received <= ?" + aliased_owner_filter +
         " GROUP BY i.crop_id, c.crops_name",
@@ -1078,14 +1081,18 @@ def total_harvest():
     conn = get_db()
     cur = conn.cursor()
     is_admin = current_role == "admin"
+    # Role-selected SQL fragments are fixed; usernames remain bound parameters.
     owner_filter = "" if is_admin else " WHERE farmer = ?"
     owner_params = () if is_admin else (session["user"],)
-    cur.execute("SELECT COALESCE(SUM(quantity), 0) AS total FROM inventory" + owner_filter, owner_params)
+    cur.execute(
+        "SELECT COALESCE(SUM(quantity), 0) AS total FROM inventory" + owner_filter,  # nosec B608
+        owner_params,
+    )
     total = cur.fetchone()["total"] or 0
 
     crop_owner_filter = "" if is_admin else " WHERE i.farmer = ?"
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "
+        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
         "FROM inventory i JOIN crops c ON c.id=i.crop_id" + crop_owner_filter +
         " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC",
         owner_params,
@@ -1108,18 +1115,19 @@ def top_crop():
     owner_filter = "" if is_admin else " AND i.farmer = ?"
     owner_params = () if is_admin else (session["user"],)
 
-    # Get Top 5 crops
-    cur.execute(f"""
-        SELECT c.crops_name AS crop_name,
-               SUM(i.quantity) AS total
-        FROM inventory i
-        JOIN crops c ON c.id=i.crop_id
-                WHERE 1=1
-                    {owner_filter}
-                GROUP BY i.crop_id, c.crops_name
-        ORDER BY total DESC
-        LIMIT 5
-    """, owner_params)
+    # The optional filter is a fixed server-selected fragment; values remain bound.
+    top_crops_query = (
+        "SELECT c.crops_name AS crop_name,\n"  # nosec B608
+        "       SUM(i.quantity) AS total\n"
+        "FROM inventory i\n"
+        "JOIN crops c ON c.id=i.crop_id\n"
+        "WHERE 1=1\n"
+        + owner_filter
+        + "\nGROUP BY i.crop_id, c.crops_name\n"
+        "ORDER BY total DESC\n"
+        "LIMIT 5"
+    )
+    cur.execute(top_crops_query, owner_params)
 
     top_crops = cur.fetchall()
 
@@ -1146,17 +1154,18 @@ def locations():
     inventory_owner_filter = "" if is_admin else " AND farmer = ?"
     owner_params = () if is_admin else (session["user"],)
 
-    # All locations
-    cur.execute(f"""
-        SELECT location,
-               SUM(quantity) AS total
-        FROM inventory
-        WHERE location IS NOT NULL
-          AND location != ''
-            {inventory_owner_filter}
-        GROUP BY location
-        ORDER BY total DESC
-        """, owner_params)
+    # The optional filter is a fixed server-selected fragment; values remain bound.
+    locations_query = (
+        "SELECT location,\n"  # nosec B608
+        "       SUM(quantity) AS total\n"
+        "FROM inventory\n"
+        "WHERE location IS NOT NULL\n"
+        "  AND location != ''\n"
+        + inventory_owner_filter
+        + "\nGROUP BY location\n"
+        "ORDER BY total DESC"
+    )
+    cur.execute(locations_query, owner_params)
 
     locations_data = cur.fetchall()
     location_count = len(locations_data)

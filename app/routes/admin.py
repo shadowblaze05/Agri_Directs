@@ -5,7 +5,8 @@ import io
 import math
 import os
 from zipfile import BadZipFile
-from xml.etree.ElementTree import ParseError
+# OpenPyXL installs its hardened XML backend and uses it for XLSX parsing.
+from xml.etree.ElementTree import ParseError  # nosec B405
 
 from flask import Response, abort, current_app, flash, redirect, render_template, request, send_from_directory, session, stream_with_context, url_for
 from openpyxl import load_workbook
@@ -46,6 +47,19 @@ MARKETPLACE_TRANSACTION_COMPLETED = """(
     OR LOWER(COALESCE(m.status, '')) = 'traded'
     OR (COALESCE(m.delivery_confirmed, 0) = 1 AND COALESCE(m.buyer_confirmed, 0) = 1)
 )"""
+_SAVEABLE_RECORD_COLUMNS = {
+    ("crop_categories", "name"),
+    ("knowledge_categories", "category_name"),
+}
+_EDITABLE_RECORD_COLUMNS = {
+    ("crop_categories", "name", "id", "description"),
+    ("knowledge_categories", "category_name", "category_id", None),
+}
+_DELETABLE_RECORD_COLUMNS = {
+    ("crop_categories", "id"),
+    ("crops", "id"),
+    ("knowledge_categories", "category_id"),
+}
 
 
 def _current_user_is_admin():
@@ -212,7 +226,7 @@ def edit_admin_user(user_id):
             conn.close()
             flash(password_error, "danger")
             return _redirect_admin("admin_users")
-        query += ", password=?"
+        query += ", password = ?, auth_version = auth_version + 1"
         fields.append(generate_password_hash(password))
     query += " WHERE id=?"
     fields.append(user_id)
@@ -254,6 +268,8 @@ def delete_admin_user(user_id):
 
 
 def _save_named_record(table, column, success_message, endpoint="admin_catalog"):
+    if (table, column) not in _SAVEABLE_RECORD_COLUMNS:
+        raise ValueError("Unsupported named record")
     value = _form_value("name")
     if not value:
         flash("A name is required", "danger")
@@ -261,7 +277,10 @@ def _save_named_record(table, column, success_message, endpoint="admin_catalog")
     conn = get_db()
     cur = conn.cursor()
     try:
-        cur.execute(f"INSERT INTO {table}({column}) VALUES (?)", (value,))
+        cur.execute(
+            f"INSERT INTO {table}({column}) VALUES (?)",  # nosec B608
+            (value,),
+        )
         conn.commit()
         flash(success_message, "success")
     except IntegrityError:
@@ -511,7 +530,7 @@ def save_crop_pricing_batch():
     existing_crop_ids = {
         row["id"]
         for row in cur.execute(
-            f"SELECT id FROM crops WHERE id IN ({placeholders})",
+            f"SELECT id FROM crops WHERE id IN ({placeholders})",  # nosec B608
             tuple(seen_crop_ids),
         ).fetchall()
     }
@@ -844,13 +863,15 @@ def delete_knowledge_category(category_id):
 
 
 def _edit_named_record(table, column, id_column, record_id, message, extra_column=None, endpoint="admin_catalog"):
+    if (table, column, id_column, extra_column) not in _EDITABLE_RECORD_COLUMNS:
+        raise ValueError("Unsupported named record")
     value = _form_value("name")
     if not value:
         flash("A name is required", "danger")
         return _redirect_admin(endpoint)
     conn = get_db()
     values = [value]
-    query = f"UPDATE {table} SET {column}=?"
+    query = f"UPDATE {table} SET {column}=?"  # nosec B608
     if extra_column:
         query += f", {extra_column}=?"
         values.append(_form_value("description") or None)
@@ -869,10 +890,15 @@ def _edit_named_record(table, column, id_column, record_id, message, extra_colum
 
 
 def _delete_named_record(table, id_column, record_id, message, endpoint="admin_catalog"):
+    if (table, id_column) not in _DELETABLE_RECORD_COLUMNS:
+        raise ValueError("Unsupported named record")
     conn = get_db()
     cur = conn.cursor()
     try:
-        cur.execute(f"DELETE FROM {table} WHERE {id_column}=?", (record_id,))
+        cur.execute(
+            f"DELETE FROM {table} WHERE {id_column}=?",  # nosec B608
+            (record_id,)
+        )
         conn.commit()
         flash(message, "success")
     except IntegrityError:
@@ -897,13 +923,15 @@ def admin_knowledge():
     if search:
         search_filter = "WHERE kp.title LIKE ? OR kp.author LIKE ? OR kc.category_name LIKE ?"
         params = [f"%{search}%"] * 3
-    cur.execute(f"""
-        SELECT kp.post_id, kp.title, kp.status, kp.is_pinned, kp.created_at, kp.views, kc.category_name, kp.author
-        FROM knowledge_posts kp
-        LEFT JOIN knowledge_categories kc ON kp.category_id = kc.category_id
-        {search_filter}
-        ORDER BY kp.is_pinned DESC, kp.created_at DESC
-    """, params)
+    # search_filter selects a fixed clause; search values are bound separately.
+    posts_query = (
+        "SELECT kp.post_id, kp.title, kp.status, kp.is_pinned, kp.created_at, kp.views, kc.category_name, kp.author\n"  # nosec B608
+        "FROM knowledge_posts kp\n"
+        "LEFT JOIN knowledge_categories kc ON kp.category_id = kc.category_id\n"
+        + search_filter
+        + "\nORDER BY kp.is_pinned DESC, kp.created_at DESC"
+    )
+    cur.execute(posts_query, params)
     posts = cur.fetchall()
     cur.execute("SELECT category_id, category_name FROM knowledge_categories ORDER BY category_name")
     categories = cur.fetchall()
@@ -1078,7 +1106,7 @@ def admin():
         "articles": cur.execute("SELECT COUNT(*) AS count FROM knowledge_posts").fetchone()["count"],
         "marketplace": cur.execute("SELECT COUNT(*) AS count FROM marketplace").fetchone()["count"],
         "marketplace_transactions": cur.execute(
-            f"SELECT COUNT(*) AS count FROM marketplace m WHERE {MARKETPLACE_TRANSACTION_FILTER}"
+            f"SELECT COUNT(*) AS count FROM marketplace m WHERE {MARKETPLACE_TRANSACTION_FILTER}",  # nosec B608
         ).fetchone()["count"],
         "open_reports": cur.execute(
             "SELECT COUNT(*) AS count FROM profile_reports WHERE status='open'"
@@ -1295,31 +1323,37 @@ def admin_marketplace_transactions():
         f"CASE WHEN {MARKETPLACE_TRANSACTION_COMPLETED} "
         "THEN 'completed' ELSE 'incomplete' END"
     )
-    totals = cur.execute(
-        f"""SELECT COUNT(*) AS total,
-                   SUM(CASE WHEN {MARKETPLACE_TRANSACTION_COMPLETED} THEN 1 ELSE 0 END) AS completed
-            FROM marketplace m
-            WHERE {MARKETPLACE_TRANSACTION_FILTER}"""
-    ).fetchone()
+    # These predicates are fixed module-level SQL fragments; request data is bound.
+    totals_query = (
+        "SELECT COUNT(*) AS total,\n"  # nosec B608
+        "       SUM(CASE WHEN " + MARKETPLACE_TRANSACTION_COMPLETED
+        + " THEN 1 ELSE 0 END) AS completed\n"
+        "FROM marketplace m\n"
+        "WHERE " + MARKETPLACE_TRANSACTION_FILTER
+    )
+    totals = cur.execute(totals_query).fetchone()
+    transactions_query = (
+        "SELECT * FROM (\n"  # nosec B608
+        "    SELECT m.id, m.crop_name, m.username,\n"
+        "           COALESCE(u.username, m.username) AS seller_name,\n"
+        "           m.buyer_username, m.amount, m.preorder_quantity, m.unit, m.price,\n"
+        "           m.listing_type, m.order_status, m.preorder_status, m.status,\n"
+        "           m.order_date, m.delivery_date, m.delivery_confirmed,\n"
+        "           m.buyer_confirmed, m.buyer_rating,\n"
+        "           " + completion_sql + " AS completion_state,\n"
+        "           COALESCE(m.preorder_quantity, m.amount) AS transaction_quantity\n"
+        "    FROM marketplace m\n"
+        "    LEFT JOIN users u ON u.id = m.user_id\n"
+        "    WHERE " + MARKETPLACE_TRANSACTION_FILTER + "\n"
+        ") marketplace_transactions\n"
+        "WHERE (? = '' OR CAST(id AS TEXT) LIKE ? OR COALESCE(crop_name, '') LIKE ?\n"
+        "       OR COALESCE(seller_name, '') LIKE ? OR COALESCE(buyer_username, '') LIKE ?\n"
+        "       OR COALESCE(order_status, '') LIKE ? OR COALESCE(preorder_status, '') LIKE ?)\n"
+        "  AND (? = '' OR completion_state = ?)\n"
+        "ORDER BY COALESCE(order_date, '') DESC, id DESC"
+    )
     transactions = cur.execute(
-        f"""SELECT * FROM (
-                SELECT m.id, m.crop_name, m.username,
-                       COALESCE(u.username, m.username) AS seller_name,
-                       m.buyer_username, m.amount, m.preorder_quantity, m.unit, m.price,
-                       m.listing_type, m.order_status, m.preorder_status, m.status,
-                       m.order_date, m.delivery_date, m.delivery_confirmed,
-                       m.buyer_confirmed, m.buyer_rating,
-                       {completion_sql} AS completion_state,
-                       COALESCE(m.preorder_quantity, m.amount) AS transaction_quantity
-                FROM marketplace m
-                LEFT JOIN users u ON u.id = m.user_id
-                WHERE {MARKETPLACE_TRANSACTION_FILTER}
-            ) marketplace_transactions
-            WHERE (? = '' OR CAST(id AS TEXT) LIKE ? OR COALESCE(crop_name, '') LIKE ?
-                   OR COALESCE(seller_name, '') LIKE ? OR COALESCE(buyer_username, '') LIKE ?
-                   OR COALESCE(order_status, '') LIKE ? OR COALESCE(preorder_status, '') LIKE ?)
-              AND (? = '' OR completion_state = ?)
-            ORDER BY COALESCE(order_date, '') DESC, id DESC""",
+        transactions_query,
         (
             search, f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%",
             f"%{search}%", f"%{search}%", completion_filter, completion_filter,

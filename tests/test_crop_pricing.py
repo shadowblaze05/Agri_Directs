@@ -28,7 +28,8 @@ def _application(tmp_path):
                     id INTEGER PRIMARY KEY, username TEXT UNIQUE, role TEXT,
                     is_active BOOLEAN NOT NULL DEFAULT TRUE, location TEXT,
                     location_latitude REAL, location_longitude REAL,
-                    location_verified BOOLEAN NOT NULL DEFAULT FALSE
+                    location_verified BOOLEAN NOT NULL DEFAULT FALSE,
+                    auth_version INTEGER NOT NULL DEFAULT 0
                 )
             """))
             connection.execute(text("""

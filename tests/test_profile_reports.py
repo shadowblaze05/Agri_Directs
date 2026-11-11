@@ -41,7 +41,8 @@ def make_profile_report_app(tmp_path):
                     location_latitude FLOAT, location_longitude FLOAT,
                     location_verified BOOLEAN, profile_photo_captured_at DATETIME,
                     psgc_location TEXT, geotag_location TEXT,
-                    is_active BOOLEAN NOT NULL DEFAULT 1
+                    is_active BOOLEAN NOT NULL DEFAULT 1,
+                    auth_version INTEGER NOT NULL DEFAULT 0
                 )
             """))
             connection.execute(text("""

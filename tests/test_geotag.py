@@ -9,7 +9,7 @@ import pytest
 from flask import session as flask_session
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from PIL import Image
+from PIL import Image, PngImagePlugin
 from sqlalchemy import create_engine, inspect
 from werkzeug.datastructures import FileStorage
 
@@ -28,6 +28,7 @@ from app.routes import admin as admin_routes
 from app.routes import profile as profile_routes
 from app.routes import marketplace as marketplace_routes
 from app.routes import auth as auth_routes
+from app.services import auth_service
 from app.services.auth_service import generate_jwt_token
 from app.services.profile_service import missing_harvest_profile_requirements
 
@@ -76,9 +77,9 @@ def test_profile_completion_requires_camera_photo_and_gps_location():
     }
 
     assert missing_harvest_profile_requirements(incomplete) == [
-        "profile photo GPS capture",
-        "GPS-derived farm location",
-        "verified profile GPS location",
+        "profile photo timestamp",
+        "GPS-derived place name",
+        "profile GPS coordinates",
     ]
     incomplete.update({
         "profile_photo_captured_at": "2026-09-26T12:00:00+00:00",
@@ -86,7 +87,7 @@ def test_profile_completion_requires_camera_photo_and_gps_location():
         "geotag_location": "GPS place, Example City, Province",
         "location_latitude": 14.6,
         "location_longitude": 120.98,
-        "location_verified": True,
+        "location_verified": False,
     })
     assert missing_harvest_profile_requirements(incomplete) == []
 
@@ -151,6 +152,7 @@ def test_psgc_resolver_matches_reverse_geocoded_city_and_province(monkeypatch):
 @pytest.fixture
 def client(monkeypatch):
     app_module.app.config.update(TESTING=True)
+    monkeypatch.setattr(auth_service, "get_active_user_auth_version", lambda *_args: 0)
     role_lookup = lambda username, _connection_factory=None: (
         flask_session.get("role", "user")
         if flask_session.get("user") == username
@@ -200,7 +202,7 @@ def test_api_harvest_rejects_invalid_coordinates_before_database_access(client):
     assert "Latitude" in response.get_json()["error"]
 
 
-def test_profile_location_saves_validated_coordinates(client, tmp_path, monkeypatch):
+def test_profile_location_saves_unverified_coordinates(client, tmp_path, monkeypatch):
     class FakeCursor:
         rowcount = 1
 
@@ -233,10 +235,16 @@ def test_profile_location_saves_validated_coordinates(client, tmp_path, monkeypa
     response = client.post(
         "/profile/location",
         data={
-            "profile_photo": (_png_bytes(), "profile.png", "image/png"),
+            "profile_photo": (
+                _png_bytes_with_location_metadata(),
+                "profile.png",
+                "image/png",
+            ),
             "latitude": "14.6",
             "longitude": "120.98",
             "captured_at": _recent_timestamp(),
+            "location_verified": "true",
+            "username": "victim",
         },
         content_type="multipart/form-data",
     )
@@ -248,11 +256,14 @@ def test_profile_location_saves_validated_coordinates(client, tmp_path, monkeypa
         "Example City, Province",
     )
     assert connection.fake_cursor.params[5:7] == (14.6, 120.98)
+    assert "location_verified=FALSE" in connection.fake_cursor.query
+    assert "location_verified_at=NULL" in connection.fake_cursor.query
     assert response.get_json()["geotag_location"] == "Example City, Province"
     assert response.get_json()["psgc_location"] == "PSGC City, Province"
     assert connection.fake_cursor.params[-1] == "farmer"
     assert response.get_json()["status"] == "captured"
     assert response.get_json()["location"] == "PSGC City, Province"
+    assert "not independently verified" in response.get_json()["message"]
 
 
 def test_api_harvest_uses_token_owner_and_manual_review_without_photo(client, monkeypatch):
@@ -274,9 +285,10 @@ def test_api_harvest_uses_token_owner_and_manual_review_without_photo(client, mo
                     "geotag_location": "GPS Farm Place",
                     "location_latitude": 0,
                     "location_longitude": 0,
-                    "location_verified": True,
+                    "location_verified": False,
                     "is_active": True,
                     "role": "seller",
+                    "auth_version": 0,
                 }
             elif "INSERT INTO inventory(" in query:
                 self.inserted_values = params
@@ -315,6 +327,8 @@ def test_api_harvest_uses_token_owner_and_manual_review_without_photo(client, mo
             "latitude": 0,
             "longitude": longitude,
             "gps_captured_at": "2026-09-26T12:00:00Z",
+            "location_verified": True,
+            "verification_status": "approved",
         },
     )
 
@@ -323,6 +337,7 @@ def test_api_harvest_uses_token_owner_and_manual_review_without_photo(client, mo
     assert connection.fake_cursor.inserted_values[7] == pytest.approx(1_000)
     assert connection.fake_cursor.inserted_values[8] == "manual_review"
     assert "API submissions do not include crop photo evidence" in connection.fake_cursor.inserted_values[9]
+    assert "GPS coordinates and timestamp are self-reported" in connection.fake_cursor.inserted_values[9]
     assert response.get_json()["proximity_status"] == "within_range"
 
 
@@ -399,6 +414,18 @@ def _png_bytes():
     return stream
 
 
+def _png_bytes_with_location_metadata():
+    stream = BytesIO()
+    metadata = PngImagePlugin.PngInfo()
+    metadata.add_text("GPSLatitude", "0")
+    metadata.add_text("GPSLongitude", "0")
+    Image.new("RGB", (2, 2), color="green").save(
+        stream, format="PNG", pnginfo=metadata
+    )
+    stream.seek(0)
+    return stream
+
+
 def _recent_timestamp():
     return datetime.now(timezone.utc).isoformat()
 
@@ -453,8 +480,8 @@ def _mock_inventory_database(monkeypatch, reference_location):
     return connection.fake_cursor
 
 
-def test_manual_harvest_saves_proximity_result_without_photo(client, monkeypatch):
-    cursor = _mock_inventory_database(monkeypatch, (0, 0, True))
+def test_manual_harvest_saves_proximity_as_unverified_pending_review(client, monkeypatch):
+    cursor = _mock_inventory_database(monkeypatch, (0, 0, False))
     with client.session_transaction() as session:
         session["user"] = "farmer"
         session["role"] = "user"
@@ -468,6 +495,9 @@ def test_manual_harvest_saves_proximity_result_without_photo(client, monkeypatch
             "latitude": "0",
             "longitude": str(capture_longitude),
             "gps_captured_at": _recent_timestamp(),
+            "farmer": "another-user",
+            "verification_status": "approved",
+            "location_verified": "true",
         },
         content_type="multipart/form-data",
     )
@@ -476,8 +506,10 @@ def test_manual_harvest_saves_proximity_result_without_photo(client, monkeypatch
     assert cursor.inserted_values[5] is None
     assert cursor.inserted_values[8] is not None
     assert cursor.inserted_values[9] == pytest.approx(1_000)
-    assert cursor.inserted_values[10] == "within_range"
-    assert cursor.inserted_values[11] is None
+    assert cursor.inserted_values[2] == "farmer"
+    assert cursor.inserted_values[10] == "pending_review"
+    assert "self-reported" in cursor.inserted_values[11]
+    assert "proximity is not verification" in cursor.inserted_values[11]
     with client.session_transaction() as session:
         assert session["_flashes"][-1] == ("success", "Harvest added")
 
@@ -541,6 +573,7 @@ def test_incomplete_profile_cannot_upload_harvest(client, monkeypatch):
                 "location_verified": False,
                 "is_active": True,
                 "role": "seller",
+                "auth_version": 0,
             }
 
     class FakeConnection:
@@ -582,6 +615,7 @@ def test_incomplete_profile_cannot_submit_jwt_harvest(client, monkeypatch):
                 "location_verified": False,
                 "is_active": True,
                 "role": "seller",
+                "auth_version": 0,
             }
 
     class FakeConnection:
@@ -600,7 +634,7 @@ def test_incomplete_profile_cannot_submit_jwt_harvest(client, monkeypatch):
     )
 
     assert response.status_code == 403
-    assert "camera-captured profile photo" in response.get_json()["missing_profile_requirements"]
+    assert "profile photo" in response.get_json()["missing_profile_requirements"]
 
 
 def test_profile_editor_uses_camera_capture_without_file_picker(client, monkeypatch):
@@ -689,9 +723,9 @@ def test_marketplace_seller_link_opens_contact_profile(client, monkeypatch):
     assert b"Recent Inventory" not in response.data
 
 
-def test_marketplace_thumbnail_requires_verified_profile_and_ten_km_radius(client):
+def test_marketplace_thumbnail_checks_proximity_to_self_reported_profile_coordinates(client):
     user = {
-        "location_verified": True,
+        "location_verified": False,
         "location_latitude": 0,
         "location_longitude": 0,
     }
@@ -723,9 +757,10 @@ def test_marketplace_thumbnail_requires_verified_profile_and_ten_km_radius(clien
         with pytest.raises(ValueError, match="within 10 km"):
             marketplace_routes._validate_listing_thumbnail_capture(form, user, thumbnail)
 
-    user["location_verified"] = False
+    user["location_latitude"] = None
+    user["location_longitude"] = None
     with app_module.app.test_request_context("/marketplace/add", method="POST"):
-        with pytest.raises(ValueError, match="Verify your profile location"):
+        with pytest.raises(ValueError, match="Capture profile GPS coordinates"):
             marketplace_routes._validate_listing_thumbnail_capture(form, user, thumbnail)
 
 
@@ -738,7 +773,7 @@ def test_listing_thumbnail_location_is_server_checked_at_capture(client, monkeyp
                 assert "location_latitude, location_longitude" in query
                 assert params == ("farmer",)
                 self.result = {
-                    "location_verified": True,
+                    "location_verified": False,
                     "location_latitude": 0,
                     "location_longitude": 0,
                 }
@@ -776,7 +811,8 @@ def test_listing_thumbnail_location_is_server_checked_at_capture(client, monkeyp
     response = client.post("/marketplace/validate-thumbnail-location", json=payload)
 
     assert response.status_code == 200
-    assert response.json["valid"] is True
+    assert response.json["within_range"] is True
+    assert response.json["location_status"] == "self_reported"
     assert response.json["distance_km"] < 10
 
     payload["thumbnail_longitude"] = "0.1"
@@ -789,6 +825,176 @@ def test_listing_thumbnail_location_is_server_checked_at_capture(client, monkeyp
     assert recorded_alerts[0][1] > 10_000
 
 
+def test_listing_capture_stores_photo_and_proximity_without_verification(
+    client, monkeypatch
+):
+    class FakeCursor:
+        rowcount = 1
+        listing_update = None
+
+        def execute(self, query, params=()):
+            if query.startswith("SELECT id, crops_name FROM crops"):
+                self.result = {"id": 1, "crops_name": "Rice"}
+            elif "FROM crop_pricing" in query:
+                self.result = None
+            elif query.startswith("SELECT id, location, location_latitude"):
+                self.result = {
+                    "id": 7,
+                    "location": "Farm",
+                    "location_latitude": 0,
+                    "location_longitude": 0,
+                    "location_verified": False,
+                }
+            elif "INSERT INTO marketplace(" in query and "RETURNING id" in query:
+                self.result = (42,)
+            elif query.startswith("UPDATE marketplace SET main_image"):
+                self.listing_update = (query, params)
+                self.result = None
+            elif "INSERT INTO marketplace_images" in query:
+                self.result = None
+            else:
+                raise AssertionError(f"Unexpected SQL: {query}")
+            return self
+
+        def fetchone(self):
+            return self.result
+
+    class FakeConnection:
+        def __init__(self):
+            self.fake_cursor = FakeCursor()
+
+        def cursor(self):
+            return self.fake_cursor
+
+        def commit(self):
+            return None
+
+        def close(self):
+            return None
+
+    connection = FakeConnection()
+    monkeypatch.setattr(marketplace_routes, "get_db", lambda: connection)
+    monkeypatch.setattr(
+        marketplace_routes, "_available_inventory_quantity", lambda *_args: 10
+    )
+    monkeypatch.setattr(
+        marketplace_routes, "_save_marketplace_image", lambda *_args: "claim.jpg"
+    )
+    with client.session_transaction() as user_session:
+        user_session["user"] = "farmer"
+        user_session["role"] = "seller"
+
+    response = client.post(
+        "/marketplace/add",
+        data={
+            "crop_id": "1",
+            "amount": "1",
+            "price": "10",
+            "listing_type": "standard",
+            "thumbnail": (_png_bytes_with_location_metadata(), "claim.png", "image/png"),
+            "thumbnail_latitude": "0",
+            "thumbnail_longitude": "0",
+            "thumbnail_captured_at": _recent_timestamp(),
+            "thumbnail_verified": "true",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 302
+    query, params = connection.fake_cursor.listing_update
+    assert "thumbnail_verified=0" in query
+    assert "thumbnail_verified=1" not in query
+    assert params[0] == "claim.jpg"
+    assert params[1:3] == (0, 0)
+    assert params[3] == pytest.approx(0)
+
+
+def test_listing_edit_keeps_replacement_thumbnail_unverified(client, monkeypatch):
+    class FakeCursor:
+        replacement_update = None
+
+        def execute(self, query, params=()):
+            if query.startswith("SELECT id, location, location_latitude"):
+                self.result = {
+                    "id": 7,
+                    "location": "Farm",
+                    "location_latitude": 0,
+                    "location_longitude": 0,
+                }
+            elif "FROM marketplace WHERE id = ? AND user_id = ?" in query:
+                self.result = {
+                    "id": 42,
+                    "status": "available",
+                    "crop_name": "Rice",
+                    "crop_id": 1,
+                    "amount": 1,
+                    "price": 10,
+                    "unit": "kg",
+                    "description": "",
+                    "listing_type": "standard",
+                    "main_image": None,
+                }
+            elif "FROM crop_pricing" in query:
+                self.result = None
+            elif query.startswith("UPDATE marketplace SET main_image"):
+                self.replacement_update = (query, params)
+                self.result = None
+            elif "INSERT INTO marketplace_images" in query:
+                self.result = None
+            else:
+                self.result = None
+            return self
+
+        def fetchone(self):
+            return self.result
+
+        def fetchall(self):
+            return []
+
+    class FakeConnection:
+        def __init__(self):
+            self.fake_cursor = FakeCursor()
+
+        def cursor(self):
+            return self.fake_cursor
+
+        def commit(self):
+            return None
+
+        def close(self):
+            return None
+
+    connection = FakeConnection()
+    monkeypatch.setattr(marketplace_routes, "get_db", lambda: connection)
+    monkeypatch.setattr(
+        marketplace_routes, "_save_marketplace_image", lambda *_args: "replacement.jpg"
+    )
+    with client.session_transaction() as user_session:
+        user_session["user"] = "farmer"
+        user_session["role"] = "seller"
+
+    response = client.post(
+        "/marketplace/edit/42",
+        data={
+            "amount": "1",
+            "price": "10",
+            "description": "",
+            "thumbnail": (_png_bytes_with_location_metadata(), "replacement.png", "image/png"),
+            "thumbnail_latitude": "0",
+            "thumbnail_longitude": "0",
+            "thumbnail_captured_at": _recent_timestamp(),
+            "thumbnail_verified": "true",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 302
+    query, params = connection.fake_cursor.replacement_update
+    assert "thumbnail_verified=0" in query
+    assert "thumbnail_verified=1" not in query
+    assert params[1:3] == (0, 0)
+
+
 def test_listing_form_uses_camera_for_thumbnail_and_upload_for_gallery(client, monkeypatch):
     class FakeCursor:
         def execute(self, query, _params=()):
@@ -798,8 +1004,11 @@ def test_listing_form_uses_camera_for_thumbnail_and_upload_for_gallery(client, m
                 self.result = []
             elif query.startswith("SELECT id, crops_name FROM crops"):
                 self.result = []
-            elif query.startswith("SELECT location_verified FROM users"):
-                self.result = {"location_verified": True}
+            elif query.startswith("SELECT location_latitude, location_longitude FROM users"):
+                self.result = {
+                    "location_latitude": 0,
+                    "location_longitude": 0,
+                }
             elif query.startswith("SELECT id FROM users"):
                 self.result = {"id": 4}
             elif query.startswith("SELECT COALESCE(SUM(quantity), 0)"):
@@ -834,7 +1043,7 @@ def test_listing_form_uses_camera_for_thumbnail_and_upload_for_gallery(client, m
     assert b"Set as Thumbnail" not in response.data
     assert b"within 10 km" in response.data
     assert b"/marketplace/validate-thumbnail-location" in response.data
-    assert b"verified by the server" in response.data
+    assert b"not independently verified" in response.data
 
 
 def test_admin_marketplace_lists_and_creates_listings(client, monkeypatch):
@@ -1317,6 +1526,87 @@ def test_geotag_migration_adds_nullable_fields_and_can_downgrade():
         assert "location_latitude" not in {
             column["name"] for column in inspect(connection).get_columns("users")
         }
+
+    engine.dispose()
+
+
+def test_untrusted_location_migration_clears_verification_but_preserves_claims():
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "ab41d8e6c027_reclassify_client_location_claims.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "untrusted_location_migration", migration_path
+    )
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            """CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                location_verified BOOLEAN NOT NULL,
+                location_verified_at TEXT,
+                location_latitude FLOAT,
+                location_longitude FLOAT
+            )"""
+        )
+        connection.exec_driver_sql(
+            """CREATE TABLE marketplace (
+                id INTEGER PRIMARY KEY,
+                thumbnail_verified INTEGER NOT NULL,
+                main_image TEXT,
+                thumbnail_latitude FLOAT,
+                thumbnail_longitude FLOAT,
+                thumbnail_distance_meters FLOAT
+            )"""
+        )
+        connection.exec_driver_sql(
+            """CREATE TABLE inventory (
+                id INTEGER PRIMARY KEY,
+                verification_status TEXT,
+                verification_notes TEXT,
+                distance_from_user FLOAT
+            )"""
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO users VALUES (1, 1, '2026-09-26T12:00:00Z', 14.6, 120.98)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO marketplace VALUES (1, 1, 'claim.jpg', 14.6, 120.98, 25.0)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO inventory VALUES (1, 'within_range', NULL, 25.0)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO inventory VALUES (2, 'approved', 'Reviewed by admin', 30.0)"
+        )
+
+        with Operations.context(MigrationContext.configure(connection)):
+            migration.upgrade()
+
+        user = connection.exec_driver_sql(
+            "SELECT location_verified, location_verified_at, location_latitude, "
+            "location_longitude FROM users WHERE id=1"
+        ).one()
+        assert user == (0, None, 14.6, 120.98)
+        listing = connection.exec_driver_sql(
+            "SELECT thumbnail_verified, main_image, thumbnail_latitude, "
+            "thumbnail_longitude, thumbnail_distance_meters "
+            "FROM marketplace WHERE id=1"
+        ).one()
+        assert listing == (0, "claim.jpg", 14.6, 120.98, 25.0)
+        inventory_records = connection.exec_driver_sql(
+            "SELECT verification_status, verification_notes, distance_from_user "
+            "FROM inventory ORDER BY id"
+        ).all()
+        assert inventory_records[0][0] == "pending_review"
+        assert "self-reported" in inventory_records[0][1]
+        assert inventory_records[0][2] == 25.0
+        assert inventory_records[1] == ("approved", "Reviewed by admin", 30.0)
 
     engine.dispose()
 

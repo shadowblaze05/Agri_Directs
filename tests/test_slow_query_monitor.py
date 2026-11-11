@@ -26,7 +26,8 @@ def test_slow_query_capture_normalizes_sql_and_tracks_cost(tmp_path, monkeypatch
             connection.execute(text("""
                 CREATE TABLE users (
                     id INTEGER PRIMARY KEY, username TEXT UNIQUE,
-                    role TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT TRUE
+                    role TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    auth_version INTEGER NOT NULL DEFAULT 0
                 )
             """))
             connection.execute(text(

@@ -426,20 +426,21 @@
             </section>
             <section class="profile-card mb-4" aria-labelledby="location-verification-heading">
               <h2 id="location-verification-heading" class="section-title mb-2">
-                <i class="fas fa-location-dot me-2"></i>Camera-verified profile location
+                <i class="fas fa-location-dot me-2"></i>Self-reported profile location
               </h2>
               <p class="mb-2">
-                {% if user.location_verified and user.profile_photo_captured_at and user.profile_picture %}
-                  <span class="badge text-bg-success">Profile photo and GPS captured</span>
+                {% if user.location_latitude is not none and user.location_longitude is not none and user.profile_photo_captured_at and user.profile_picture %}
+                  <span class="badge text-bg-secondary">Photo and GPS submitted - not independently verified</span>
                   <span class="small text-muted">Last captured {{ user.profile_photo_captured_at|datetime_format }}</span>
                 {% else %}
-                  <span class="badge text-bg-secondary">Camera photo and GPS capture required</span>
+                  <span class="badge text-bg-secondary">Profile photo and GPS submission required</span>
                 {% endif %}
               </p>
               <a class="btn btn-outline-success btn-sm" href="{{ url_for('update_profile') }}">
                 <i class="fas fa-camera me-1"></i>{{ 'Update profile photo and location' if user.profile_picture else 'Capture profile photo and location' }}
               </a>
               <p class="small mt-3 mb-0"><strong>Location:</strong> {{ user.psgc_location or 'Not available' }}</p>
+              <p class="small text-muted mt-2 mb-0">Coordinates and capture time are self-reported. They may be used for approximate proximity checks, not as proof of location or ownership.</p>
             </section>
             <section class="profile-card mb-4">
               <h2 class="section-title mb-3">Farm Activity</h2>

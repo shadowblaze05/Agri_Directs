@@ -123,6 +123,25 @@ def test_admin_users_count_status_and_deactivation(tmp_path, monkeypatch):
             ).fetchone()["password"]
             connection.close()
         assert updated_password_hash == original_password_hash
+        response = client.post(
+            f"/admin/users/edit/{secure_account['id']}",
+            data={
+                "role": "user",
+                "is_active": "1",
+                "email": "secure-account@example.com",
+                "password": "FarmerName8",
+            },
+            follow_redirects=True,
+        )
+        assert response.status_code == 200
+        with application.app_context():
+            connection = get_db()
+            auth_version = connection.cursor().execute(
+                "SELECT auth_version FROM users WHERE id=?",
+                (secure_account["id"],),
+            ).fetchone()["auth_version"]
+            connection.close()
+        assert auth_version == 1
 
         response = client.post(
             f"/admin/users/edit/{user['id']}",

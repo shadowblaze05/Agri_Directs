@@ -55,7 +55,7 @@
                       {% endif %}
                       <span class="badge text-bg-{{ verification_badge }}">{{ verification_status|replace('_', ' ')|title }}</span>
                       {% if item['distance_from_user'] is not none %}
-                        <span class="text-muted"> | {{ (item['distance_from_user'] / 1000)|round(2) }} km from reference</span>
+                        <span class="text-muted"> | {{ (item['distance_from_user'] / 1000)|round(2) }} km from self-reported reference (proximity estimate)</span>
                       {% endif %}
                       {% if item['capture_time'] %}<br><small class="text-muted">GPS capture: {{ item['capture_time']|datetime_format }}</small>{% endif %}
                       {% if item['verification_notes'] %}<br><small class="text-muted">{{ item['verification_notes'] }}</small>{% endif %}

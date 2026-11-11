@@ -372,7 +372,7 @@ def upload():
     cur = conn.cursor()
     cur.execute(
         "SELECT first_name, last_name, email, profile_picture, profile_photo_captured_at, "
-        "location, psgc_location, geotag_location, location_latitude, location_longitude, location_verified "
+        "location, psgc_location, geotag_location, location_latitude, location_longitude "
         "FROM users WHERE username=?",
         (session["user"],),
     )
@@ -548,21 +548,30 @@ def upload():
                 return redirect(request.url)
 
             photo_path = None
-            profile_is_verified = bool(user and user["location_verified"])
-            verification_status, distance = verify_crop_location(
-                user["location_latitude"] if profile_is_verified else None,
-                user["location_longitude"] if profile_is_verified else None,
+            has_profile_coordinates = bool(
+                user
+                and user["location_latitude"] is not None
+                and user["location_longitude"] is not None
+            )
+            _, distance = verify_crop_location(
+                user["location_latitude"] if has_profile_coordinates else None,
+                user["location_longitude"] if has_profile_coordinates else None,
                 latitude,
                 longitude,
                 current_app.config["MAX_CROP_DISTANCE_METERS"],
             )
-            notes = []
-            if not profile_is_verified:
-                notes.append("Farmer has no captured reference location.")
+            notes = [
+                "GPS coordinates and timestamp are self-reported; proximity is not verification."
+            ]
+            if not has_profile_coordinates:
+                notes.append("Farmer has no saved reference coordinates.")
             if latitude is None or capture_time is None:
                 notes.append("Harvest GPS capture is missing or incomplete.")
-            if notes:
-                verification_status = "manual_review"
+            verification_status = (
+                "pending_review"
+                if latitude is not None and capture_time is not None
+                else "manual_review"
+            )
 
             cur.execute("""
             INSERT INTO inventory(

@@ -506,7 +506,7 @@
                     class="text-decoration-none text-dark"
                     ><div class="market-card">
                       <div class="market-card-image">
-                        {% if listing['main_image'] and listing['thumbnail_verified'] %}
+                        {% if listing['main_image'] %}
                         <img
                           src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}"
                           alt="{{ listing['crop_name'] }} listed by {{ listing['seller_name'] }}"
@@ -516,7 +516,7 @@
                         {% endif %}
                         <div
                           class="market-card-image-fallback"
-                          {% if listing['main_image'] and listing['thumbnail_verified'] %}style="display:none"{% endif %}
+                          {% if listing['main_image'] %}style="display:none"{% endif %}
                           aria-hidden="true"
                         >
                           <i class="fas fa-shopping-basket"></i>

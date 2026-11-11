@@ -49,7 +49,7 @@ def test_add_listing_renders_inventory_crop_as_option_text():
             crops=[crop],
             all_crops=[],
             cart_count=0,
-            profile_location_verified=False,
+            profile_location_available=False,
             user_inventory=[],
         )
 
@@ -57,6 +57,9 @@ def test_add_listing_renders_inventory_crop_as_option_text():
     assert ">Tomatoes (12 kg available)" in rendered
     assert 'id="amountLabel" class="form-label">Amount (kg) *' in rendered
     assert "Quantity Wanted (kg) *" in rendered
+    assert "GPS is compared with your saved profile coordinates" in rendered
+    assert "neither location is independently verified" in rendered
+    assert "Camera-verified thumbnail" not in rendered
 
 
 @pytest.mark.parametrize(

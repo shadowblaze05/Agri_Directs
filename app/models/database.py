@@ -111,10 +111,23 @@ class PostgreSQLCursor:
         if legacy_insert and params is not None:
             remaining_columns = legacy_insert.group(1).strip()
             if remaining_columns:
+                column_names = [column.strip() for column in remaining_columns.split(",")]
+                if any(
+                    not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", column)
+                    for column in column_names
+                ):
+                    raise ValueError("Legacy inventory insert contains invalid column names")
+                available_columns = {
+                    row["name"] for row in self.execute("PRAGMA table_info(inventory)").fetchall()
+                }
+                if not set(column_names).issubset(available_columns):
+                    raise ValueError("Legacy inventory insert contains unknown column names")
+
                 legacy_params = tuple(params)
                 if legacy_params:
                     sql = (
-                        "INSERT INTO inventory(crop_id, crop_name, " + remaining_columns + ") "
+                        "INSERT INTO inventory(crop_id, crop_name, "  # nosec B608
+                        + ", ".join(column_names) + ") "  # nosec B608
                         "VALUES ((SELECT id FROM crops WHERE crops_name = ?), ?, "
                         + ", ".join("?" for _ in range(len(legacy_params) - 1)) + ")"
                     )
@@ -309,6 +322,7 @@ def init_db():
 
     database_uri = str(current_app.config.get("SQLALCHEMY_DATABASE_URI", ""))
     if current_app.config.get("APP_ENV") == "testing" and database_uri.startswith("sqlite:"):
+        # These table names are a fixed local allowlist, not request input.
         for table_name in (
             "knowledge_replies",
             "knowledge_comments",
@@ -321,7 +335,7 @@ def init_db():
             "users",
         ):
             try:
-                cur.execute(f"DELETE FROM {table_name}")
+                cur.execute(f"DELETE FROM {table_name}")  # nosec B608
             except Exception:
                 logger.debug("Skipping reset for missing table %s", table_name)
         conn.commit()
@@ -351,6 +365,7 @@ def init_db():
         ("first_name", "TEXT"),
         ("last_name", "TEXT"),
         ("email", "TEXT"),
+        ("auth_version", "INTEGER NOT NULL DEFAULT 0"),
     ):
         if column not in user_columns:
             cur.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
@@ -532,8 +547,6 @@ def init_db():
     for column, definition in marketplace_compatibility_columns.items():
         if column not in marketplace_columns:
             cur.execute(f"ALTER TABLE marketplace ADD COLUMN {column} {definition}")
-    cur.execute("UPDATE marketplace SET main_image=NULL WHERE thumbnail_verified=0")
-
     cur.execute("PRAGMA table_info(users)")
     users_columns = [row[1] for row in cur.fetchall()]
     # Keep databases created before the expanded account model compatible with
@@ -543,6 +556,7 @@ def init_db():
         'first_name': 'TEXT',
         'last_name': 'TEXT',
         'is_active': 'BOOLEAN NOT NULL DEFAULT TRUE',
+        'auth_version': 'INTEGER NOT NULL DEFAULT 0',
         'phone_number': 'TEXT',
         'profile_picture': 'TEXT',
         'bio': 'TEXT',

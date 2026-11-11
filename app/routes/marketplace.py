@@ -96,8 +96,8 @@ def _save_marketplace_image(uploaded_file, extension):
 
 
 def _validate_listing_thumbnail_location(form, user):
-    if not user["location_verified"]:
-        raise ValueError("Verify your profile location with a camera photo and GPS before creating a listing.")
+    if user["location_latitude"] is None or user["location_longitude"] is None:
+        raise ValueError("Capture profile GPS coordinates before checking listing photo proximity.")
     try:
         latitude, longitude = validate_coordinates(
             form.get("thumbnail_latitude"),
@@ -111,8 +111,6 @@ def _validate_listing_thumbnail_location(form, user):
     now = datetime.now(timezone.utc)
     if (now - captured_at).total_seconds() > 600 or (captured_at - now).total_seconds() > 300:
         raise ValueError("Capture a new camera photo and GPS location for the listing.")
-    if user["location_latitude"] is None or user["location_longitude"] is None:
-        raise ValueError("Your verified profile location has no saved GPS coordinates. Update your profile before creating a listing.")
     try:
         status, distance = verify_crop_location(
             user["location_latitude"],
@@ -122,12 +120,12 @@ def _validate_listing_thumbnail_location(form, user):
             MAX_LISTING_PHOTO_DISTANCE_METERS,
         )
     except ValueError as error:
-        raise ValueError("Your verified profile location is invalid. Update it before creating a listing.") from error
+        raise ValueError("Your saved profile coordinates are invalid. Update them before creating a listing.") from error
     if status != "within_range":
         distance_km = f"{distance / 1000:.2f}" if distance is not None else "unknown"
         captured_at_iso = captured_at.astimezone(timezone.utc).isoformat()
         raise ListingThumbnailOutOfRange(
-            f"The listing thumbnail must be within 10 km of your verified profile location "
+            f"The listing thumbnail must be within 10 km of your self-reported profile location "
             f"(captured distance: {distance_km} km).",
             distance,
             captured_at_iso,
@@ -182,7 +180,7 @@ def validate_listing_thumbnail_location():
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT location_verified, location_latitude, location_longitude "
+            "SELECT location_latitude, location_longitude "
             "FROM users WHERE username=?",
             (session["user"],),
         )
@@ -199,9 +197,10 @@ def validate_listing_thumbnail_location():
             return jsonify({"error": str(error)}), 400
 
         return jsonify({
-            "valid": True,
+            "within_range": True,
             "distance_meters": round(distance, 2),
             "distance_km": round(distance / 1000, 2),
+            "location_status": "self_reported",
         })
     finally:
         conn.close()
@@ -297,12 +296,14 @@ def marketplace():
     image_counts = {}
     if listing_ids:
         placeholders = ','.join(['?'] * len(listing_ids))
-        cur.execute(f"""
-            SELECT listing_id, COUNT(*) as count
-            FROM marketplace_images
-            WHERE listing_id IN ({placeholders})
-            GROUP BY listing_id
-        """, listing_ids)
+        # Placeholder count is derived from IDs loaded from the database.
+        image_counts_query = (
+            "SELECT listing_id, COUNT(*) as count\n"  # nosec B608
+            "FROM marketplace_images\n"
+            "WHERE listing_id IN (" + placeholders + ")\n"
+            "GROUP BY listing_id"
+        )
+        cur.execute(image_counts_query, listing_ids)
         for row in cur.fetchall():
             image_counts[row['listing_id']] = row['count']
 
@@ -413,7 +414,7 @@ def add_marketplace_listing():
                 return redirect(request.url)
 
         cur.execute(
-            "SELECT id, location, location_latitude, location_longitude, location_verified "
+            "SELECT id, location, location_latitude, location_longitude "
             "FROM users WHERE username = ?",
             (session["user"],),
         )
@@ -480,7 +481,7 @@ def add_marketplace_listing():
             extension, latitude, longitude, distance, captured_at = thumbnail_capture
             main_image = _save_marketplace_image(thumbnail, extension)
             cur.execute(
-                "UPDATE marketplace SET main_image=?, thumbnail_verified=1, "
+                "UPDATE marketplace SET main_image=?, thumbnail_verified=0, "
                 "thumbnail_latitude=?, thumbnail_longitude=?, thumbnail_distance_meters=?, "
                 "thumbnail_captured_at=? WHERE id=?",
                 (main_image, latitude, longitude, distance, captured_at, listing_id),
@@ -561,7 +562,7 @@ def add_marketplace_listing():
     all_crops = cur.fetchall()
 
     cur.execute(
-        "SELECT location_verified FROM users WHERE username=?",
+        "SELECT location_latitude, location_longitude FROM users WHERE username=?",
         (session["user"],),
     )
     profile_location = cur.fetchone()
@@ -573,8 +574,10 @@ def add_marketplace_listing():
                          all_crops=all_crops,
                          user_inventory=user_inventory,
                          cart_count=cart_count,
-                         profile_location_verified=bool(
-                             profile_location and profile_location["location_verified"]
+                         profile_location_available=bool(
+                             profile_location
+                             and profile_location["location_latitude"] is not None
+                             and profile_location["location_longitude"] is not None
                          ))
 
 def buy_marketplace_item(listing_id):
@@ -1449,7 +1452,7 @@ def delete_listing_image(image_id):
 
     if image["image_filename"] == image["main_image"]:
         conn.close()
-        return jsonify({"error": "The camera-verified thumbnail cannot be deleted."}), 400
+        return jsonify({"error": "The main thumbnail cannot be deleted."}), 400
 
     cur.execute("SELECT COUNT(*) as count FROM marketplace_images WHERE listing_id = ?", (image["listing_id"],))
     count = cur.fetchone()["count"]
@@ -1866,7 +1869,7 @@ def edit_marketplace_listing(listing_id):
     cur = conn.cursor()
 
     cur.execute(
-        "SELECT id, location, location_latitude, location_longitude, location_verified "
+        "SELECT id, location, location_latitude, location_longitude "
         "FROM users WHERE username = ?",
         (session["user"],),
     )
@@ -1997,7 +2000,7 @@ def edit_marketplace_listing(listing_id):
                     (listing_id, replaced_thumbnail),
                 )
             cur.execute(
-                "UPDATE marketplace SET main_image=?, thumbnail_verified=1, "
+                "UPDATE marketplace SET main_image=?, thumbnail_verified=0, "
                 "thumbnail_latitude=?, thumbnail_longitude=?, thumbnail_distance_meters=?, "
                 "thumbnail_captured_at=? WHERE id=?",
                 (filename, latitude, longitude, distance, captured_at, listing_id),
@@ -2038,7 +2041,10 @@ def edit_marketplace_listing(listing_id):
                          crop_pricing=crop_pricing,
                          seller_price_bounds=price_bounds(crop_pricing),
                          cart_count=cart_count,
-                         profile_location_verified=bool(user["location_verified"]))
+                         profile_location_available=(
+                             user["location_latitude"] is not None
+                             and user["location_longitude"] is not None
+                         ))
 
 
 def create_preorder(listing_id):
@@ -2581,10 +2587,7 @@ def register(application):
                             view_func=looking_for_listings)
 
     for _name in __all__:
-        try:
-            setattr(core, _name, globals()[_name])
-        except Exception:
-            pass
+        setattr(core, _name, globals()[_name])
 
 
 __all__ = [

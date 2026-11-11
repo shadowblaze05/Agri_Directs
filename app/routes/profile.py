@@ -29,7 +29,7 @@ def _profile_data(cursor, username):
     cursor.execute(
         """SELECT username, first_name, last_name, email, phone_number,
                   profile_picture, bio, role, is_verified, location_latitude,
-                  location_longitude, location_verified, profile_photo_captured_at,
+                  location_longitude, profile_photo_captured_at,
                   psgc_location, geotag_location
            FROM users WHERE username=?""",
         (username,),
@@ -277,7 +277,7 @@ def update_profile():
 
 
 def capture_profile_location():
-    """Save a camera-captured profile photo and its browser GPS-derived location."""
+    """Save a profile image and browser GPS-derived location as self-reported data."""
     if "user" not in session:
         return jsonify({"error": "Sign in before capturing your profile photo."}), 401
 
@@ -348,17 +348,16 @@ def capture_profile_location():
         core.app.config["MAX_PROFILE_PHOTO_SIZE_BYTES"],
     )
     captured_at_iso = captured_at.astimezone(timezone.utc).isoformat()
-    verified_at = now.isoformat()
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
         "UPDATE users SET profile_picture=?, profile_photo_captured_at=?, location=?, "
         "psgc_location=?, geotag_location=?, "
-        "location_latitude=?, location_longitude=?, location_verified=TRUE, "
-        "location_verified_at=?, updated_at=? WHERE username=?",
+        "location_latitude=?, location_longitude=?, location_verified=FALSE, "
+        "location_verified_at=NULL, updated_at=? WHERE username=?",
         (
             f"/static/uploads/profiles/{filename}", captured_at_iso, psgc_location,
-            psgc_location, geotag_location, latitude, longitude, verified_at, verified_at,
+            psgc_location, geotag_location, latitude, longitude, now.isoformat(),
             session["user"],
         ),
     )
@@ -374,13 +373,13 @@ def capture_profile_location():
         "geotag_location": geotag_location,
         "psgc_location": psgc_location,
         "message": (
-            "Profile photo and GPS-derived location saved. "
+            "Profile photo and self-reported GPS location saved. "
             + (
                 "A matching PSGC location was found."
                 if psgc_location
-                else "No PSGC match was found; the GPS-derived place is still saved."
+                else "No PSGC match was found; the submitted place is still saved."
             )
-            + " This does not verify land ownership."
+            + " Coordinates and capture time are not independently verified."
         ),
     })
 

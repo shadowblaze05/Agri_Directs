@@ -49,8 +49,8 @@
         <form method="POST">
             <section class="card mb-4">
                 <div class="card-body p-4 p-md-5">
-                    <h2 class="h5 mb-2"><i class="fas fa-camera me-2 text-success"></i>Camera-captured profile photo and location</h2>
-                    <p class="text-muted">Take a new profile photo and allow browser location access. The official location is displayed when available. GPS data is retained privately for harvest-range checks.</p>
+                    <h2 class="h5 mb-2"><i class="fas fa-camera me-2 text-success"></i>Profile photo and self-reported location</h2>
+                    <p class="text-muted">Take a new profile photo and allow browser location access. The official place name is displayed when available. Browser GPS and its timestamp are self-reported and retained privately for approximate harvest-proximity checks; they do not verify your location or land ownership.</p>
                     <div class="d-flex align-items-center gap-4">
                         {% if user.profile_picture %}
                             <img id="preview" class="avatar-preview" src="{{ user.profile_picture }}" alt="Current profile photo">
@@ -66,7 +66,7 @@
                             <button type="button" id="startCamera" class="btn btn-outline-success"><i class="fas fa-video me-1"></i>Start camera</button>
                             <button type="button" id="capturePhoto" class="btn btn-agri" disabled><i class="fas fa-camera me-1"></i>Take photo and save location</button>
                         </div>
-                        <div class="form-text mt-2">Camera access and location permission are required. Your camera image is sent only to Agri-Direct; GPS is captured separately and sent to OpenStreetMap Nominatim to resolve an approximate place name. Exact coordinates remain private. Location lookup requires an internet connection. Maximum photo size: 5 MB.</div>
+                        <div class="form-text mt-2">Camera access and location permission are required. Your camera image is sent only to Agri-Direct; browser GPS is sent to OpenStreetMap Nominatim to resolve an approximate place name. Exact coordinates remain private. Location lookup requires an internet connection. Maximum photo size: 5 MB. Neither the image nor browser GPS is independently verified.</div>
                         <div id="captureMessage" class="small mt-2" role="status" aria-live="polite"></div>
                     </div>
                 </div>

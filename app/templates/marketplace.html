@@ -332,7 +332,7 @@
                         <div class="card listing-card" onclick="window.location.href='/marketplace/product/{{ listing['id'] }}'">
                             <div class="card-img-wrapper">
                                 <!-- ============ STEP 4: IMAGE DISPLAY ============ -->
-                                {% if listing['main_image'] and listing['thumbnail_verified'] %}
+                                {% if listing['main_image'] %}
                                 <img src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}" 
                                      class="card-img-top" 
                                      alt="{{ listing['crop_name'] }}"

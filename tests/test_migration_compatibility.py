@@ -1,9 +1,12 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import create_engine, inspect, text
+
+from app.models.database import PostgreSQLCursor
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +37,16 @@ def run_downgrade(connection, migration, monkeypatch):
         Operations(MigrationContext.configure(connection)),
     )
     migration.downgrade()
+
+
+def test_legacy_inventory_insert_rejects_invalid_column_names():
+    cursor = PostgreSQLCursor()
+
+    with pytest.raises(ValueError, match="invalid column names"):
+        cursor.execute(
+            "INSERT INTO inventory (crop_name, location; DROP TABLE users) VALUES (?, ?)",
+            ("Wheat", "Farm"),
+        )
 
 
 def test_schema_ahead_of_revision_can_upgrade_without_duplicate_columns_or_data_loss(monkeypatch):
@@ -121,6 +134,62 @@ def test_missing_legacy_columns_are_added_by_upgrade(monkeypatch):
         assert "thumbnail_verified" in {
             column["name"] for column in inspect(connection).get_columns("marketplace")
         }
+
+
+def test_auth_version_migration_defaults_existing_users_to_zero(monkeypatch):
+    engine = create_engine("sqlite://")
+    migration = load_migration("cfe42a17b690_revoke_auth_on_password_change.py")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL)"
+        ))
+        connection.execute(text(
+            "INSERT INTO users (id, username) VALUES (1, 'existing-user')"
+        ))
+
+        run_upgrade(connection, migration, monkeypatch)
+
+        assert connection.execute(
+            text("SELECT auth_version FROM users WHERE id=1")
+        ).scalar_one() == 0
+        connection.execute(
+            text("INSERT INTO users (id, username) VALUES (2, 'new-user')")
+        )
+        assert connection.execute(
+            text("SELECT auth_version FROM users WHERE id=2")
+        ).scalar_one() == 0
+
+
+def test_auth_version_migration_preserves_existing_column_and_repairs_nulls(monkeypatch):
+    engine = create_engine("sqlite://")
+    migration = load_migration("cfe42a17b690_revoke_auth_on_password_change.py")
+    with engine.begin() as connection:
+        connection.execute(text("""
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL,
+                auth_version INTEGER
+            )
+        """))
+        connection.execute(text(
+            "INSERT INTO users (id, username, auth_version) "
+            "VALUES (1, 'existing-user', NULL), (2, 'versioned-user', 4)"
+        ))
+
+        run_upgrade(connection, migration, monkeypatch)
+
+        assert connection.execute(
+            text("SELECT auth_version FROM users WHERE id=1")
+        ).scalar_one() == 0
+        assert connection.execute(
+            text("SELECT auth_version FROM users WHERE id=2")
+        ).scalar_one() == 4
+        connection.execute(
+            text("INSERT INTO users (id, username) VALUES (3, 'new-user')")
+        )
+        assert connection.execute(
+            text("SELECT auth_version FROM users WHERE id=3")
+        ).scalar_one() == 0
 
 
 def test_pinned_update_and_notification_link_migration_is_repeatable(monkeypatch):

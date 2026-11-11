@@ -402,7 +402,7 @@
                                         id="image-{{ img['id'] }}">
                                         <img src="{{ url_for('static', filename='uploads/marketplace/' + img['image_filename']) }}" alt="Listing image">
                                         {% if listing['main_image'] == img['image_filename'] %}
-                                        <span class="thumbnail-label">Camera-verified thumbnail</span>
+                                        <span class="thumbnail-label">Photo with self-reported GPS</span>
                                         {% else %}
                                         <button type="button" class="remove-image" onclick="deleteImage({{ img['id'] }})" aria-label="Remove additional photo">
                                             <i class="fas fa-times"></i>
@@ -411,16 +411,16 @@
                                     </div>
                                     {% endfor %}
                                 </div>
-                                <small class="text-muted">The camera-verified thumbnail cannot be removed or replaced with an uploaded image. The other photos are gallery images.</small>
+                                <small class="text-muted">The submitted cover photo cannot be removed or replaced with an uploaded image. The other photos are gallery images.</small>
                             </div>
                             {% endif %}
 
-                            <!-- Camera-verified thumbnail and optional gallery images -->
+                            <!-- Camera thumbnail and optional gallery images -->
                             <div class="mb-3" id="imageUploadGroup">
                                 <label class="form-label" for="startListingCamera">{% if listing %}Camera thumbnail replacement (optional){% else %}Camera thumbnail *{% endif %}</label>
-                                <p class="small text-muted">Take the cover photo live from your camera. The server checks its GPS against your verified profile location before accepting the photo; it must be within 10 km.</p>
-                                {% if not profile_location_verified %}
-                                <div class="alert alert-warning py-2">Verify your profile photo and GPS location before {% if listing %}capturing a replacement thumbnail{% else %}creating a listing thumbnail{% endif %}. <a href="{{ url_for('update_profile') }}" class="alert-link">Update your profile</a>.</div>
+                                <p class="small text-muted">Take the cover photo live from your camera. The browser-submitted GPS is compared with your saved profile coordinates to estimate proximity (within 10 km); neither location is independently verified.</p>
+                                {% if not profile_location_available %}
+                                <div class="alert alert-warning py-2">Save profile GPS coordinates before checking listing-photo proximity. <a href="{{ url_for('update_profile') }}" class="alert-link">Update your profile</a>.</div>
                                 {% endif %}
                                 <video id="listingCameraPreview" class="camera-preview rounded d-none mb-2" autoplay muted playsinline aria-label="Live listing thumbnail camera preview" style="display:block;width:min(100%,480px);min-height:240px;background:#111;object-fit:contain"></video>
                                 <div class="d-flex flex-wrap gap-2 mb-2">
@@ -520,7 +520,7 @@
             document.getElementById('thumbnailLongitude').value = '';
             document.getElementById('thumbnailCapturedAt').value = '';
             document.getElementById('thumbnailPreviewContainer').innerHTML = '';
-            document.getElementById('listingForm').dataset.thumbnailLocationVerified = 'false';
+            document.getElementById('listingForm').dataset.thumbnailLocationInRange = 'false';
         }
 
         document.querySelector('form[enctype="multipart/form-data"]')?.addEventListener('submit', event => {
@@ -532,11 +532,11 @@
             if (form.dataset.requiresThumbnail === 'true' &&
                 listingType !== 'looking_for' && !hasNewThumbnail) {
                 event.preventDefault();
-                message.textContent = 'Capture and verify a thumbnail photo within 10 km of your profile location before creating this listing.';
+                message.textContent = 'Capture a thumbnail photo and check its submitted GPS proximity before creating this listing.';
                 message.classList.add('text-danger');
-            } else if (hasNewThumbnail && form.dataset.thumbnailLocationVerified !== 'true') {
+            } else if (hasNewThumbnail && form.dataset.thumbnailLocationInRange !== 'true') {
                 event.preventDefault();
-                message.textContent = 'Wait for the server to verify the thumbnail location before submitting.';
+                message.textContent = 'Wait for the server to check the submitted GPS proximity before submitting.';
                 message.classList.add('text-danger');
             }
         });
@@ -637,8 +637,8 @@
                     })
                 });
                 const validation = await response.json();
-                if (!response.ok || validation.valid !== true) {
-                    throw new Error(validation.error || 'The server could not verify this photo location.');
+                if (!response.ok || validation.within_range !== true) {
+                    throw new Error(validation.error || 'The server could not check this submitted GPS location.');
                 }
                 const photo = new File([photoBlob], 'listing-thumbnail.jpg', { type: 'image/jpeg' });
                 const transfer = new DataTransfer();
@@ -647,11 +647,11 @@
                 document.getElementById('thumbnailLatitude').value = String(position.coords.latitude);
                 document.getElementById('thumbnailLongitude').value = String(position.coords.longitude);
                 document.getElementById('thumbnailCapturedAt').value = capturedAt;
-                document.getElementById('listingForm').dataset.thumbnailLocationVerified = 'true';
+                document.getElementById('listingForm').dataset.thumbnailLocationInRange = 'true';
                 document.getElementById('thumbnailPreviewContainer').innerHTML =
-                    '<img src="' + URL.createObjectURL(photoBlob) + '" alt="Camera thumbnail preview" style="width:160px;height:120px;object-fit:cover;border-radius:8px;border:3px solid #2d5016"><span class="thumbnail-label" style="width:160px">Camera thumbnail</span>';
-                message.textContent = `Photo and GPS verified by the server (${validation.distance_km.toFixed(2)} km from your profile location).`;
-                message.classList.add('text-success');
+                    '<img src="' + URL.createObjectURL(photoBlob) + '" alt="Camera thumbnail preview" style="width:160px;height:120px;object-fit:cover;border-radius:8px;border:3px solid #2d5016"><span class="thumbnail-label" style="width:160px">Photo, GPS self-reported</span>';
+                message.textContent = `Photo captured. Submitted GPS is ${validation.distance_km.toFixed(2)} km from your saved profile coordinates; location is not independently verified.`;
+                message.classList.add('text-muted');
             } catch (error) {
                 message.textContent = error.message || 'Could not capture the camera thumbnail.';
                 message.classList.add('text-danger');

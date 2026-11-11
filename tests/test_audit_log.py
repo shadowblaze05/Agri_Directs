@@ -23,7 +23,8 @@ def make_audit_app(database_uri):
             connection.execute(text("""
                 CREATE TABLE users (
                     id INTEGER PRIMARY KEY, username TEXT UNIQUE,
-                    role TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT TRUE
+                    role TEXT NOT NULL, is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                    auth_version INTEGER NOT NULL DEFAULT 0
                 )
             """))
             connection.execute(text(

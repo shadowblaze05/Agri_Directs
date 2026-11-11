@@ -60,7 +60,8 @@ def _event_action(endpoint, method, category):
         "login": "Signed in",
         "logout": "Signed out",
         "register": "Created account",
-        "get_token": "Requested API token",
+        # This is an action label, not a token value.
+        "get_token": "Requested API token",  # nosec B105
         "api_harvest": "Submitted harvest via API",
     }
     if endpoint in special_actions:

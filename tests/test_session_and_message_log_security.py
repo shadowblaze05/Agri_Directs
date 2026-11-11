@@ -96,6 +96,7 @@ def test_logout_prevents_browser_cached_pages_from_reusing_authenticated_session
 
         logout_response = client.get("/logout")
         assert logout_response.status_code == 302
+        assert logout_response.headers["Location"] == "/"
         assert "no-store" in logout_response.headers["Cache-Control"]
 
         with client.session_transaction() as user_session:

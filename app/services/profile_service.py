@@ -10,23 +10,22 @@ def missing_harvest_profile_requirements(user):
         ("first_name", "first name"),
         ("last_name", "last name"),
         ("email", "email address"),
-        ("profile_picture", "camera-captured profile photo"),
-        ("profile_photo_captured_at", "profile photo GPS capture"),
-        ("geotag_location", "GPS-derived farm location"),
+        ("profile_picture", "profile photo"),
+        ("profile_photo_captured_at", "profile photo timestamp"),
+        ("geotag_location", "GPS-derived place name"),
     ):
         if not user.get(field):
             missing.append(label)
 
     coordinates_valid = False
-    if user.get("location_verified"):
-        try:
-            validate_coordinates(
-                user.get("location_latitude"),
-                user.get("location_longitude"),
-            )
-            coordinates_valid = True
-        except ValueError:
-            pass
+    try:
+        validate_coordinates(
+            user.get("location_latitude"),
+            user.get("location_longitude"),
+        )
+        coordinates_valid = True
+    except ValueError:
+        pass
     if not coordinates_valid:
-        missing.append("verified profile GPS location")
+        missing.append("profile GPS coordinates")
     return missing

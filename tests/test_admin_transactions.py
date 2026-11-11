@@ -21,6 +21,8 @@ class FakeCursor:
         return self
 
     def fetchone(self):
+        if "SELECT auth_version FROM users" in self.calls[-1][0]:
+            return {"auth_version": 0}
         if "SELECT role, is_active FROM users" in self.calls[-1][0]:
             return {"role": self.role, "is_active": 1}
         return {"total": 2, "completed": 1}
@@ -150,7 +152,8 @@ def test_admin_transactions_query_includes_all_order_states_not_open_listings(tm
         with db.engine.begin() as connection:
             connection.execute(text(
                 "CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, role TEXT, "
-                "is_active INTEGER NOT NULL DEFAULT 1)"
+                "is_active INTEGER NOT NULL DEFAULT 1, "
+                "auth_version INTEGER NOT NULL DEFAULT 0)"
             ))
             connection.execute(text("""
                 CREATE TABLE marketplace (
