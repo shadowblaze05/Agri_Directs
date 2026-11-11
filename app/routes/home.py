@@ -1509,7 +1509,6 @@ def notifications_mark_read():
         conn.close()
 
 def register(application):
-    """Register this domain's routes on the existing Flask app."""
     application.add_url_rule('/', endpoint='home', view_func=home)
     application.add_url_rule('/home', endpoint='portal_home', view_func=portal_home)
     application.add_url_rule('/about', endpoint='about', view_func=about)

@@ -9,7 +9,7 @@ from datetime import datetime
 import time
 from urllib.parse import urlsplit
 
-from flask import Flask, g, jsonify, request, session
+from flask import Flask, g, jsonify, request, session, url_for
 from sqlalchemy.exc import SQLAlchemyError
 
 from .config import Config
@@ -150,6 +150,36 @@ def create_app(config_overrides=None):
                 )
             except SQLAlchemyError:
                 app.logger.exception("Unable to persist request audit event")
+        return response
+
+    @app.after_request
+    def inject_loading_indicator(response):
+        if response.mimetype != "text/html" or response.is_streamed:
+            return response
+
+        html = response.get_data(as_text=True)
+        body_end = html.lower().rfind("</body>")
+        if body_end < 0:
+            return response
+
+        loading_assets = (
+            '<link rel="stylesheet" href="'
+            + url_for("static", filename="css/global-loading.css")
+            + '">'
+            '<div id="global-loading" class="global-loading" role="status" '
+            'aria-live="polite" aria-atomic="true" hidden>'
+            '<div class="global-loading__card">'
+            '<span class="global-loading__spinner" aria-hidden="true"></span>'
+            '<span id="global-loading-message">Loading...</span>'
+            '<span class="global-loading__track" aria-hidden="true">'
+            '<span></span></span></div></div>'
+            '<div id="network-status" class="network-status" role="status" '
+            'aria-live="polite" hidden>You are offline. Check your internet connection.</div>'
+            '<script defer src="'
+            + url_for("static", filename="js/global-loading.js")
+            + '"></script>'
+        )
+        response.set_data(html[:body_end] + loading_assets + html[body_end:])
         return response
 
     @app.after_request

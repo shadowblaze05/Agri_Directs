@@ -1,0 +1,74 @@
+.global-loading[hidden],
+.network-status[hidden] {
+    display: none !important;
+}
+
+.global-loading {
+    position: fixed;
+    inset: 0 0 auto;
+    z-index: 20000;
+    height: 3px;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.global-loading__card {
+    display: contents;
+}
+
+.global-loading__spinner {
+    display: none;
+}
+
+#global-loading-message {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.global-loading__track {
+    display: block;
+    width: 100%;
+    height: 3px;
+    overflow: hidden;
+    background: transparent;
+}
+
+.global-loading__track > span {
+    display: block;
+    width: 28%;
+    height: 100%;
+    border-radius: inherit;
+    background: #4caf50;
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.35);
+    animation: global-loading-progress 1.8s ease-in-out infinite;
+}
+
+.network-status {
+    position: fixed;
+    z-index: 20001;
+    inset: 0 0 auto;
+    padding: 12px 16px;
+    background: #8b1e1e;
+    color: #fff;
+    font: 600 14px/1.4 Arial, sans-serif;
+    text-align: center;
+}
+
+@keyframes global-loading-progress {
+    from {
+        transform: translateX(-120%);
+    }
+    to {
+        transform: translateX(460%);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .global-loading__track > span {
+        animation-duration: 3s;
+    }
+}
