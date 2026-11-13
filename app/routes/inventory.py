@@ -293,13 +293,13 @@ def edit_inventory(item_id):
     if not item:
         conn.close()
         flash("Inventory item not found")
-        return redirect("/dashboard")
+        return redirect(url_for("admin_inventory")) if role == "admin" else redirect("/dashboard")
 
     can_modify = role == "admin" or (item["farmer"] == session["user"])
     if not can_modify:
         conn.close()
         flash("You are not allowed to modify this item")
-        return redirect("/dashboard")
+        return redirect(url_for("admin_inventory")) if role == "admin" else redirect("/dashboard")
 
     if request.method == "POST":
         cropped_name = request.form.get("crop_name", item["crop_name"]).strip()
@@ -319,7 +319,7 @@ def edit_inventory(item_id):
         conn.commit()
         conn.close()
         flash("Inventory item updated successfully")
-        return redirect("/dashboard")
+        return redirect(url_for("admin_inventory")) if role == "admin" else redirect("/dashboard")
 
     conn.close()
     return render_template("edit_inventory.html", item=item)
@@ -342,19 +342,19 @@ def delete_inventory(item_id):
     if not item:
         conn.close()
         flash("Inventory item not found")
-        return redirect("/dashboard")
+        return redirect(url_for("admin_inventory")) if role == "admin" else redirect("/dashboard")
 
     can_modify = role == "admin" or (item["farmer"] == session["user"])
     if not can_modify:
         conn.close()
         flash("You are not allowed to delete this item")
-        return redirect("/dashboard")
+        return redirect(url_for("admin_inventory")) if role == "admin" else redirect("/dashboard")
 
     cur.execute("DELETE FROM inventory WHERE id=?", (item_id,))
     conn.commit()
     conn.close()
     flash("Inventory item deleted")
-    return redirect("/dashboard")
+    return redirect(url_for("admin_inventory")) if role == "admin" else redirect("/dashboard")
 
 def upload():
 

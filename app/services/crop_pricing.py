@@ -1,6 +1,6 @@
 from decimal import Decimal, InvalidOperation
 
-PRICE_UNITS = {"kg"}
+PRICE_UNITS = {"kg", "pc", "pack"}
 
 
 def parse_pricing_rule(

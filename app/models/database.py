@@ -382,7 +382,7 @@ def init_db():
         crop_id INTEGER PRIMARY KEY,
         pricing_mode TEXT NOT NULL CHECK (pricing_mode IN ('range', 'bounds')),
         price_unit TEXT NOT NULL DEFAULT 'kg'
-            CHECK (price_unit = 'kg'),
+            CHECK (price_unit IN ('kg', 'pc', 'pack')),
         reference_price NUMERIC(10, 2),
         price_range NUMERIC(10, 2),
         minimum_price NUMERIC(10, 2),

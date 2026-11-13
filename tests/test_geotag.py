@@ -1241,12 +1241,8 @@ def test_admin_marketplace_protects_ordered_listings_from_deletion(client, monke
     assert not cursor.deleted
 
 
-@pytest.mark.parametrize(
-    ("verification_status", "badge_class"),
-    [("manual_review", "warning"), ("approved", "success"), ("rejected", "danger")],
-)
-def test_admin_inventory_renders_review_interface(
-    client, monkeypatch, verification_status, badge_class
+def test_admin_inventory_renders_console_for_user_inventory_management(
+    client, monkeypatch
 ):
     record = {
         "id": 1,
@@ -1254,9 +1250,10 @@ def test_admin_inventory_renders_review_interface(
         "quantity": 4,
         "date_received": "2026-09-26",
         "farmer": "farmer",
+        "location": "North Farm",
         "source": "harvest",
         "photo_path": None,
-        "verification_status": verification_status,
+        "verification_status": "manual_review",
         "distance_from_user": None,
         "capture_time": None,
         "verification_notes": "GPS missing",
@@ -1289,13 +1286,13 @@ def test_admin_inventory_renders_review_interface(
     response = client.get("/admin/inventory")
 
     assert response.status_code == 200
-    assert b"Inventory and geotag review" in response.data
+    assert b"Inventory admin console" in response.data
     assert b"GPS missing" in response.data
-    assert f"badge text-bg-{badge_class}".encode() in response.data
-    if verification_status == "manual_review":
-        assert b'name="decision" value="approved">Approve</button>' in response.data
-    else:
-        assert b'name="decision" value="approved">Approve</button>' not in response.data
+    assert b"Edit" in response.data
+    assert b"Delete" in response.data
+    assert b"/inventory/edit/1" in response.data
+    assert b"Status" not in response.data
+    assert b"badge text-bg-" not in response.data
 
 
 def test_profile_location_panel_does_not_render_exact_coordinates(client, monkeypatch):

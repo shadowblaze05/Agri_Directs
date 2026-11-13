@@ -1224,7 +1224,7 @@ def admin_catalog():
     all_crop_categories = cur.execute(
         "SELECT id, name FROM crop_categories ORDER BY name"
     ).fetchall()
-    all_crops = cur.execute(
+    crop_filter_options = cur.execute(
         """SELECT crops.id, crops.crops_name, crops.category_id,
                   crop_pricing.pricing_mode, crop_pricing.reference_price,
                   crop_pricing.price_range, crop_pricing.minimum_price,
@@ -1236,7 +1236,10 @@ def admin_catalog():
     imported_crop_ids = session.get("crop_pricing_import_crop_ids", [])
     if imported_crop_ids:
         imported_crop_ids = {int(crop_id) for crop_id in imported_crop_ids}
-        all_crops = [crop for crop in all_crops if crop["id"] in imported_crop_ids]
+        all_crops = [
+            crop for crop in crop_filter_options
+            if crop["id"] in imported_crop_ids
+        ]
     else:
         all_crops = []
     crop_price_bounds = {
@@ -1250,6 +1253,7 @@ def admin_catalog():
         crop_price_bounds=crop_price_bounds,
         crop_categories=crop_categories,
         all_crop_categories=all_crop_categories,
+        crop_filter_options=crop_filter_options,
         all_crops=all_crops,
         search=search,
         category_filter=category_filter,
@@ -1264,7 +1268,7 @@ def admin_inventory():
     search = request.args.get("q", "").strip()
     conn = get_db()
     cur = conn.cursor()
-    query = """SELECT i.id, i.quantity, i.farmer, i.date_received, i.source,
+    query = """SELECT i.id, i.quantity, i.farmer, i.location, i.date_received, i.source,
                       i.photo_path, i.verification_status, i.distance_from_user,
                       i.capture_time, i.verification_notes, i.reviewed_by,
                       c.crops_name AS crop_name

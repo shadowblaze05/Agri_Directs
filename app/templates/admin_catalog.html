@@ -54,7 +54,7 @@
                 <label class="form-label" for="cropFilter">Crop</label>
                 <select id="cropFilter" name="crop_id" class="form-select">
                     <option value="">All crops</option>
-                    {% for crop in all_crops %}
+                    {% for crop in crop_filter_options %}
                     <option value="{{ crop['id'] }}" data-category="{{ crop['category_id'] or 'uncategorized' }}" {% if crop_filter == crop['id']|string %}selected{% endif %}>{{ crop['crops_name'] }}</option>
                     {% endfor %}
                 </select>

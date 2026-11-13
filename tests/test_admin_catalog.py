@@ -119,6 +119,11 @@ def test_admin_can_assign_and_reassign_crops_by_category(tmp_path):
         assert b"Grains" in response.data
         assert b"Vegetables" in response.data
         assert b"Oats" in response.data
+        crop_filter_options = response.data.split(
+            b'id="cropFilter"', 1
+        )[1].split(b"</select>", 1)[0]
+        assert b"Rice" in crop_filter_options
+        assert b"Oats" in crop_filter_options
 
         response = client.post(f"/admin/crop-categories/delete/{grains_id}")
         assert response.status_code == 302

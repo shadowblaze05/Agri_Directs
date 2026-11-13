@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Inventory and geotag review | Admin</title>
+    <title>Inventory admin console | Admin</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
   </head>
@@ -14,8 +14,8 @@
     </nav>
     <main class="container py-4">
       <a class="breadcrumb-link" href="{{ url_for('admin') }}">Admin Console</a>
-      <h1 class="h3 mt-2">Inventory and geotag review</h1>
-      <p class="text-muted">Review location evidence and record an administrative decision. Proximity does not prove ownership or authenticity.</p>
+      <h1 class="h3 mt-2">Inventory admin console</h1>
+      <p class="text-muted">Manage harvest and stock records submitted by all users. Update quantities, correct entries, and remove invalid inventory records from one place.</p>
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% for category, message in messages %}
           <div class="alert alert-{{ category if category in ['success', 'danger', 'warning', 'info'] else 'secondary' }}" role="status">{{ message }}</div>
@@ -31,53 +31,45 @@
           <table class="table table-hover align-middle mb-0">
             <thead>
               <tr>
-                <th>Harvest</th><th>Farmer</th><th>Location evidence</th><th>Review</th>
+                <th>Crop</th>
+                <th>Owner</th>
+                <th>Location</th>
+                <th>Source</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {% for item in inventory %}
-                {% set verification_status = item['verification_status'] or 'pending' %}
-                {% set verification_badge = 'success' if verification_status == 'approved' else 'danger' if verification_status == 'rejected' else 'warning' %}
                 <tr>
                   <td>
                     <strong>{{ item['crop_name'] or '-' }}</strong><br>
                     <span class="text-muted">{{ item['quantity'] }} units | {{ item['date_received'] or 'date unavailable' }}</span>
                   </td>
                   <td>{{ item['farmer'] or '-' }}</td>
+                  <td>{{ item['location'] or 'No location recorded' }}</td>
                   <td>
-                    {% if item['source'] not in [none, 'harvest'] %}
-                      <span class="text-muted">Not a harvest submission</span>
+                    {% if item['source'] == 'harvest' %}
+                      Harvest upload
+                    {% elif item['source'] %}
+                      {{ item['source']|title }}
                     {% else %}
-                      {% if item['photo_path'] %}
-                        <a href="{{ url_for('crop_evidence', filename=item['photo_path']) }}" target="_blank" rel="noopener">View crop photo</a><br>
-                      {% else %}
-                        <span class="text-muted">No crop photo</span><br>
-                      {% endif %}
-                      <span class="badge text-bg-{{ verification_badge }}">{{ verification_status|replace('_', ' ')|title }}</span>
-                      {% if item['distance_from_user'] is not none %}
-                        <span class="text-muted"> | {{ (item['distance_from_user'] / 1000)|round(2) }} km from self-reported reference (proximity estimate)</span>
-                      {% endif %}
-                      {% if item['capture_time'] %}<br><small class="text-muted">GPS capture: {{ item['capture_time']|datetime_format }}</small>{% endif %}
-                      {% if item['verification_notes'] %}<br><small class="text-muted">{{ item['verification_notes'] }}</small>{% endif %}
+                      Manual entry
+                    {% endif %}
+                    {% if item['verification_notes'] %}
+                      <br><small class="text-muted">{{ item['verification_notes'] }}</small>
                     {% endif %}
                   </td>
                   <td>
-                    {% if item['source'] in [none, 'harvest'] and item['verification_status'] not in ['approved', 'rejected'] %}
-                      <form method="post" action="{{ url_for('admin_review_geotag', item_id=item['id']) }}" class="d-flex flex-column gap-2">
-                        <input name="review_note" class="form-control form-control-sm" maxlength="1000" placeholder="Optional review note">
-                        <div class="d-flex gap-2">
-                          <button class="btn btn-sm btn-success" name="decision" value="approved">Approve</button>
-                          <button class="btn btn-sm btn-outline-danger" name="decision" value="rejected">Reject</button>
-                        </div>
+                    <div class="d-flex flex-wrap gap-2">
+                      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('edit_inventory', item_id=item['id']) }}">Edit</a>
+                      <form method="post" action="{{ url_for('delete_inventory', item_id=item['id']) }}" onsubmit="return confirm('Delete this inventory record for {{ item['farmer'] or 'this user' }}?');">
+                        <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
                       </form>
-                    {% elif item['source'] in [none, 'harvest'] %}
-                      <span class="badge text-bg-{{ verification_badge }}">{{ verification_status|replace('_', ' ')|title }}</span>
-                      {% if item['reviewed_by'] %}<br><small class="text-muted">by {{ item['reviewed_by'] }}</small>{% endif %}
-                    {% endif %}
+                    </div>
                   </td>
                 </tr>
               {% else %}
-                <tr><td colspan="4" class="text-center py-4 text-muted">No matching inventory records.</td></tr>
+                <tr><td colspan="5" class="text-center py-4 text-muted">No matching inventory records.</td></tr>
               {% endfor %}
             </tbody>
           </table>

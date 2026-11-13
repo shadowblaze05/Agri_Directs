@@ -39,7 +39,7 @@ class CropPricing(Model):
             name="ck_crop_pricing_mode",
         ),
         CheckConstraint(
-            "price_unit = 'kg'",
+            "price_unit IN ('kg', 'pc', 'pack')",
             name="ck_crop_pricing_unit",
         ),
         CheckConstraint(
