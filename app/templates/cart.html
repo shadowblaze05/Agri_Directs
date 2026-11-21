@@ -301,6 +301,9 @@
             <a class="nav-link" href="/notifications-center">
                 <i class="fas fa-bell"></i> Notifications
             </a>
+            <a class="nav-link" href="/marketplace/my-purchases">
+                <i class="fas fa-shopping-bag"></i> My Purchases
+            </a>
             <a class="nav-link" href="/profile">
                 <i class="fas fa-user-circle"></i> Profile
             </a>
@@ -379,35 +382,39 @@
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label" for="deliveryProvince">Province <span class="text-danger">*</span></label>
-                                    <input class="form-control" id="deliveryProvince" name="delivery_province" autocomplete="address-level1" maxlength="255" required>
+                                    <input class="form-control" id="deliveryProvince" name="delivery_province" value="{{ saved_delivery_address.get('delivery_province', '') }}" autocomplete="address-level1" maxlength="255" required>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="deliveryCity">City / Municipality <span class="text-danger">*</span></label>
-                                    <input class="form-control" id="deliveryCity" name="delivery_city" autocomplete="address-level2" maxlength="255" required>
+                                    <input class="form-control" id="deliveryCity" name="delivery_city" value="{{ saved_delivery_address.get('delivery_city', '') }}" autocomplete="address-level2" maxlength="255" required>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="deliveryBarangay">Barangay <span class="text-danger">*</span></label>
-                                    <input class="form-control" id="deliveryBarangay" name="delivery_barangay" autocomplete="address-level3" maxlength="255" required>
+                                    <input class="form-control" id="deliveryBarangay" name="delivery_barangay" value="{{ saved_delivery_address.get('delivery_barangay', '') }}" autocomplete="address-level3" maxlength="255" required>
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="deliveryStreet">House / Unit No. and Street <span class="text-danger">*</span></label>
-                                    <input class="form-control" id="deliveryStreet" name="delivery_street" autocomplete="street-address" maxlength="255" required>
+                                    <input class="form-control" id="deliveryStreet" name="delivery_street" value="{{ saved_delivery_address.get('delivery_street', '') }}" autocomplete="street-address" maxlength="255" required>
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label" for="deliveryLandmark">Landmark <span class="text-muted fw-normal">(optional)</span></label>
-                                    <input class="form-control" id="deliveryLandmark" name="delivery_landmark" maxlength="255" placeholder="Nearby store, school, or other recognizable place">
+                                    <input class="form-control" id="deliveryLandmark" name="delivery_landmark" value="{{ saved_delivery_address.get('delivery_landmark', '') }}" maxlength="255" placeholder="Nearby store, school, or other recognizable place">
                                 </div>
                             </div>
-                            <p class="small text-muted mt-3 mb-0"><i class="fas fa-lock me-1"></i>Your delivery address is shared with the seller for this order.</p>
+                            <div class="form-check mt-3">
+                                <input class="form-check-input" type="checkbox" id="rememberDeliveryAddress" {% if has_saved_delivery_address %}checked{% endif %}>
+                                <label class="form-check-label" for="rememberDeliveryAddress">Remember this location for future orders</label>
+                            </div>
+                            <p class="small text-muted mt-3 mb-0"><i class="fas fa-lock me-1"></i>Your delivery address is shared with the seller for this order. If remembered, it is saved to your account for future checkouts.</p>
                         </form>
                     </section>
                     {% for item in cart_items %}
                     <div class="cart-item" id="cart-item-{{ item['id'] }}">
                         <div class="row align-items-center">
                             <div class="col-auto">
-                                {% if item['main_image'] and item['thumbnail_verified'] %}
+                                {% if item['main_image'] %}
                                 <img src="{{ url_for('static', filename='uploads/marketplace/' + item['main_image']) }}"
-                                     class="cart-item-image" alt="{{ item['crop_name'] }}">
+                                     class="cart-item-image" alt="{{ item['commodity_name'] }}">
                                 {% else %}
                                 <div class="cart-item-image-placeholder">
                                     <i class="fas fa-seedling"></i>
@@ -415,7 +422,7 @@
                                 {% endif %}
                             </div>
                             <div class="col">
-                                <h2 class="h6 mb-1">{{ item['crop_name'] }}</h2>
+                                <h2 class="h6 mb-1">{{ item['commodity_name'] }}</h2>
                                 <p class="text-muted small mb-1">
                                     <i class="fas fa-user"></i> {{ item['seller_name'] }}
                                 </p>
@@ -425,17 +432,17 @@
                             </div>
                             <div class="col-auto">
                                 <div class="d-flex align-items-center gap-2">
-                                    <button class="btn btn-sm btn-outline-success" aria-label="Decrease {{ item['crop_name'] }} quantity" onclick="updateQuantity({{ item['id'] }}, -1)">
+                                    <button class="btn btn-sm btn-outline-success" aria-label="Decrease {{ item['commodity_name'] }} quantity" onclick="updateQuantity({{ item['id'] }}, -1)">
                                         <i class="fas fa-minus"></i>
                                     </button>
                                     <input type="number" class="form-control form-control-sm quantity-input text-center" 
                                            id="qty-{{ item['id'] }}" value="{{ item['quantity'] }}" 
                                            min="1" max="{{ item['available_amount'] }}"
-                                           onchange="updateQuantity({{ item['id'] }}, 0)" aria-label="{{ item['crop_name'] }} quantity">
-                                    <button class="btn btn-sm btn-outline-success" aria-label="Increase {{ item['crop_name'] }} quantity" onclick="updateQuantity({{ item['id'] }}, 1)">
+                                           onchange="updateQuantity({{ item['id'] }}, 0)" aria-label="{{ item['commodity_name'] }} quantity">
+                                    <button class="btn btn-sm btn-outline-success" aria-label="Increase {{ item['commodity_name'] }} quantity" onclick="updateQuantity({{ item['id'] }}, 1)">
                                         <i class="fas fa-plus"></i>
                                     </button>
-                                    <button class="btn btn-sm btn-outline-danger ms-2" aria-label="Remove {{ item['crop_name'] }} from cart" onclick="removeItem({{ item['id'] }})">
+                                    <button class="btn btn-sm btn-outline-danger ms-2" aria-label="Remove {{ item['commodity_name'] }} from cart" onclick="removeItem({{ item['id'] }})">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </div>
@@ -465,14 +472,25 @@
                             <span class="fw-bold fs-4 text-success">₱{{ "%.2f"|format(total) }}</span>
                         </div>
                         <form id="checkoutForm" onsubmit="checkout(event)">
+                            <fieldset class="mb-3">
+                                <legend class="form-label fw-semibold">Payment method</legend>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="payment_method" id="paymentOnline" value="xendit" checked>
+                                    <label class="form-check-label" for="paymentOnline">Online payment <small class="text-muted">(Xendit)</small></label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="payment_method" id="paymentCod" value="cod">
+                                    <label class="form-check-label" for="paymentCod">Cash on delivery <small class="text-muted">(pay the seller when delivered)</small></label>
+                                </div>
+                            </fieldset>
                             <button type="submit" class="btn btn-success btn-lg w-100">
-                                <i class="fas fa-lock me-2"></i>Place Order
+                                <i class="fas fa-bag-shopping me-2"></i>Continue
                             </button>
                         </form>
                         <a href="/marketplace" class="btn btn-outline-success w-100 mt-2">
                             <i class="fas fa-arrow-left"></i> Continue Shopping
                         </a>
-                        <p class="checkout-note mt-3 mb-0"><i class="fas fa-info-circle me-1"></i>Placing your order will notify the seller and move it to My Purchases.</p>
+                        <p class="checkout-note mt-3 mb-0"><i class="fas fa-info-circle me-1"></i>Online orders are confirmed after Xendit notifies Agri-Direct. COD orders are paid to the seller on delivery.</p>
                     </div>
                 </div>
             </div>
@@ -558,6 +576,12 @@
             if (!confirm('Confirm your order?')) return;
 
             const deliveryAddress = Object.fromEntries(new FormData(addressForm).entries());
+            deliveryAddress.remember_delivery_address = document.getElementById(
+                'rememberDeliveryAddress'
+            ).checked;
+            deliveryAddress.payment_method = document.querySelector(
+                'input[name="payment_method"]:checked'
+            ).value;
             fetch('/marketplace/cart/checkout', {
                 method: 'POST',
                 headers: {
@@ -567,9 +591,11 @@
             })
             .then(response => response.json())
             .then(data => {
-                if (data.status === 'success') {
+                if (data.checkout_url) {
+                    window.location.assign(data.checkout_url);
+                } else if (data.redirect_url) {
                     alert(data.message);
-                    window.location.href = '/marketplace/my-purchases';
+                    window.location.assign(data.redirect_url);
                 } else {
                     alert('Error: ' + data.error);
                 }

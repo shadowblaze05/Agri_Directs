@@ -15,9 +15,9 @@ def test_available_inventory_excludes_active_standard_listings():
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
     connection.executescript("""
-        CREATE TABLE inventory (farmer TEXT, crop_id INTEGER, quantity INTEGER);
+        CREATE TABLE inventory (farmer TEXT, commodity_id INTEGER, quantity INTEGER);
         CREATE TABLE marketplace (
-            username TEXT, crop_id INTEGER, amount INTEGER, status TEXT,
+            username TEXT, commodity_id INTEGER, amount INTEGER, status TEXT,
             listing_type TEXT
         );
         INSERT INTO inventory VALUES ('farmer', 1, 24);
@@ -34,40 +34,46 @@ def test_available_inventory_excludes_active_standard_listings():
 def test_add_listing_renders_inventory_crop_as_option_text():
     crop = {
         "id": 1,
-        "crops_name": "Tomatoes",
+        "commodity_name": "Tomatoes",
         "total_quantity": 12,
         "pricing_mode": None,
         "reference_price": None,
         "price_range": None,
         "minimum_price": None,
         "maximum_price": None,
+        "price_unit": "pack",
     }
 
     with app_module.app.test_request_context("/marketplace/add"):
         rendered = app_module.app.jinja_env.get_template("add_listing.html").render(
             listing=None,
-            crops=[crop],
+            commodities=[crop],
             all_crops=[],
             cart_count=0,
-            profile_location_verified=False,
+            profile_location_available=False,
             user_inventory=[],
         )
 
     assert '<option value="1"' in rendered
-    assert ">Tomatoes (12 kg available)" in rendered
-    assert 'id="amountLabel" class="form-label">Amount (kg) *' in rendered
-    assert "Quantity Wanted (kg) *" in rendered
+    assert ">Tomatoes (12 pack available)" in rendered
+    assert 'data-price-unit="pack"' in rendered
+    assert "Quantity (${unit}) *" in rendered
+    assert "Price per ${unit} (₱) *" in rendered
+    assert "GPS is compared with your saved profile coordinates" in rendered
+    assert "neither location is independently verified" in rendered
+    assert "Camera-verified thumbnail" not in rendered
 
 
 @pytest.mark.parametrize(
-    ("role", "expected_type"),
-    [("buyer", "standard"), ("seller", "looking_for")],
+    "role",
+    ["buyer", "seller"],
 )
-def test_marketplace_defaults_listing_type_filter_for_role(
-    monkeypatch, role, expected_type
-):
+def test_marketplace_defaults_to_all_listing_types(monkeypatch, role):
+    executed_queries = []
+
     class FakeCursor:
-        def execute(self, *_args, **_kwargs):
+        def execute(self, query, *_args, **_kwargs):
+            executed_queries.append(query)
             return self
 
         def fetchall(self):
@@ -78,6 +84,9 @@ def test_marketplace_defaults_listing_type_filter_for_role(
             return FakeCursor()
 
         def close(self):
+            return None
+
+        def commit(self):
             return None
 
     monkeypatch.setattr(marketplace_routes, "promote_due_preorders", lambda: None)
@@ -91,4 +100,8 @@ def test_marketplace_defaults_listing_type_filter_for_role(
         session["role"] = role
         response = marketplace_routes.marketplace()
 
-    assert f'<option value="{expected_type}" selected>' in response
+    assert '<option value="" selected>All Listing Types</option>' in response
+    assert '<option value="standard" selected>' not in response
+    assert '<option value="looking_for" selected>' not in response
+    assert any("SET status = 'expired'" in query for query in executed_queries)
+    assert any("m.expiry_date > ?" in query for query in executed_queries)

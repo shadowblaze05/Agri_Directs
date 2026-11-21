@@ -5,6 +5,7 @@ import numpy as np
 
 from .criteria_builder import CriteriaBuilder
 from .data_sources.price_data import get_crop_reference_prices
+from .data_sources.supply_data import record_commodity_name
 
 _CLIMATE_SEASONS = (
     ("Cool dry season", "Dec-Feb", {12, 1, 2}),
@@ -15,7 +16,7 @@ _PHILIPPINE_TIMEZONE = timezone(timedelta(hours=8))
 _YEAR_ROUND_TOLERANCE = 0.20
 
 
-def _seasonal_fit(records, crop_name, month=None):
+def _seasonal_fit(records, commodity_name, month=None):
     month = month or datetime.now(_PHILIPPINE_TIMEZONE).month
     current_season = next(
         index
@@ -25,7 +26,7 @@ def _seasonal_fit(records, crop_name, month=None):
     season_year_totals = {}
 
     for row in records or []:
-        if (row or {}).get("crop_name") != crop_name:
+        if record_commodity_name(row) != commodity_name:
             continue
         date_value = (row or {}).get("date_received")
         if not date_value:
@@ -121,14 +122,14 @@ def topsis_method(dataset, weights, criterion_type, graph=True, verbose=True):
 
 
 class CropRecommendationService:
-    """Rank crops using weighted multi-criteria scoring with AHP-constrained weights."""
+    """Rank commodities using weighted multi-criteria scoring with AHP-constrained weights."""
 
     def __init__(self):
         self.criteria_builder = CriteriaBuilder()
 
     @staticmethod
     def _metric_row(
-        crop_name,
+        commodity_name,
         records,
         supply_summary,
         price_opportunity,
@@ -138,7 +139,7 @@ class CropRecommendationService:
         stability = 0.0
         risk = 0.0
 
-        crop_rows = [row for row in records or [] if (row or {}).get("crop_name") == crop_name]
+        crop_rows = [row for row in records or [] if record_commodity_name(row) == commodity_name]
         if crop_rows:
             quantity_values = [float((row or {}).get("quantity") or 0) for row in crop_rows]
             total_quantity = sum(quantity_values)
@@ -151,7 +152,7 @@ class CropRecommendationService:
             stability = 0.0
             risk = 0.0
 
-        supply_total = supply_summary.get(crop_name, 0.0)
+        supply_total = supply_summary.get(commodity_name, 0.0)
         supply_score = min(1.0, supply_total / max(supply_summary.values() or [1.0])) if supply_summary else 0.0
         return np.array(
             [
@@ -168,11 +169,11 @@ class CropRecommendationService:
         records = list(records or [])
         supply_summary = supply_summary or {}
         forecast_summary = forecast_summary or []
-        crop_names = sorted({(row or {}).get("crop_name") for row in records if (row or {}).get("crop_name")})
+        crop_names = sorted({record_commodity_name(row) for row in records if record_commodity_name(row)})
         matrix = []
         seasonal_fits = {
-            crop_name: _seasonal_fit(records, crop_name)
-            for crop_name in crop_names
+            commodity_name: _seasonal_fit(records, commodity_name)
+            for commodity_name in crop_names
         }
         reference_prices = get_crop_reference_prices(records)
         known_prices = [
@@ -183,8 +184,8 @@ class CropRecommendationService:
         minimum_price = min(known_prices) if known_prices else None
         maximum_price = max(known_prices) if known_prices else None
         price_opportunities = {}
-        for crop_name in crop_names:
-            crop_price = reference_prices.get(crop_name)
+        for commodity_name in crop_names:
+            crop_price = reference_prices.get(commodity_name)
             if crop_price is None or minimum_price is None or maximum_price is None:
                 price_opportunity = 0.5
             elif maximum_price == minimum_price:
@@ -193,14 +194,14 @@ class CropRecommendationService:
                 price_opportunity = (
                     crop_price["price"] - minimum_price
                 ) / (maximum_price - minimum_price)
-            price_opportunities[crop_name] = price_opportunity
+            price_opportunities[commodity_name] = price_opportunity
             matrix.append(
                 self._metric_row(
-                    crop_name,
+                    commodity_name,
                     records,
                     supply_summary,
                     price_opportunity,
-                    seasonal_fits[crop_name][0],
+                    seasonal_fits[commodity_name][0],
                 )
             )
         if not matrix:
@@ -211,24 +212,24 @@ class CropRecommendationService:
         ranked = sorted(
             [
                 {
-                    "crop": crop_name,
+                    "crop": commodity_name,
                     "score": round(float(score), 4),
-                    "seasonal_fit": seasonal_fits[crop_name][1],
-                    "seasonal_fit_score": round(seasonal_fits[crop_name][0], 4),
+                    "seasonal_fit": seasonal_fits[commodity_name][1],
+                    "seasonal_fit_score": round(seasonal_fits[commodity_name][0], 4),
                     "reason": "Strong demand and favorable market conditions.",
                     "reference_price": (
-                        round(reference_prices[crop_name]["price"], 2)
-                        if crop_name in reference_prices
+                        round(reference_prices[commodity_name]["price"], 2)
+                        if commodity_name in reference_prices
                         else None
                     ),
                     "price_basis": (
-                        reference_prices[crop_name]["basis"]
-                        if crop_name in reference_prices
+                        reference_prices[commodity_name]["basis"]
+                        if commodity_name in reference_prices
                         else None
                     ),
-                    "price_opportunity": round(price_opportunities[crop_name], 4),
+                    "price_opportunity": round(price_opportunities[commodity_name], 4),
                 }
-                for crop_name, score in zip(crop_names, scores)
+                for commodity_name, score in zip(crop_names, scores)
             ],
             key=lambda item: item["score"],
             reverse=True,

@@ -4,13 +4,17 @@ import csv
 import io
 import math
 import os
+import re
+import sqlite3
+import uuid
 from zipfile import BadZipFile
-from xml.etree.ElementTree import ParseError
+# OpenPyXL installs its hardened XML backend and uses it for XLSX parsing.
+from xml.etree.ElementTree import ParseError  # nosec B405
 
 from flask import Response, abort, current_app, flash, redirect, render_template, request, send_from_directory, session, stream_with_context, url_for
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, inspect, or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from werkzeug.security import generate_password_hash
 
@@ -24,6 +28,7 @@ from ..models.slow_query import SlowQueryStat
 from ..models.database import _save_upload_file, get_db
 from ..services.notification_service import notify_published_announcement
 from ..services.auth_service import get_active_user_role
+from ..services.upload_service import save_sanitized_public_image
 from ..services.crop_pricing import (
     parse_pricing_rule,
     price_bounds,
@@ -34,6 +39,13 @@ from ..services.crop_pricing import (
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
 
 ADMIN_EDITABLE_MARKETPLACE_STATUSES = {"available", "expired", "cancelled"}
+ADMIN_MARKETPLACE_IMAGE_FORMATS = {
+    "jpg": "JPEG",
+    "jpeg": "JPEG",
+    "png": "PNG",
+    "gif": "GIF",
+    "webp": "WEBP",
+}
 MARKETPLACE_TRANSACTION_FILTER = """(
     COALESCE(TRIM(m.buyer_username), '') <> ''
     OR LOWER(COALESCE(m.order_status, '')) NOT IN ('', 'available')
@@ -46,6 +58,19 @@ MARKETPLACE_TRANSACTION_COMPLETED = """(
     OR LOWER(COALESCE(m.status, '')) = 'traded'
     OR (COALESCE(m.delivery_confirmed, 0) = 1 AND COALESCE(m.buyer_confirmed, 0) = 1)
 )"""
+_SAVEABLE_RECORD_COLUMNS = {
+    ("commodity_categories", "name"),
+    ("knowledge_categories", "category_name"),
+}
+_EDITABLE_RECORD_COLUMNS = {
+    ("commodity_categories", "name", "id", "description"),
+    ("knowledge_categories", "category_name", "category_id", None),
+}
+_DELETABLE_RECORD_COLUMNS = {
+    ("commodity_categories", "id"),
+    ("commodities", "id"),
+    ("knowledge_categories", "category_id"),
+}
 
 
 def _current_user_is_admin():
@@ -212,7 +237,7 @@ def edit_admin_user(user_id):
             conn.close()
             flash(password_error, "danger")
             return _redirect_admin("admin_users")
-        query += ", password=?"
+        query += ", password = ?, auth_version = auth_version + 1"
         fields.append(generate_password_hash(password))
     query += " WHERE id=?"
     fields.append(user_id)
@@ -254,6 +279,8 @@ def delete_admin_user(user_id):
 
 
 def _save_named_record(table, column, success_message, endpoint="admin_catalog"):
+    if (table, column) not in _SAVEABLE_RECORD_COLUMNS:
+        raise ValueError("Unsupported named record")
     value = _form_value("name")
     if not value:
         flash("A name is required", "danger")
@@ -261,7 +288,10 @@ def _save_named_record(table, column, success_message, endpoint="admin_catalog")
     conn = get_db()
     cur = conn.cursor()
     try:
-        cur.execute(f"INSERT INTO {table}({column}) VALUES (?)", (value,))
+        cur.execute(
+            f"INSERT INTO {table}({column}) VALUES (?)",  # nosec B608
+            (value,),
+        )
         conn.commit()
         flash(success_message, "success")
     except IntegrityError:
@@ -273,23 +303,33 @@ def _save_named_record(table, column, success_message, endpoint="admin_catalog")
 
 @_admin_required
 def create_crop_category():
-    description = _form_value("description")
-    response = _save_named_record("crop_categories", "name", "Crop category created")
-    if description:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute(
-            "UPDATE crop_categories SET description=? WHERE name=?",
-            (description, _form_value("name")),
+    name = _form_value("name")
+    if not name:
+        flash("A category name is required", "danger")
+        return _redirect_admin()
+    conn = get_db()
+    try:
+        conn.cursor().execute(
+            """INSERT INTO commodity_categories(name, description, default_price_unit)
+               VALUES (?, ?, ?)""",
+            (
+                name,
+                _form_value("description") or None,
+                _default_price_unit_for_category(category_name=name),
+            ),
         )
         conn.commit()
+        flash("Commodity category created", "success")
+    except IntegrityError:
+        flash("That category name already exists", "danger")
+    finally:
         conn.close()
-    return response
+    return _redirect_admin()
 
 
 @_admin_required
 def edit_crop_category(category_id):
-    return _edit_named_record("crop_categories", "name", "id", category_id, "Crop category updated", "description")
+    return _edit_named_record("commodity_categories", "name", "id", category_id, "Commodity category updated", "description")
 
 
 @_admin_required
@@ -297,14 +337,20 @@ def delete_crop_category(category_id):
     conn = get_db()
     cur = conn.cursor()
     crop_count = cur.execute(
-        "SELECT COUNT(*) AS count FROM crops WHERE category_id=?",
+        "SELECT COUNT(*) AS count FROM commodities WHERE category_id=?",
         (category_id,),
     ).fetchone()["count"]
     conn.close()
     if crop_count:
-        flash("Move or remove this category's crops before deleting it", "danger")
-        return _redirect_admin()
-    return _delete_named_record("crop_categories", "id", category_id, "Crop category deleted")
+        flash("Move or remove this category's commodities before deleting it", "danger")
+        return _redirect_admin("admin_commodity_details")
+    return _delete_named_record(
+        "commodity_categories",
+        "id",
+        category_id,
+        "Commodity category deleted",
+        endpoint="admin_commodity_details",
+    )
 
 
 def _crop_category_id():
@@ -318,7 +364,7 @@ def _crop_category_id():
 
     conn = get_db()
     category = conn.cursor().execute(
-        "SELECT id FROM crop_categories WHERE id=?",
+        "SELECT id FROM commodity_categories WHERE id=?",
         (category_id,),
     ).fetchone()
     conn.close()
@@ -331,7 +377,7 @@ def create_crop():
     category_value = request.form.get("category_id", "").strip()
     category_id = _crop_category_id()
     if category_value and category_id is None:
-        flash("Select a valid crop category", "danger")
+        flash("Select a valid commodity category", "danger")
         return _redirect_admin()
     if not name:
         flash("A name is required", "danger")
@@ -340,11 +386,17 @@ def create_crop():
     conn = get_db()
     try:
         conn.cursor().execute(
-            "INSERT INTO crops(crops_name, category_id) VALUES (?, ?)",
-            (name, category_id),
+            """INSERT INTO commodities(
+                   commodity_name, category_id, default_price_unit
+               ) VALUES (?, ?, ?)""",
+            (
+                name,
+                category_id,
+                _default_price_unit_for_category(category_id, conn=conn),
+            ),
         )
         conn.commit()
-        flash("Crop created", "success")
+        flash("Commodity created", "success")
     except IntegrityError:
         flash("That name already exists", "danger")
     finally:
@@ -353,7 +405,7 @@ def create_crop():
 
 
 @_admin_required
-def edit_crop(crop_id):
+def edit_crop(commodity_id):
     name = _form_value("name")
     if not name:
         flash("A name is required", "danger")
@@ -362,28 +414,38 @@ def edit_crop(crop_id):
     conn = get_db()
     cur = conn.cursor()
     crop = cur.execute(
-        "SELECT category_id FROM crops WHERE id=?",
-        (crop_id,),
+        "SELECT category_id, default_price_unit FROM commodities WHERE id=?",
+        (commodity_id,),
     ).fetchone()
     if not crop:
         conn.close()
-        flash("Crop not found", "danger")
+        flash("Commodity not found", "danger")
         return _redirect_admin()
 
     category_value = request.form.get("category_id")
     category_id = crop["category_id"] if category_value is None else _crop_category_id()
     if category_value is not None and category_value.strip() and category_id is None:
         conn.close()
-        flash("Select a valid crop category", "danger")
+        flash("Select a valid commodity category", "danger")
         return _redirect_admin()
+
+    default_price_unit = crop["default_price_unit"] or "kg"
+    if category_id != crop["category_id"]:
+        default_price_unit = _default_price_unit_for_category(category_id, conn=conn)
 
     try:
         cur.execute(
-            "UPDATE crops SET crops_name=?, category_id=? WHERE id=?",
-            (name, category_id, crop_id),
+            """UPDATE commodities
+               SET commodity_name=?, category_id=?, default_price_unit=? WHERE id=?""",
+            (name, category_id, default_price_unit, commodity_id),
         )
+        if category_id != crop["category_id"]:
+            cur.execute(
+                "UPDATE commodity_pricing SET price_unit=? WHERE commodity_id=?",
+                (default_price_unit, commodity_id),
+            )
         conn.commit()
-        flash("Crop updated", "success")
+        flash("Commodity updated", "success")
     except IntegrityError:
         flash("That name already exists", "danger")
     finally:
@@ -392,56 +454,67 @@ def edit_crop(crop_id):
 
 
 @_admin_required
-def save_crop_pricing(crop_id):
+def save_crop_pricing(commodity_id):
     pricing_mode = _form_value("pricing_mode")
+    conn = get_db()
+    cur = conn.cursor()
+    crop = cur.execute(
+        "SELECT id, default_price_unit FROM commodities WHERE id=?",
+        (commodity_id,),
+    ).fetchone()
+    if not crop:
+        conn.close()
+        flash("Commodity not found", "danger")
+        return _redirect_admin("admin_catalog")
+
+    price_unit = _form_value("price_unit").strip().lower() or crop["default_price_unit"] or "kg"
+    if pricing_mode != "none" and not _price_unit_exists(price_unit, conn=conn):
+        conn.close()
+        flash("Choose a registered commodity price unit.", "danger")
+        return _redirect_admin("admin_catalog")
+
     if pricing_mode == "none":
         rule = None
     elif pricing_mode in {"range", "bounds"}:
         try:
             rule = parse_pricing_rule(
                 pricing_mode,
-                _form_value("price_unit") or "kg",
+                price_unit,
                 _form_value("reference_price"),
                 _form_value("price_range"),
                 _form_value("minimum_price"),
                 _form_value("maximum_price"),
             )
         except ValueError as error:
+            conn.close()
             flash(str(error), "danger")
             return _redirect_admin("admin_catalog")
     else:
-        flash("Select a valid crop pricing method", "danger")
-        return _redirect_admin("admin_catalog")
-
-    conn = get_db()
-    cur = conn.cursor()
-    crop = cur.execute("SELECT id FROM crops WHERE id=?", (crop_id,)).fetchone()
-    if not crop:
         conn.close()
-        flash("Crop not found", "danger")
+        flash("Select a valid commodity pricing method", "danger")
         return _redirect_admin("admin_catalog")
 
     if pricing_mode == "none":
-        cur.execute("DELETE FROM crop_pricing WHERE crop_id=?", (crop_id,))
-        flash("Crop pricing restrictions removed", "success")
+        cur.execute("DELETE FROM commodity_pricing WHERE commodity_id=?", (commodity_id,))
+        flash("Commodity pricing restrictions removed", "success")
     else:
         cur.execute(
-            """INSERT INTO crop_pricing(
-                   crop_id, pricing_mode, reference_price, price_range,
+            """INSERT INTO commodity_pricing(
+                   commodity_id, pricing_mode, reference_price, price_range,
                    minimum_price, maximum_price, price_unit
                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(crop_id) DO UPDATE SET
+               ON CONFLICT(commodity_id) DO UPDATE SET
                    pricing_mode=excluded.pricing_mode,
                    reference_price=excluded.reference_price,
                    price_range=excluded.price_range,
                    minimum_price=excluded.minimum_price,
                    maximum_price=excluded.maximum_price,
                    price_unit=excluded.price_unit""",
-            (crop_id, rule["pricing_mode"], rule["reference_price"],
+            (commodity_id, rule["pricing_mode"], rule["reference_price"],
              rule["price_range"], rule["minimum_price"],
              rule["maximum_price"], rule["price_unit"]),
         )
-        flash("Crop pricing saved", "success")
+        flash("Commodity pricing saved", "success")
     conn.commit()
     conn.close()
     return _redirect_admin("admin_catalog")
@@ -449,7 +522,7 @@ def save_crop_pricing(crop_id):
 
 @_admin_required
 def save_crop_pricing_batch():
-    crop_ids = request.form.getlist("crop_id")
+    crop_ids = request.form.getlist("commodity_id") or request.form.getlist("crop_id")
     pricing_modes = request.form.getlist("pricing_mode")
     reference_prices = request.form.getlist("reference_price")
     price_ranges = request.form.getlist("price_range")
@@ -467,17 +540,17 @@ def save_crop_pricing_batch():
             maximum_prices,
         )
     ):
-        flash("Add between 1 and 100 complete crop price rules.", "danger")
+        flash("Add between 1 and 100 complete commodity price rules.", "danger")
         return _redirect_admin("admin_catalog")
 
     prepared_rules = []
     seen_crop_ids = set()
     try:
         for index, crop_id_value in enumerate(crop_ids):
-            crop_id = int(crop_id_value)
-            if crop_id <= 0 or crop_id in seen_crop_ids:
-                raise ValueError("Choose a different crop for each price rule.")
-            seen_crop_ids.add(crop_id)
+            commodity_id = int(crop_id_value)
+            if commodity_id <= 0 or commodity_id in seen_crop_ids:
+                raise ValueError("Choose a different commodity for each price rule.")
+            seen_crop_ids.add(commodity_id)
             pricing_mode = pricing_modes[index]
             if pricing_mode == "none":
                 rule = None
@@ -491,18 +564,18 @@ def save_crop_pricing_batch():
                     maximum_prices[index].strip(),
                 )
             else:
-                raise ValueError("Select a valid crop pricing method.")
-            prepared_rules.append((crop_id, pricing_mode, rule))
+                raise ValueError("Select a valid commodity pricing method.")
+            prepared_rules.append((commodity_id, pricing_mode, rule))
     except (TypeError, ValueError) as error:
-        flash(f"Crop price rule validation failed: {error}", "danger")
+        flash(f"Commodity price rule validation failed: {error}", "danger")
         return _redirect_admin("admin_catalog")
 
     imported_crop_ids = {
-        int(crop_id)
-        for crop_id in session.get("crop_pricing_import_crop_ids", [])
+        int(commodity_id)
+        for commodity_id in session.get("crop_pricing_import_crop_ids", [])
     }
     if not imported_crop_ids or not seen_crop_ids.issubset(imported_crop_ids):
-        flash("Choose crops from the most recently imported file.", "danger")
+        flash("Choose commodities from the most recently imported file.", "danger")
         return _redirect_admin("admin_catalog")
 
     conn = get_db()
@@ -511,26 +584,26 @@ def save_crop_pricing_batch():
     existing_crop_ids = {
         row["id"]
         for row in cur.execute(
-            f"SELECT id FROM crops WHERE id IN ({placeholders})",
+            f"SELECT id FROM commodities WHERE id IN ({placeholders})",  # nosec B608
             tuple(seen_crop_ids),
         ).fetchall()
     }
     if existing_crop_ids != seen_crop_ids:
         conn.close()
-        flash("One or more selected crops no longer exist. No rules were saved.", "danger")
+        flash("One or more selected commodities no longer exist. No rules were saved.", "danger")
         return _redirect_admin("admin_catalog")
 
     try:
-        for crop_id, pricing_mode, rule in prepared_rules:
+        for commodity_id, pricing_mode, rule in prepared_rules:
             if pricing_mode == "none":
-                cur.execute("DELETE FROM crop_pricing WHERE crop_id=?", (crop_id,))
+                cur.execute("DELETE FROM commodity_pricing WHERE commodity_id=?", (commodity_id,))
                 continue
             cur.execute(
-                """INSERT INTO crop_pricing(
-                       crop_id, pricing_mode, reference_price, price_range,
+                """INSERT INTO commodity_pricing(
+                       commodity_id, pricing_mode, reference_price, price_range,
                        minimum_price, maximum_price, price_unit
                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(crop_id) DO UPDATE SET
+                   ON CONFLICT(commodity_id) DO UPDATE SET
                        pricing_mode=excluded.pricing_mode,
                        reference_price=excluded.reference_price,
                        price_range=excluded.price_range,
@@ -538,7 +611,7 @@ def save_crop_pricing_batch():
                        maximum_price=excluded.maximum_price,
                        price_unit=excluded.price_unit""",
                 (
-                    crop_id,
+                    commodity_id,
                     rule["pricing_mode"],
                     rule["reference_price"],
                     rule["price_range"],
@@ -552,12 +625,13 @@ def save_crop_pricing_batch():
         db.session.rollback()
         current_app.logger.exception("Batch crop pricing save failed")
         conn.close()
-        flash("Crop price rules could not be saved. No changes were committed.", "danger")
+        flash("Commodity price rules could not be saved. No changes were committed.", "danger")
         return _redirect_admin("admin_catalog")
 
     conn.close()
     session.pop("crop_pricing_import_crop_ids", None)
-    flash(f"Saved price rules for {row_count} crop(s).", "success")
+    commodity_label = "commodity" if row_count == 1 else "commodities"
+    flash(f"Saved price rules for {row_count} {commodity_label}.", "success")
     return _redirect_admin("admin_catalog")
 
 
@@ -567,7 +641,7 @@ def download_crop_pricing_template():
     writer = csv.writer(output)
     writer.writerow(
         (
-            "crop_name",
+            "commodity_name",
             "category_name",
             "price_unit",
             "price",
@@ -627,10 +701,14 @@ def import_crop_pricing():
             flash("The Excel file is invalid or cannot be opened.", "danger")
             return _redirect_admin("admin_catalog")
 
-    expected_headers = {"crop_name", "category_name", "price_unit", "price"}
+    expected_headers = {"commodity_name", "category_name", "price_unit", "price"}
     headers = [
         str(header).strip().lower().replace(" ", "_") if header is not None else ""
         for header in (header_row or ())
+    ]
+    headers = [
+        "commodity_name" if header == "crop_name" else header
+        for header in headers
     ]
     if not headers or len(headers) > 32 or len(headers) != len(set(headers)):
         if extension == "xlsx":
@@ -646,7 +724,7 @@ def import_crop_pricing():
             workbook.close()
         flash(
             "The file must contain only these columns: "
-            "crop_name, category_name, price_unit, price.",
+            "commodity_name, category_name, price_unit, price.",
             "danger",
         )
         return _redirect_admin("admin_catalog")
@@ -664,24 +742,24 @@ def import_crop_pricing():
                 raise ValueError(f"Row {row_number} has more cells than the header.")
             values.extend([None] * (len(headers) - len(values)))
             record = dict(zip(headers, values))
-            crop_name = str(record.get("crop_name") or "").strip()
-            if not crop_name:
-                raise ValueError(f"Row {row_number}: crop_name is required.")
-            if len(crop_name) > 128:
-                raise ValueError(f"Row {row_number}: crop_name must be 128 characters or fewer.")
+            commodity_name = str(record.get("commodity_name") or "").strip()
+            if not commodity_name:
+                raise ValueError(f"Row {row_number}: commodity_name is required.")
+            if len(commodity_name) > 128:
+                raise ValueError(f"Row {row_number}: commodity_name must be 128 characters or fewer.")
             category_name = str(record.get("category_name") or "").strip()
             if len(category_name) > 128:
                 raise ValueError(
                     f"Row {row_number}: category_name must be 128 characters or fewer."
                 )
-            normalized_name = crop_name.casefold()
+            normalized_name = commodity_name.casefold()
             if normalized_name in seen_crops:
-                raise ValueError(f"Row {row_number}: {crop_name} appears more than once.")
+                raise ValueError(f"Row {row_number}: {commodity_name} appears more than once.")
             seen_crops.add(normalized_name)
             price_unit = str(record.get("price_unit") or "").strip().lower()
             if price_unit != "kg":
                 raise ValueError(
-                    f"Row {row_number} ({crop_name}): price_unit must be kg."
+                    f"Row {row_number} ({commodity_name}): price_unit must be kg."
                 )
             try:
                 price_rule = parse_pricing_rule(
@@ -693,11 +771,11 @@ def import_crop_pricing():
                     "",
                 )
             except ValueError as error:
-                raise ValueError(f"Row {row_number} ({crop_name}): {error}") from error
+                raise ValueError(f"Row {row_number} ({commodity_name}): {error}") from error
             prepared_rows.append(
                 {
                     "row_number": row_number,
-                    "crop_name": crop_name,
+                    "commodity_name": commodity_name,
                     "category_name": category_name,
                     "price_unit": "kg",
                     "price_rule": price_rule,
@@ -712,25 +790,25 @@ def import_crop_pricing():
     if extension == "xlsx":
         workbook.close()
     if not prepared_rows:
-        flash("The file contains no crop pricing rows to import.", "danger")
+        flash("The file contains no commodity pricing rows to import.", "danger")
         return _redirect_admin("admin_catalog")
 
     conn = get_db()
     cur = conn.cursor()
     for record in prepared_rows:
         crop = cur.execute(
-            """SELECT crops.id, crops.category_id,
-                      COALESCE(crop_categories.name, '') AS category_name
-               FROM crops LEFT JOIN crop_categories
-                 ON crop_categories.id=crops.category_id
-               WHERE LOWER(TRIM(crops.crops_name))=LOWER(?)""",
-            (record["crop_name"],),
+            """SELECT commodities.id, commodities.category_id,
+                      COALESCE(commodity_categories.name, '') AS category_name
+               FROM commodities LEFT JOIN commodity_categories
+                 ON commodity_categories.id=commodities.category_id
+               WHERE LOWER(TRIM(commodities.commodity_name))=LOWER(?)""",
+            (record["commodity_name"],),
         ).fetchone()
         category_name = record["category_name"]
         category = None
         if category_name:
             category = cur.execute(
-                "SELECT id, name FROM crop_categories "
+                "SELECT id, name FROM commodity_categories "
                 "WHERE LOWER(TRIM(name))=LOWER(?)",
                 (category_name,),
             ).fetchone()
@@ -739,16 +817,16 @@ def import_crop_pricing():
                 actual_category = crop["category_name"] or "Uncategorized"
                 conn.close()
                 flash(
-                    f"Row {record['row_number']}: '{record['crop_name']}' belongs "
+                    f"Row {record['row_number']}: '{record['commodity_name']}' belongs "
                     f"to {actual_category}, not {category_name}. No prices were imported.",
                     "danger",
                 )
                 return _redirect_admin("admin_catalog")
-            record["crop_id"] = crop["id"]
+            record["commodity_id"] = crop["id"]
             record["category_id"] = crop["category_id"]
             record["create_crop"] = False
         else:
-            record["crop_id"] = None
+            record["commodity_id"] = None
             record["category_id"] = category["id"] if category else None
             record["create_crop"] = True
             record["new_category_name"] = (
@@ -764,7 +842,7 @@ def import_crop_pricing():
     category_ids = {}
     for normalized_name, category_name in new_categories.items():
         cur.execute(
-            "INSERT INTO crop_categories(name) VALUES (?) RETURNING id",
+            "INSERT INTO commodity_categories(name) VALUES (?) RETURNING id",
             (category_name,),
         )
         category_ids[normalized_name] = cur.fetchone()["id"]
@@ -777,20 +855,20 @@ def import_crop_pricing():
         if record.get("new_category_name"):
             category_id = category_ids[record["new_category_name"].casefold()]
         cur.execute(
-            "INSERT INTO crops(crops_name, category_id) VALUES (?, ?) RETURNING id",
-            (record["crop_name"], category_id),
+            "INSERT INTO commodities(commodity_name, category_id) VALUES (?, ?) RETURNING id",
+            (record["commodity_name"], category_id),
         )
-        record["crop_id"] = cur.fetchone()["id"]
+        record["commodity_id"] = cur.fetchone()["id"]
         new_crop_count += 1
 
     for record in prepared_rows:
         rule = record["price_rule"]
         cur.execute(
-            """INSERT INTO crop_pricing(
-                   crop_id, pricing_mode, reference_price, price_range,
+            """INSERT INTO commodity_pricing(
+                   commodity_id, pricing_mode, reference_price, price_range,
                    minimum_price, maximum_price, price_unit
                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(crop_id) DO UPDATE SET
+               ON CONFLICT(commodity_id) DO UPDATE SET
                    pricing_mode=excluded.pricing_mode,
                    reference_price=excluded.reference_price,
                    price_range=excluded.price_range,
@@ -798,7 +876,7 @@ def import_crop_pricing():
                    maximum_price=excluded.maximum_price,
                    price_unit=excluded.price_unit""",
             (
-                record["crop_id"],
+                record["commodity_id"],
                 rule["pricing_mode"],
                 rule["reference_price"],
                 rule["price_range"],
@@ -811,19 +889,23 @@ def import_crop_pricing():
     conn.commit()
     conn.close()
     session["crop_pricing_import_crop_ids"] = [
-        record["crop_id"] for record in prepared_rows
+        record["commodity_id"] for record in prepared_rows
     ]
+    new_commodity_label = "commodity" if new_crop_count == 1 else "commodities"
+    imported_commodity_label = (
+        "commodity" if len(prepared_rows) == 1 else "commodities"
+    )
     flash(
-        f"Import successful: added {new_crop_count} new crop(s) and updated "
-        f"prices for {len(prepared_rows)} crop(s).",
+        f"Import successful: added {new_crop_count} new {new_commodity_label} and "
+        f"updated prices for {len(prepared_rows)} {imported_commodity_label}.",
         "success",
     )
     return _redirect_admin("admin_catalog")
 
 
 @_admin_required
-def delete_crop(crop_id):
-    return _delete_named_record("crops", "id", crop_id, "Crop deleted")
+def delete_crop(commodity_id):
+    return _delete_named_record("commodities", "id", commodity_id, "Commodity deleted")
 
 
 @_admin_required
@@ -844,13 +926,15 @@ def delete_knowledge_category(category_id):
 
 
 def _edit_named_record(table, column, id_column, record_id, message, extra_column=None, endpoint="admin_catalog"):
+    if (table, column, id_column, extra_column) not in _EDITABLE_RECORD_COLUMNS:
+        raise ValueError("Unsupported named record")
     value = _form_value("name")
     if not value:
         flash("A name is required", "danger")
         return _redirect_admin(endpoint)
     conn = get_db()
     values = [value]
-    query = f"UPDATE {table} SET {column}=?"
+    query = f"UPDATE {table} SET {column}=?"  # nosec B608
     if extra_column:
         query += f", {extra_column}=?"
         values.append(_form_value("description") or None)
@@ -869,10 +953,15 @@ def _edit_named_record(table, column, id_column, record_id, message, extra_colum
 
 
 def _delete_named_record(table, id_column, record_id, message, endpoint="admin_catalog"):
+    if (table, id_column) not in _DELETABLE_RECORD_COLUMNS:
+        raise ValueError("Unsupported named record")
     conn = get_db()
     cur = conn.cursor()
     try:
-        cur.execute(f"DELETE FROM {table} WHERE {id_column}=?", (record_id,))
+        cur.execute(
+            f"DELETE FROM {table} WHERE {id_column}=?",  # nosec B608
+            (record_id,)
+        )
         conn.commit()
         flash(message, "success")
     except IntegrityError:
@@ -897,13 +986,15 @@ def admin_knowledge():
     if search:
         search_filter = "WHERE kp.title LIKE ? OR kp.author LIKE ? OR kc.category_name LIKE ?"
         params = [f"%{search}%"] * 3
-    cur.execute(f"""
-        SELECT kp.post_id, kp.title, kp.status, kp.is_pinned, kp.created_at, kp.views, kc.category_name, kp.author
-        FROM knowledge_posts kp
-        LEFT JOIN knowledge_categories kc ON kp.category_id = kc.category_id
-        {search_filter}
-        ORDER BY kp.is_pinned DESC, kp.created_at DESC
-    """, params)
+    # search_filter selects a fixed clause; search values are bound separately.
+    posts_query = (
+        "SELECT kp.post_id, kp.title, kp.status, kp.is_pinned, kp.created_at, kp.views, kc.category_name, kp.author\n"  # nosec B608
+        "FROM knowledge_posts kp\n"
+        "LEFT JOIN knowledge_categories kc ON kp.category_id = kc.category_id\n"
+        + search_filter
+        + "\nORDER BY kp.is_pinned DESC, kp.created_at DESC"
+    )
+    cur.execute(posts_query, params)
     posts = cur.fetchall()
     cur.execute("SELECT category_id, category_name FROM knowledge_categories ORDER BY category_name")
     categories = cur.fetchall()
@@ -1074,11 +1165,11 @@ def admin():
     stats = {
         "users": cur.execute("SELECT COUNT(*) AS count FROM users").fetchone()["count"],
         "admins": cur.execute("SELECT COUNT(*) AS count FROM users WHERE role='admin'").fetchone()["count"],
-        "crops": cur.execute("SELECT COUNT(*) AS count FROM crops").fetchone()["count"],
+        "commodities": cur.execute("SELECT COUNT(*) AS count FROM commodities").fetchone()["count"],
         "articles": cur.execute("SELECT COUNT(*) AS count FROM knowledge_posts").fetchone()["count"],
         "marketplace": cur.execute("SELECT COUNT(*) AS count FROM marketplace").fetchone()["count"],
         "marketplace_transactions": cur.execute(
-            f"SELECT COUNT(*) AS count FROM marketplace m WHERE {MARKETPLACE_TRANSACTION_FILTER}"
+            f"SELECT COUNT(*) AS count FROM marketplace m WHERE {MARKETPLACE_TRANSACTION_FILTER}",  # nosec B608
         ).fetchone()["count"],
         "open_reports": cur.execute(
             "SELECT COUNT(*) AS count FROM profile_reports WHERE status='open'"
@@ -1145,7 +1236,10 @@ def admin_users():
 def admin_catalog():
     search = request.args.get("q", "").strip()
     category_filter = request.args.get("category_id", "").strip()
-    crop_filter = request.args.get("crop_id", "").strip()
+    crop_filter = (
+        request.args.get("commodity_id", request.args.get("crop_id", ""))
+        .strip()
+    )
     try:
         category_id = int(category_filter) if category_filter else None
         if category_id is not None and category_id <= 0:
@@ -1154,29 +1248,31 @@ def admin_catalog():
         category_id = None
     uncategorized = category_filter == "uncategorized"
     try:
-        crop_id = int(crop_filter) if crop_filter else None
-        if crop_id is not None and crop_id <= 0:
-            crop_id = None
+        commodity_id = int(crop_filter) if crop_filter else None
+        if commodity_id is not None and commodity_id <= 0:
+            commodity_id = None
     except ValueError:
-        crop_id = None
+        commodity_id = None
 
     conn = get_db()
     cur = conn.cursor()
     pattern = f"%{search}%"
-    crops = cur.execute(
-        """SELECT crops.id, crops.crops_name, crops.category_id,
-                  COALESCE(crop_categories.name, 'Uncategorized') AS category_name,
-                  crop_pricing.pricing_mode, crop_pricing.reference_price,
-                  crop_pricing.price_range, crop_pricing.minimum_price,
-                  crop_pricing.maximum_price, crop_pricing.price_unit
-           FROM crops
-           LEFT JOIN crop_categories ON crop_categories.id = crops.category_id
-           LEFT JOIN crop_pricing ON crop_pricing.crop_id = crops.id
-           WHERE (? = '' OR crops.crops_name LIKE ? OR crop_categories.name LIKE ?)
-             AND (? IS NULL OR crops.category_id = ?)
-             AND (? = 0 OR crops.category_id IS NULL)
-             AND (? IS NULL OR crops.id = ?)
-           ORDER BY COALESCE(crop_categories.name, 'Uncategorized'), crops.crops_name""",
+    commodities = cur.execute(
+        """SELECT commodities.id, commodities.commodity_name, commodities.category_id,
+                  COALESCE(commodity_categories.name, 'Uncategorized') AS category_name,
+                  commodity_pricing.pricing_mode, commodity_pricing.reference_price,
+                  commodity_pricing.price_range, commodity_pricing.minimum_price,
+                  commodity_pricing.maximum_price,
+                  COALESCE(commodity_pricing.price_unit,
+                           commodities.default_price_unit, 'kg') AS price_unit
+           FROM commodities
+           LEFT JOIN commodity_categories ON commodity_categories.id = commodities.category_id
+           LEFT JOIN commodity_pricing ON commodity_pricing.commodity_id = commodities.id
+           WHERE (? = '' OR commodities.commodity_name LIKE ? OR commodity_categories.name LIKE ?)
+             AND (? IS NULL OR commodities.category_id = ?)
+             AND (? = 0 OR commodities.category_id IS NULL)
+             AND (? IS NULL OR commodities.id = ?)
+           ORDER BY COALESCE(commodity_categories.name, 'Uncategorized'), commodities.commodity_name""",
         (
             search,
             pattern,
@@ -1184,44 +1280,50 @@ def admin_catalog():
             category_id,
             category_id,
             int(uncategorized),
-            crop_id,
-            crop_id,
+            commodity_id,
+            commodity_id,
         ),
     ).fetchall()
-    crop_categories = cur.execute(
-        """SELECT id, name, description FROM crop_categories
+    commodity_categories = cur.execute(
+        """SELECT id, name, description FROM commodity_categories
            WHERE ? = '' OR name LIKE ? OR description LIKE ? ORDER BY name""",
         (search, pattern, pattern),
     ).fetchall()
     all_crop_categories = cur.execute(
-        "SELECT id, name FROM crop_categories ORDER BY name"
+        "SELECT id, name FROM commodity_categories ORDER BY name"
     ).fetchall()
-    all_crops = cur.execute(
-        """SELECT crops.id, crops.crops_name, crops.category_id,
-                  crop_pricing.pricing_mode, crop_pricing.reference_price,
-                  crop_pricing.price_range, crop_pricing.minimum_price,
-                  crop_pricing.maximum_price
-           FROM crops LEFT JOIN crop_pricing ON crop_pricing.crop_id=crops.id
-           ORDER BY crops.crops_name"""
+    crop_filter_options = cur.execute(
+        """SELECT commodities.id, commodities.commodity_name, commodities.category_id,
+                  commodity_pricing.pricing_mode, commodity_pricing.reference_price,
+                  commodity_pricing.price_range, commodity_pricing.minimum_price,
+                  commodity_pricing.maximum_price,
+                  COALESCE(commodity_pricing.price_unit,
+                           commodities.default_price_unit, 'kg') AS price_unit
+           FROM commodities LEFT JOIN commodity_pricing ON commodity_pricing.commodity_id=commodities.id
+           ORDER BY commodities.commodity_name"""
     ).fetchall()
     conn.close()
     imported_crop_ids = session.get("crop_pricing_import_crop_ids", [])
     if imported_crop_ids:
-        imported_crop_ids = {int(crop_id) for crop_id in imported_crop_ids}
-        all_crops = [crop for crop in all_crops if crop["id"] in imported_crop_ids]
+        imported_crop_ids = {int(commodity_id) for commodity_id in imported_crop_ids}
+        all_crops = [
+            crop for crop in crop_filter_options
+            if crop["id"] in imported_crop_ids
+        ]
     else:
         all_crops = []
     crop_price_bounds = {
         crop["id"]: price_bounds(crop)
-        for crop in crops
+        for crop in commodities
         if crop["pricing_mode"]
     }
     return render_template(
         "admin_catalog.html",
-        crops=crops,
+        commodities=commodities,
         crop_price_bounds=crop_price_bounds,
-        crop_categories=crop_categories,
+        commodity_categories=commodity_categories,
         all_crop_categories=all_crop_categories,
+        crop_filter_options=crop_filter_options,
         all_crops=all_crops,
         search=search,
         category_filter=category_filter,
@@ -1231,19 +1333,466 @@ def admin_catalog():
     )
 
 
+def _remove_commodity_detail_image(filename):
+    if not filename or os.path.basename(filename) != filename:
+        return
+    image_path = os.path.join(
+        current_app.static_folder, "uploads", "commodity_details", filename
+    )
+    try:
+        if os.path.isfile(image_path):
+            os.remove(image_path)
+    except OSError:
+        current_app.logger.exception("Unable to remove replaced commodity image")
+
+
+def _save_commodity_detail_image(uploaded_file):
+    if not uploaded_file or not uploaded_file.filename:
+        return None, None
+    extension = os.path.splitext(uploaded_file.filename)[1].lower().lstrip(".")
+    image_formats = {"jpg": "JPEG", "jpeg": "JPEG", "png": "PNG", "webp": "WEBP"}
+    if extension not in image_formats:
+        raise ValueError("Choose a PNG, JPG, JPEG, or WEBP commodity image.")
+
+    image_directory = os.path.join(
+        current_app.static_folder, "uploads", "commodity_details"
+    )
+    os.makedirs(image_directory, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}.{extension}"
+    image_path = os.path.join(image_directory, filename)
+    try:
+        save_sanitized_public_image(
+            uploaded_file,
+            image_path,
+            image_formats[extension],
+            current_app.config["MAX_CROP_PHOTO_SIZE_BYTES"],
+        )
+    except ValueError:
+        if os.path.isfile(image_path):
+            os.remove(image_path)
+        raise
+    return filename, image_path
+
+
+def _commodity_details_category_id():
+    category_value = request.form.get("category_id", "").strip()
+    if not category_value:
+        return None
+    category_id = _crop_category_id()
+    if category_id is None:
+        flash("Select a valid commodity category", "danger")
+    return category_id
+
+
+def _default_price_unit_for_category(category_id=None, category_name=None, conn=None):
+    if category_id is not None:
+        owns_connection = conn is None
+        conn = conn or get_db()
+        try:
+            category = conn.cursor().execute(
+                "SELECT name, default_price_unit FROM commodity_categories WHERE id=?",
+                (category_id,),
+            ).fetchone()
+        finally:
+            if owns_connection:
+                conn.close()
+        if category:
+            return category["default_price_unit"] or _default_price_unit_for_category(
+                category_name=category["name"]
+            )
+    normalized_name = str(category_name or "").strip().lower()
+    return "pack" if "cigarette" in normalized_name else "kg"
+
+
+def _price_unit_exists(price_unit, conn=None):
+    owns_connection = conn is None
+    conn = conn or get_db()
+    try:
+        return conn.cursor().execute(
+            "SELECT unit FROM commodity_price_units WHERE unit=?",
+            (price_unit,),
+        ).fetchone() is not None
+    finally:
+        if owns_connection:
+            conn.close()
+
+
+def _price_unit_in_use(price_unit, conn):
+    inspector = inspect(db.engine)
+    tables = set(inspector.get_table_names())
+    for table_name, column_name, query in (
+        (
+            "commodity_categories",
+            "default_price_unit",
+            "SELECT 1 FROM commodity_categories WHERE default_price_unit=? LIMIT 1",
+        ),
+        (
+            "commodities",
+            "default_price_unit",
+            "SELECT 1 FROM commodities WHERE default_price_unit=? LIMIT 1",
+        ),
+        (
+            "commodity_pricing",
+            "price_unit",
+            "SELECT 1 FROM commodity_pricing WHERE price_unit=? LIMIT 1",
+        ),
+        ("marketplace", "unit", "SELECT 1 FROM marketplace WHERE unit=? LIMIT 1"),
+    ):
+        if table_name not in tables:
+            continue
+        columns = {column["name"] for column in inspector.get_columns(table_name)}
+        if column_name not in columns:
+            continue
+        if conn.cursor().execute(query, (price_unit,)).fetchone():
+            return True
+    return False
+
+
+@_admin_required
+def admin_commodity_details():
+    conn = get_db()
+    cur = conn.cursor()
+    categories = cur.execute(
+        """SELECT id, name, description, default_price_unit
+           FROM commodity_categories ORDER BY name"""
+    ).fetchall()
+    commodities = cur.execute(
+        """SELECT c.id, c.commodity_name, c.description, c.default_image,
+                  c.category_id, COALESCE(cc.name, 'Uncategorized') AS category_name,
+                  COALESCE(c.default_price_unit, 'kg') AS default_price_unit
+           FROM commodities c
+           LEFT JOIN commodity_categories cc ON cc.id=c.category_id
+           ORDER BY COALESCE(cc.name, 'Uncategorized'), c.commodity_name"""
+    ).fetchall()
+    price_units = cur.execute(
+        "SELECT unit FROM commodity_price_units ORDER BY unit"
+    ).fetchall()
+    conn.close()
+    return render_template(
+        "admin_commodity_details.html",
+        categories=categories,
+        commodities=commodities,
+        price_units=price_units,
+    )
+
+
+@_admin_required
+def create_commodity_detail_category():
+    name = _form_value("name")
+    default_price_unit = (
+        request.form.get("default_price_unit", "").strip().lower()
+        or _default_price_unit_for_category(category_name=name)
+    )
+    if not name:
+        flash("A category name is required", "danger")
+        return _redirect_admin("admin_commodity_details")
+    if not _price_unit_exists(default_price_unit):
+        flash("Choose a registered commodity price unit.", "danger")
+        return _redirect_admin("admin_commodity_details")
+    conn = get_db()
+    try:
+        conn.cursor().execute(
+            """INSERT INTO commodity_categories(name, description, default_price_unit)
+               VALUES (?, ?, ?)""",
+            (name, _form_value("description") or None, default_price_unit),
+        )
+        conn.commit()
+        flash("Commodity category created", "success")
+    except (IntegrityError, sqlite3.IntegrityError):
+        db.session.rollback()
+        flash("That category name already exists", "danger")
+    finally:
+        conn.close()
+    return _redirect_admin("admin_commodity_details")
+
+
+@_admin_required
+def edit_commodity_detail_category(category_id):
+    name = _form_value("name")
+    if not name:
+        flash("A category name is required", "danger")
+        return _redirect_admin("admin_commodity_details")
+    default_price_unit = request.form.get("default_price_unit", "").strip().lower()
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        category = cur.execute(
+            "SELECT default_price_unit FROM commodity_categories WHERE id=?",
+            (category_id,),
+        ).fetchone()
+        if not category:
+            flash("Commodity category not found", "danger")
+            return _redirect_admin("admin_commodity_details")
+        default_price_unit = (
+            default_price_unit or category["default_price_unit"] or "kg"
+        )
+        if not _price_unit_exists(default_price_unit, conn=conn):
+            flash("Choose a registered commodity price unit.", "danger")
+            return _redirect_admin("admin_commodity_details")
+        cur.execute(
+            """UPDATE commodity_categories
+               SET name=?, description=?, default_price_unit=? WHERE id=?""",
+            (name, _form_value("description") or None, default_price_unit, category_id),
+        )
+        cur.execute(
+            "UPDATE commodities SET default_price_unit=? WHERE category_id=?",
+            (default_price_unit, category_id),
+        )
+        cur.execute(
+            """UPDATE commodity_pricing SET price_unit=?
+               WHERE commodity_id IN (
+                   SELECT id FROM commodities WHERE category_id=?
+               )""",
+            (default_price_unit, category_id),
+        )
+        conn.commit()
+        flash("Commodity category and its price units updated", "success")
+    except (IntegrityError, sqlite3.IntegrityError):
+        db.session.rollback()
+        flash("That category name already exists", "danger")
+    finally:
+        conn.close()
+    return _redirect_admin("admin_commodity_details")
+
+
+@_admin_required
+def create_commodity_detail():
+    name = _form_value("name")
+    category_value = request.form.get("category_id", "").strip()
+    category_id = _commodity_details_category_id()
+    if category_value and category_id is None:
+        return _redirect_admin("admin_commodity_details")
+    if not name:
+        flash("A commodity name is required", "danger")
+        return _redirect_admin("admin_commodity_details")
+
+    selected_unit = request.form.get("default_price_unit", "").strip().lower()
+    if not selected_unit:
+        selected_unit = _default_price_unit_for_category(category_id)
+    elif not _price_unit_exists(selected_unit):
+        flash("Choose a registered commodity price unit.", "danger")
+        return _redirect_admin("admin_commodity_details")
+
+    try:
+        image_filename, image_path = _save_commodity_detail_image(
+            request.files.get("default_image")
+        )
+    except ValueError as error:
+        flash(str(error), "danger")
+        return _redirect_admin("admin_commodity_details")
+
+    conn = get_db()
+    try:
+        conn.cursor().execute(
+            """INSERT INTO commodities(
+                   commodity_name, category_id, description, default_image, default_price_unit
+               ) VALUES (?, ?, ?, ?, ?)""",
+            (name, category_id, _form_value("description") or None, image_filename, selected_unit),
+        )
+        conn.commit()
+        flash("Commodity created", "success")
+    except (IntegrityError, sqlite3.IntegrityError):
+        db.session.rollback()
+        if image_path and os.path.isfile(image_path):
+            os.remove(image_path)
+        flash("That commodity name already exists", "danger")
+    finally:
+        conn.close()
+    return _redirect_admin("admin_commodity_details")
+
+
+@_admin_required
+def edit_commodity_detail(commodity_id):
+    name = _form_value("name")
+    category_value = request.form.get("category_id", "").strip()
+    category_id = _commodity_details_category_id()
+    if category_value and category_id is None:
+        return _redirect_admin("admin_commodity_details")
+    if not name:
+        flash("A commodity name is required", "danger")
+        return _redirect_admin("admin_commodity_details")
+
+    conn = get_db()
+    commodity = conn.cursor().execute(
+        "SELECT default_image, category_id, default_price_unit "
+        "FROM commodities WHERE id=?",
+        (commodity_id,),
+    ).fetchone()
+    if not commodity:
+        conn.close()
+        flash("Commodity not found", "danger")
+        return _redirect_admin("admin_commodity_details")
+
+    selected_unit = request.form.get("default_price_unit", "").strip().lower()
+    if not selected_unit:
+        selected_unit = (
+            _default_price_unit_for_category(category_id, conn=conn)
+            if category_id != commodity["category_id"]
+            else commodity["default_price_unit"] or "kg"
+        )
+    elif not _price_unit_exists(selected_unit, conn=conn):
+        conn.close()
+        flash("Choose a registered commodity price unit.", "danger")
+        return _redirect_admin("admin_commodity_details")
+
+    try:
+        image_filename, image_path = _save_commodity_detail_image(
+            request.files.get("default_image")
+        )
+    except ValueError as error:
+        conn.close()
+        flash(str(error), "danger")
+        return _redirect_admin("admin_commodity_details")
+    image_filename = image_filename or commodity["default_image"]
+    try:
+        conn.cursor().execute(
+            """UPDATE commodities
+               SET commodity_name=?, category_id=?, description=?, default_image=?, default_price_unit=?
+               WHERE id=?""",
+            (
+                name,
+                category_id,
+                _form_value("description") or None,
+                image_filename,
+                selected_unit,
+                commodity_id,
+            ),
+        )
+        conn.commit()
+        if category_id != commodity["category_id"]:
+            conn.cursor().execute(
+                "UPDATE commodity_pricing SET price_unit=? WHERE commodity_id=?",
+                (selected_unit, commodity_id),
+            )
+            conn.commit()
+        if image_path and commodity["default_image"] != image_filename:
+            _remove_commodity_detail_image(commodity["default_image"])
+        flash("Commodity details updated", "success")
+    except (IntegrityError, sqlite3.IntegrityError):
+        db.session.rollback()
+        if image_path and os.path.isfile(image_path):
+            os.remove(image_path)
+        flash("That commodity name already exists", "danger")
+    finally:
+        conn.close()
+    return _redirect_admin("admin_commodity_details")
+
+
+@_admin_required
+def update_commodity_price_unit(commodity_id):
+    price_unit = request.form.get("default_price_unit", "").strip().lower()
+    if not _price_unit_exists(price_unit):
+        flash("Choose a registered commodity price unit.", "danger")
+        return redirect(url_for("admin_commodity_details") + "#commodityPriceUnitPanel")
+
+    conn = get_db()
+    try:
+        result = conn.cursor().execute(
+            "UPDATE commodities SET default_price_unit=? WHERE id=?",
+            (price_unit, commodity_id),
+        )
+        if result.rowcount == 0:
+            flash("Commodity not found", "danger")
+        else:
+            conn.cursor().execute(
+                "UPDATE commodity_pricing SET price_unit=? WHERE commodity_id=?",
+                (price_unit, commodity_id),
+            )
+            conn.commit()
+            flash("Commodity price unit updated", "success")
+    finally:
+        conn.close()
+    return redirect(url_for("admin_commodity_details") + "#commodityPriceUnitPanel")
+
+
+@_admin_required
+def create_commodity_price_unit():
+    unit = request.form.get("unit", "").strip().lower()
+    if not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", unit):
+        flash("Enter a unit name using 1–32 lowercase letters, numbers, hyphens, or underscores.", "danger")
+        return redirect(url_for("admin_commodity_details") + "#commodityPriceUnitPanel")
+
+    conn = get_db()
+    try:
+        conn.cursor().execute(
+            "INSERT INTO commodity_price_units(unit) VALUES (?)",
+            (unit,),
+        )
+        conn.commit()
+        flash(f"Price unit '{unit}' created", "success")
+    except (IntegrityError, sqlite3.IntegrityError):
+        db.session.rollback()
+        flash("That price unit already exists", "danger")
+    finally:
+        conn.close()
+    return redirect(url_for("admin_commodity_details") + "#commodityPriceUnitPanel")
+
+
+@_admin_required
+def delete_commodity_price_unit(unit):
+    if unit in {"kg", "pc", "pack"}:
+        flash("Built-in price units cannot be deleted.", "warning")
+        return redirect(url_for("admin_commodity_details") + "#commodityPriceUnitPanel")
+
+    conn = get_db()
+    try:
+        if not _price_unit_exists(unit, conn=conn):
+            flash("Price unit not found.", "danger")
+        elif _price_unit_in_use(unit, conn):
+            flash(
+                "This price unit is still assigned to a category, commodity, "
+                "pricing rule, or marketplace listing.",
+                "danger",
+            )
+        else:
+            conn.cursor().execute(
+                "DELETE FROM commodity_price_units WHERE unit=?",
+                (unit,),
+            )
+            conn.commit()
+            flash(f"Price unit '{unit}' deleted.", "success")
+    finally:
+        conn.close()
+    return redirect(url_for("admin_commodity_details") + "#commodityPriceUnitPanel")
+
+
+@_admin_required
+def delete_commodity_detail(commodity_id):
+    conn = get_db()
+    commodity = conn.cursor().execute(
+        "SELECT default_image FROM commodities WHERE id=?", (commodity_id,)
+    ).fetchone()
+    if not commodity:
+        conn.close()
+        flash("Commodity not found", "danger")
+        return _redirect_admin("admin_commodity_details")
+
+    try:
+        conn.cursor().execute("DELETE FROM commodities WHERE id=?", (commodity_id,))
+        conn.commit()
+        _remove_commodity_detail_image(commodity["default_image"])
+        flash("Commodity deleted", "success")
+    except (IntegrityError, sqlite3.IntegrityError):
+        db.session.rollback()
+        flash("This commodity is still in use and cannot be deleted", "danger")
+    finally:
+        conn.close()
+    return _redirect_admin("admin_commodity_details")
+
+
 @_admin_required
 def admin_inventory():
     search = request.args.get("q", "").strip()
     conn = get_db()
     cur = conn.cursor()
-    query = """SELECT i.id, i.quantity, i.farmer, i.date_received, i.source,
+    query = """SELECT i.id, i.quantity, i.farmer, i.location, i.date_received, i.source,
                       i.photo_path, i.verification_status, i.distance_from_user,
                       i.capture_time, i.verification_notes, i.reviewed_by,
-                      c.crops_name AS crop_name
-               FROM inventory i LEFT JOIN crops c ON c.id=i.crop_id"""
+                      c.commodity_name AS commodity_name
+               FROM inventory i LEFT JOIN commodities c ON c.id=i.commodity_id"""
     params = []
     if search:
-        query += " WHERE c.crops_name LIKE ? OR i.farmer LIKE ? OR i.location LIKE ?"
+        query += " WHERE c.commodity_name LIKE ? OR i.farmer LIKE ? OR i.location LIKE ?"
         params = [f"%{search}%"] * 3
     query += " ORDER BY i.date_received DESC"
     inventory = cur.execute(query, params).fetchall()
@@ -1257,12 +1806,13 @@ def admin_marketplace():
     conn = get_db()
     cur = conn.cursor()
     listings = cur.execute(
-        """SELECT m.id, m.user_id, m.username, m.crop_id, m.crop_name,
+        """SELECT m.id, m.user_id, m.username, m.commodity_id, m.commodity_name,
                   m.amount, m.price, m.unit, m.status, m.buyer_username,
                   m.listing_type, m.available_date, m.description, m.listing_date,
+                  m.main_image,
                   u.username AS seller_name
            FROM marketplace m LEFT JOIN users u ON u.id=m.user_id
-           WHERE ? = '' OR m.crop_name LIKE ? OR COALESCE(u.username, m.username, '') LIKE ?
+           WHERE ? = '' OR m.commodity_name LIKE ? OR COALESCE(u.username, m.username, '') LIKE ?
              OR COALESCE(m.status, '') LIKE ?
            ORDER BY m.listing_date DESC, m.id DESC""",
         (search, f"%{search}%", f"%{search}%", f"%{search}%"),
@@ -1271,15 +1821,120 @@ def admin_marketplace():
         "SELECT id, username, location FROM users "
         "WHERE COALESCE(role, 'user') <> 'buyer' ORDER BY username"
     ).fetchall()
-    crops = cur.execute("SELECT id, crops_name FROM crops ORDER BY crops_name").fetchall()
+    commodities = cur.execute("SELECT id, commodity_name FROM commodities ORDER BY commodity_name").fetchall()
     conn.close()
     return render_template(
         "admin_marketplace.html",
         listings=listings,
         users=users,
-        crops=crops,
+        commodities=commodities,
         search=search,
     )
+
+
+def _save_admin_marketplace_thumbnail(uploaded_file):
+    extension = os.path.splitext(uploaded_file.filename)[1].lower().lstrip(".")
+    expected_format = ADMIN_MARKETPLACE_IMAGE_FORMATS.get(extension)
+    if not expected_format:
+        raise ValueError("Choose a PNG, JPG, JPEG, GIF, or WEBP thumbnail.")
+
+    image_directory = os.path.join(
+        current_app.static_folder, "uploads", "marketplace"
+    )
+    os.makedirs(image_directory, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}.{extension}"
+    image_path = os.path.join(image_directory, filename)
+    try:
+        save_sanitized_public_image(
+            uploaded_file,
+            image_path,
+            expected_format,
+            current_app.config["MAX_CROP_PHOTO_SIZE_BYTES"],
+        )
+    except ValueError:
+        if os.path.isfile(image_path):
+            os.remove(image_path)
+        raise
+    return filename, image_path
+
+
+@_admin_required
+def update_admin_marketplace_thumbnail(listing_id):
+    thumbnail = request.files.get("thumbnail")
+    if not thumbnail or not thumbnail.filename:
+        flash("Choose a thumbnail image to upload.", "danger")
+        return _redirect_admin("admin_marketplace")
+
+    conn = get_db()
+    cur = conn.cursor()
+    listing = cur.execute(
+        "SELECT main_image FROM marketplace WHERE id=?",
+        (listing_id,),
+    ).fetchone()
+    if not listing:
+        conn.close()
+        flash("Marketplace listing not found.", "danger")
+        return _redirect_admin("admin_marketplace")
+
+    try:
+        filename, image_path = _save_admin_marketplace_thumbnail(thumbnail)
+    except ValueError as error:
+        conn.close()
+        flash(str(error), "danger")
+        return _redirect_admin("admin_marketplace")
+
+    old_image = listing["main_image"]
+    try:
+        cur.execute(
+            """UPDATE marketplace
+               SET main_image=?, thumbnail_verified=0, thumbnail_latitude=NULL,
+                   thumbnail_longitude=NULL, thumbnail_distance_meters=NULL,
+                   thumbnail_captured_at=NULL
+               WHERE id=?""",
+            (filename, listing_id),
+        )
+        if old_image:
+            cur.execute(
+                "DELETE FROM marketplace_images WHERE listing_id=? AND image_filename=?",
+                (listing_id, old_image),
+            )
+        cur.execute(
+            "UPDATE marketplace_images SET display_order=display_order+1 WHERE listing_id=?",
+            (listing_id,),
+        )
+        cur.execute(
+            """INSERT INTO marketplace_images
+               (listing_id, image_filename, display_order, created_at)
+               VALUES (?, ?, 0, ?)""",
+            (
+                listing_id,
+                filename,
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
+            ),
+        )
+        conn.commit()
+    except Exception:
+        conn.close()
+        try:
+            if os.path.isfile(image_path):
+                os.remove(image_path)
+        except OSError:
+            current_app.logger.exception("Unable to remove uncommitted marketplace thumbnail")
+        raise
+    conn.close()
+
+    if old_image and os.path.basename(old_image) == old_image:
+        old_image_path = os.path.join(
+            current_app.static_folder, "uploads", "marketplace", old_image
+        )
+        try:
+            if os.path.isfile(old_image_path):
+                os.remove(old_image_path)
+        except OSError:
+            current_app.logger.exception("Unable to remove replaced marketplace thumbnail")
+
+    flash("Marketplace listing thumbnail updated.", "success")
+    return _redirect_admin("admin_marketplace")
 
 
 @_admin_required
@@ -1295,31 +1950,37 @@ def admin_marketplace_transactions():
         f"CASE WHEN {MARKETPLACE_TRANSACTION_COMPLETED} "
         "THEN 'completed' ELSE 'incomplete' END"
     )
-    totals = cur.execute(
-        f"""SELECT COUNT(*) AS total,
-                   SUM(CASE WHEN {MARKETPLACE_TRANSACTION_COMPLETED} THEN 1 ELSE 0 END) AS completed
-            FROM marketplace m
-            WHERE {MARKETPLACE_TRANSACTION_FILTER}"""
-    ).fetchone()
+    # These predicates are fixed module-level SQL fragments; request data is bound.
+    totals_query = (
+        "SELECT COUNT(*) AS total,\n"  # nosec B608
+        "       SUM(CASE WHEN " + MARKETPLACE_TRANSACTION_COMPLETED
+        + " THEN 1 ELSE 0 END) AS completed\n"
+        "FROM marketplace m\n"
+        "WHERE " + MARKETPLACE_TRANSACTION_FILTER
+    )
+    totals = cur.execute(totals_query).fetchone()
+    transactions_query = (
+        "SELECT * FROM (\n"  # nosec B608
+        "    SELECT m.id, m.commodity_name, m.username,\n"
+        "           COALESCE(u.username, m.username) AS seller_name,\n"
+        "           m.buyer_username, m.amount, m.preorder_quantity, m.unit, m.price,\n"
+        "           m.listing_type, m.order_status, m.preorder_status, m.status,\n"
+        "           m.order_date, m.delivery_date, m.delivery_confirmed,\n"
+        "           m.buyer_confirmed, m.buyer_rating,\n"
+        "           " + completion_sql + " AS completion_state,\n"
+        "           COALESCE(m.preorder_quantity, m.amount) AS transaction_quantity\n"
+        "    FROM marketplace m\n"
+        "    LEFT JOIN users u ON u.id = m.user_id\n"
+        "    WHERE " + MARKETPLACE_TRANSACTION_FILTER + "\n"
+        ") marketplace_transactions\n"
+        "WHERE (? = '' OR CAST(id AS TEXT) LIKE ? OR COALESCE(commodity_name, '') LIKE ?\n"
+        "       OR COALESCE(seller_name, '') LIKE ? OR COALESCE(buyer_username, '') LIKE ?\n"
+        "       OR COALESCE(order_status, '') LIKE ? OR COALESCE(preorder_status, '') LIKE ?)\n"
+        "  AND (? = '' OR completion_state = ?)\n"
+        "ORDER BY COALESCE(order_date, '') DESC, id DESC"
+    )
     transactions = cur.execute(
-        f"""SELECT * FROM (
-                SELECT m.id, m.crop_name, m.username,
-                       COALESCE(u.username, m.username) AS seller_name,
-                       m.buyer_username, m.amount, m.preorder_quantity, m.unit, m.price,
-                       m.listing_type, m.order_status, m.preorder_status, m.status,
-                       m.order_date, m.delivery_date, m.delivery_confirmed,
-                       m.buyer_confirmed, m.buyer_rating,
-                       {completion_sql} AS completion_state,
-                       COALESCE(m.preorder_quantity, m.amount) AS transaction_quantity
-                FROM marketplace m
-                LEFT JOIN users u ON u.id = m.user_id
-                WHERE {MARKETPLACE_TRANSACTION_FILTER}
-            ) marketplace_transactions
-            WHERE (? = '' OR CAST(id AS TEXT) LIKE ? OR COALESCE(crop_name, '') LIKE ?
-                   OR COALESCE(seller_name, '') LIKE ? OR COALESCE(buyer_username, '') LIKE ?
-                   OR COALESCE(order_status, '') LIKE ? OR COALESCE(preorder_status, '') LIKE ?)
-              AND (? = '' OR completion_state = ?)
-            ORDER BY COALESCE(order_date, '') DESC, id DESC""",
+        transactions_query,
         (
             search, f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%",
             f"%{search}%", f"%{search}%", completion_filter, completion_filter,
@@ -1342,27 +2003,27 @@ def admin_marketplace_transactions():
 
 def _admin_marketplace_values():
     username = _form_value("username")
-    crop_id_value = _form_value("crop_id")
+    crop_id_value = _form_value("commodity_id") or _form_value("crop_id")
     unit = "kg"
     description = _form_value("description")[:2000]
     listing_type = _form_value("listing_type")
     status = _form_value("status") or "available"
 
     if not username or not crop_id_value:
-        raise ValueError("Choose a seller and crop.")
+        raise ValueError("Choose a seller and commodity.")
     if listing_type not in {"standard", "preorder", "looking_for"}:
         raise ValueError("Choose a valid listing type.")
     if status not in {"available", "expired", "cancelled"}:
         raise ValueError("Choose a valid listing status.")
     try:
-        crop_id = int(crop_id_value)
+        commodity_id = int(crop_id_value)
         amount = int(_form_value("amount"))
         price = float(_form_value("price"))
         expiry_days = int(_form_value("expiry_days") or "30")
     except ValueError as error:
-        raise ValueError("Choose a valid crop and enter valid amount, price, and expiry numbers.") from error
+        raise ValueError("Choose a valid commodity and enter valid quantity, price, and expiry numbers.") from error
     if amount <= 0 or not math.isfinite(price) or price <= 0:
-        raise ValueError("Amount and price must be greater than zero.")
+        raise ValueError("Quantity and price must be greater than zero.")
     if expiry_days < 1 or expiry_days > 365:
         raise ValueError("Expiry must be between 1 and 365 days.")
 
@@ -1376,7 +2037,7 @@ def _admin_marketplace_values():
     else:
         available_date = None
 
-    return username, crop_id, amount, price, unit, description, listing_type, status, available_date, expiry_days
+    return username, commodity_id, amount, price, unit, description, listing_type, status, available_date, expiry_days
 
 
 @_admin_required
@@ -1387,7 +2048,7 @@ def create_admin_marketplace_listing():
         flash(str(error), "danger")
         return _redirect_admin("admin_marketplace")
 
-    username, crop_id, amount, price, unit, description, listing_type, status, available_date, expiry_days = values
+    username, commodity_id, amount, price, unit, description, listing_type, status, available_date, expiry_days = values
     conn = get_db()
     cur = conn.cursor()
     user = cur.execute(
@@ -1395,18 +2056,18 @@ def create_admin_marketplace_listing():
         (username,),
     ).fetchone()
     crop = cur.execute(
-        "SELECT id, crops_name FROM crops WHERE id=?",
-        (crop_id,),
+        "SELECT id, commodity_name FROM commodities WHERE id=?",
+        (commodity_id,),
     ).fetchone()
     if not user or not crop or user["role"] == "buyer":
         conn.close()
-        flash("Choose an existing seller and crop.", "danger")
+        flash("Choose an existing seller and commodity.", "danger")
         return _redirect_admin("admin_marketplace")
     if listing_type != "looking_for":
         pricing = cur.execute(
             "SELECT pricing_mode, price_unit, reference_price, price_range, "
-            "minimum_price, maximum_price FROM crop_pricing WHERE crop_id=?",
-            (crop_id,),
+            "minimum_price, maximum_price FROM commodity_pricing WHERE commodity_id=?",
+            (commodity_id,),
         ).fetchone()
         price_error = seller_price_error(price, unit, pricing)
         if price_error:
@@ -1417,11 +2078,11 @@ def create_admin_marketplace_listing():
     now = datetime.now(timezone.utc)
     cur.execute(
         """INSERT INTO marketplace(
-               user_id, username, crop_id, crop_name, amount, price, unit, status,
+               user_id, username, commodity_id, commodity_name, amount, price, unit, status,
                listing_date, expiry_date, description, location, listing_type, available_date
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            user["id"], user["username"], crop["id"], crop["crops_name"], amount, price,
+            user["id"], user["username"], crop["id"], crop["commodity_name"], amount, price,
             unit, status, now.strftime("%Y-%m-%d %H:%M:%S"),
             (now + timedelta(days=expiry_days)).strftime("%Y-%m-%d %H:%M:%S"),
             description, user["location"], listing_type, available_date,
@@ -1441,7 +2102,7 @@ def edit_admin_marketplace_listing(listing_id):
         flash(str(error), "danger")
         return _redirect_admin("admin_marketplace")
 
-    username, crop_id, amount, price, unit, description, listing_type, status, available_date, _ = values
+    username, commodity_id, amount, price, unit, description, listing_type, status, available_date, _ = values
     conn = get_db()
     cur = conn.cursor()
     listing = cur.execute(
@@ -1462,18 +2123,18 @@ def edit_admin_marketplace_listing(listing_id):
         (username,),
     ).fetchone()
     crop = cur.execute(
-        "SELECT id, crops_name FROM crops WHERE id=?",
-        (crop_id,),
+        "SELECT id, commodity_name FROM commodities WHERE id=?",
+        (commodity_id,),
     ).fetchone()
     if not user or not crop or user["role"] == "buyer":
         conn.close()
-        flash("Choose an existing seller and crop.", "danger")
+        flash("Choose an existing seller and commodity.", "danger")
         return _redirect_admin("admin_marketplace")
     if listing_type != "looking_for":
         pricing = cur.execute(
             "SELECT pricing_mode, price_unit, reference_price, price_range, "
-            "minimum_price, maximum_price FROM crop_pricing WHERE crop_id=?",
-            (crop_id,),
+            "minimum_price, maximum_price FROM commodity_pricing WHERE commodity_id=?",
+            (commodity_id,),
         ).fetchone()
         price_error = seller_price_error(price, unit, pricing)
         if price_error:
@@ -1483,13 +2144,13 @@ def edit_admin_marketplace_listing(listing_id):
 
     seller_changed = username != listing["username"]
     update_fields = (
-            user["id"], user["username"], crop["id"], crop["crops_name"], amount, price,
+            user["id"], user["username"], crop["id"], crop["commodity_name"], amount, price,
             unit, status, description, user["location"], listing_type, available_date,
         )
     if seller_changed:
         cur.execute(
             """UPDATE marketplace
-               SET user_id=?, username=?, crop_id=?, crop_name=?, amount=?, price=?, unit=?,
+               SET user_id=?, username=?, commodity_id=?, commodity_name=?, amount=?, price=?, unit=?,
                    status=?, description=?, location=?, listing_type=?, available_date=?,
                    main_image=NULL, thumbnail_verified=0, thumbnail_latitude=NULL,
                    thumbnail_longitude=NULL, thumbnail_distance_meters=NULL,
@@ -1500,7 +2161,7 @@ def edit_admin_marketplace_listing(listing_id):
     else:
         cur.execute(
             """UPDATE marketplace
-               SET user_id=?, username=?, crop_id=?, crop_name=?, amount=?, price=?, unit=?,
+               SET user_id=?, username=?, commodity_id=?, commodity_name=?, amount=?, price=?, unit=?,
                    status=?, description=?, location=?, listing_type=?, available_date=?
                WHERE id=?""",
             update_fields + (listing_id,),
@@ -1516,7 +2177,7 @@ def delete_admin_marketplace_listing(listing_id):
     conn = get_db()
     cur = conn.cursor()
     listing = cur.execute(
-        "SELECT crop_name, buyer_username, status FROM marketplace WHERE id=?",
+        "SELECT commodity_name, buyer_username, status FROM marketplace WHERE id=?",
         (listing_id,),
     ).fetchone()
     if not listing:
@@ -1531,7 +2192,7 @@ def delete_admin_marketplace_listing(listing_id):
     cur.execute("DELETE FROM marketplace WHERE id=?", (listing_id,))
     conn.commit()
     conn.close()
-    flash(f"Marketplace listing for {listing['crop_name']} deleted.", "success")
+    flash(f"Marketplace listing for {listing['commodity_name']} deleted.", "success")
     return _redirect_admin("admin_marketplace")
 
 
@@ -1877,6 +2538,15 @@ def register(application):
     application.add_url_rule('/admin/slow-queries', endpoint='admin_slow_queries', view_func=admin_slow_queries)
     application.add_url_rule('/admin/users', endpoint='admin_users', view_func=admin_users)
     application.add_url_rule('/admin/catalog', endpoint='admin_catalog', view_func=admin_catalog)
+    application.add_url_rule('/admin/commodity-details', endpoint='admin_commodity_details', view_func=admin_commodity_details)
+    application.add_url_rule('/admin/commodity-details/categories', endpoint='create_commodity_detail_category', view_func=create_commodity_detail_category, methods=['POST'])
+    application.add_url_rule('/admin/commodity-details/categories/<int:category_id>', endpoint='edit_commodity_detail_category', view_func=edit_commodity_detail_category, methods=['POST'])
+    application.add_url_rule('/admin/commodity-details/price-units', endpoint='create_commodity_price_unit', view_func=create_commodity_price_unit, methods=['POST'])
+    application.add_url_rule('/admin/commodity-details/price-units/<unit>/delete', endpoint='delete_commodity_price_unit', view_func=delete_commodity_price_unit, methods=['POST'])
+    application.add_url_rule('/admin/commodity-details/commodities', endpoint='create_commodity_detail', view_func=create_commodity_detail, methods=['POST'])
+    application.add_url_rule('/admin/commodity-details/commodities/<int:commodity_id>', endpoint='edit_commodity_detail', view_func=edit_commodity_detail, methods=['POST'])
+    application.add_url_rule('/admin/commodity-details/commodities/<int:commodity_id>/price-unit', endpoint='update_commodity_price_unit', view_func=update_commodity_price_unit, methods=['POST'])
+    application.add_url_rule('/admin/commodity-details/commodities/<int:commodity_id>/delete', endpoint='delete_commodity_detail', view_func=delete_commodity_detail, methods=['POST'])
     application.add_url_rule('/admin/catalog/pricing/template', endpoint='download_crop_pricing_template', view_func=download_crop_pricing_template)
     application.add_url_rule('/admin/catalog/pricing/import', endpoint='import_crop_pricing', view_func=import_crop_pricing, methods=['POST'])
     application.add_url_rule('/admin/inventory', endpoint='admin_inventory', view_func=admin_inventory)
@@ -1884,6 +2554,7 @@ def register(application):
     application.add_url_rule('/admin/marketplace/transactions', endpoint='admin_marketplace_transactions', view_func=admin_marketplace_transactions)
     application.add_url_rule('/admin/marketplace/create', endpoint='create_admin_marketplace_listing', view_func=create_admin_marketplace_listing, methods=['POST'])
     application.add_url_rule('/admin/marketplace/edit/<int:listing_id>', endpoint='edit_admin_marketplace_listing', view_func=edit_admin_marketplace_listing, methods=['POST'])
+    application.add_url_rule('/admin/marketplace/thumbnail/<int:listing_id>', endpoint='update_admin_marketplace_thumbnail', view_func=update_admin_marketplace_thumbnail, methods=['POST'])
     application.add_url_rule('/admin/marketplace/delete/<int:listing_id>', endpoint='delete_admin_marketplace_listing', view_func=delete_admin_marketplace_listing, methods=['POST'])
     application.add_url_rule('/admin/geotag/<int:item_id>/review', endpoint='admin_review_geotag', view_func=admin_review_geotag, methods=['POST'])
     application.add_url_rule('/admin/knowledge-categories', endpoint='admin_knowledge_categories', view_func=admin_knowledge_categories)
@@ -1893,11 +2564,16 @@ def register(application):
     application.add_url_rule('/admin/crop-categories/create', endpoint='create_crop_category', view_func=create_crop_category, methods=['POST'])
     application.add_url_rule('/admin/crop-categories/edit/<int:category_id>', endpoint='edit_crop_category', view_func=edit_crop_category, methods=['POST'])
     application.add_url_rule('/admin/crop-categories/delete/<int:category_id>', endpoint='delete_crop_category', view_func=delete_crop_category, methods=['POST'])
-    application.add_url_rule('/admin/crops/create', endpoint='create_crop', view_func=create_crop, methods=['POST'])
-    application.add_url_rule('/admin/crops/edit/<int:crop_id>', endpoint='edit_crop', view_func=edit_crop, methods=['POST'])
-    application.add_url_rule('/admin/crops/<int:crop_id>/pricing', endpoint='save_crop_pricing', view_func=save_crop_pricing, methods=['POST'])
+    application.add_url_rule('/admin/commodity-details/categories/<int:category_id>/delete', endpoint='delete_commodity_detail_category', view_func=delete_crop_category, methods=['POST'])
+    application.add_url_rule('/admin/commodities/create', endpoint='create_crop', view_func=create_crop, methods=['POST'])
+    application.add_url_rule('/admin/commodities/edit/<int:commodity_id>', endpoint='edit_crop', view_func=edit_crop, methods=['POST'])
+    application.add_url_rule('/admin/commodities/<int:commodity_id>/pricing', endpoint='save_crop_pricing', view_func=save_crop_pricing, methods=['POST'])
     application.add_url_rule('/admin/catalog/pricing/batch', endpoint='save_crop_pricing_batch', view_func=save_crop_pricing_batch, methods=['POST'])
-    application.add_url_rule('/admin/crops/delete/<int:crop_id>', endpoint='delete_crop', view_func=delete_crop, methods=['POST'])
+    application.add_url_rule('/admin/commodities/delete/<int:commodity_id>', endpoint='delete_crop', view_func=delete_crop, methods=['POST'])
+    application.add_url_rule('/admin/crops/create', endpoint='create_crop_legacy', view_func=create_crop, methods=['POST'])
+    application.add_url_rule('/admin/crops/edit/<int:commodity_id>', endpoint='edit_crop_legacy', view_func=edit_crop, methods=['POST'])
+    application.add_url_rule('/admin/crops/<int:commodity_id>/pricing', endpoint='save_crop_pricing_legacy', view_func=save_crop_pricing, methods=['POST'])
+    application.add_url_rule('/admin/crops/delete/<int:commodity_id>', endpoint='delete_crop_legacy', view_func=delete_crop, methods=['POST'])
     application.add_url_rule('/admin/knowledge-categories/create', endpoint='create_knowledge_category', view_func=create_knowledge_category, methods=['POST'])
     application.add_url_rule('/admin/knowledge-categories/edit/<int:category_id>', endpoint='edit_knowledge_category', view_func=edit_knowledge_category, methods=['POST'])
     application.add_url_rule('/admin/knowledge-categories/delete/<int:category_id>', endpoint='delete_knowledge_category', view_func=delete_knowledge_category, methods=['POST'])
@@ -1914,11 +2590,17 @@ __all__ = [
     'admin_profile_reports', 'review_profile_report',
     'admin_listing_photo_alerts', 'review_listing_photo_alert',
     'create_admin_marketplace_listing', 'edit_admin_marketplace_listing', 'delete_admin_marketplace_listing',
+    'update_admin_marketplace_thumbnail',
     'admin_review_geotag', 'admin_knowledge_categories',
     'create_admin_user', 'edit_admin_user', 'delete_admin_user',
     'create_crop_category', 'edit_crop_category', 'delete_crop_category',
     'create_crop', 'edit_crop', 'save_crop_pricing', 'save_crop_pricing_batch', 'import_crop_pricing',
     'download_crop_pricing_template', 'delete_crop',
+    'admin_commodity_details', 'create_commodity_detail_category',
+    'create_commodity_price_unit', 'delete_commodity_price_unit',
+    'edit_commodity_detail_category', 'create_commodity_detail',
+    'edit_commodity_detail', 'update_commodity_price_unit',
+    'delete_commodity_detail',
     'create_knowledge_category', 'edit_knowledge_category', 'delete_knowledge_category',
     'page_not_found', 'internal_error'
 ]

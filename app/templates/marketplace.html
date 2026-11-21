@@ -212,6 +212,9 @@
             <a class="nav-link" href="/notifications-center">
                 <i class="fas fa-bell"></i> Notifications
             </a>
+            <a class="nav-link" href="/marketplace/my-purchases">
+                <i class="fas fa-shopping-bag"></i> My Purchases
+            </a>
             <a class="nav-link" href="/profile">
                 <i class="fas fa-user-circle"></i> Profile
             </a>
@@ -272,7 +275,7 @@
                 <div class="row align-items-center">
                     <div class="col">
                         <h2><i class="fas fa-store"></i> Marketplace</h2>
-                        <p class="text-muted mb-0">Buy, sell, and trade crops with other farmers</p>
+                        <p class="text-muted mb-0">Buy, sell, and trade commodities with other farmers</p>
                     </div>
                     <div class="col-auto">
                         {% if session.get('role') != 'buyer' %}
@@ -294,18 +297,18 @@
                 </div>
                 <div class="col-md-3">
                     <select class="form-select" id="filterCrop" onchange="filterListings()">
-                        <option value="">All Crops</option>
-                        {% for crop in crops %}
-                        <option value="{{ crop['crops_name'] }}">{{ crop['crops_name'] }}</option>
+                        <option value="">All Commodities</option>
+                        {% for crop in commodities %}
+                        <option value="{{ crop['commodity_name'] }}">{{ crop['commodity_name'] }}</option>
                         {% endfor %}
                     </select>
                 </div>
                 <div class="col-md-3">
                     <select class="form-select" id="filterListingType" onchange="filterListings()" aria-label="Filter by listing type">
-                        <option value="" {% if not default_listing_type %}selected{% endif %}>All Listing Types</option>
-                        <option value="standard" {% if default_listing_type == 'standard' %}selected{% endif %}>Standard</option>
-                        <option value="preorder" {% if default_listing_type == 'preorder' %}selected{% endif %}>Pre-order</option>
-                        <option value="looking_for" {% if default_listing_type == 'looking_for' %}selected{% endif %}>Looking For</option>
+                        <option value="" selected>All Listing Types</option>
+                        <option value="standard">Standard</option>
+                        <option value="preorder">Pre-order</option>
+                        <option value="looking_for">Looking For</option>
                     </select>
                 </div>
                 <div class="col-md-3">
@@ -314,7 +317,7 @@
                         <option value="oldest">Oldest First</option>
                         <option value="price_low">Price: Low to High</option>
                         <option value="price_high">Price: High to Low</option>
-                        <option value="amount">Amount: High to Low</option>
+                        <option value="amount">Quantity: High to Low</option>
                     </select>
                 </div>
             </div>
@@ -324,7 +327,7 @@
                 {% if listings %}
                     {% for listing in listings %}
                     <div class="listing-item" 
-                         data-crop="{{ listing['crop_name'] }}"
+                         data-crop="{{ listing['commodity_name'] }}"
                          data-listing-type="{{ listing['listing_type'] or 'standard' }}"
                          data-price="{{ listing['price'] }}"
                          data-amount="{{ listing['amount'] }}"
@@ -332,10 +335,10 @@
                         <div class="card listing-card" onclick="window.location.href='/marketplace/product/{{ listing['id'] }}'">
                             <div class="card-img-wrapper">
                                 <!-- ============ STEP 4: IMAGE DISPLAY ============ -->
-                                {% if listing['main_image'] and listing['thumbnail_verified'] %}
+                                {% if listing['main_image'] %}
                                 <img src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}" 
                                      class="card-img-top" 
-                                     alt="{{ listing['crop_name'] }}"
+                                     alt="{{ listing['commodity_name'] }}"
                                      onerror="this.style.display='none'; this.parentElement.querySelector('.image-count-badge').style.display='none'; this.parentElement.innerHTML='<div class=\'card-img-top-placeholder\'><i class=\'fas fa-seedling\'></i></div>'">
                                 <!-- Image count badge -->
                                 <span class="image-count-badge">
@@ -347,6 +350,11 @@
                                         1
                                     {% endif %}
                                 </span>
+                                {% elif listing['commodity_default_image'] %}
+                                <img src="{{ url_for('static', filename='uploads/commodity_details/' + listing['commodity_default_image']) }}"
+                                     class="card-img-top"
+                                     alt="{{ listing['commodity_name'] }}"
+                                     onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\'card-img-top-placeholder\'><i class=\'fas fa-seedling\'></i></div>'">
                                 {% else %}
                                 <div class="card-img-top-placeholder">
                                     <i class="fas fa-seedling"></i>
@@ -355,7 +363,7 @@
                             </div>
                             <div class="card-body">
                                 <div class="d-flex justify-content-between align-items-start mb-2">
-                                    <h5 class="card-title mb-0">{{ listing['crop_name'] }}</h5>
+                                    <h5 class="card-title mb-0">{{ listing['commodity_name'] }}</h5>
                                     {% if listing['listing_type'] == 'preorder' %}
                                     <span class="status-badge" style="background:#fff3cd;color:#856404;">Pre-order</span>
                                     {% elif listing['listing_type'] == 'looking_for' %}
@@ -388,6 +396,22 @@
                                 </p>
                                 {% endif %}
 
+                                {% if listing['expiry_date'] %}
+                                <p class="text-muted small mb-2">
+                                    <i class="far fa-hourglass-half"></i> Expires
+                                    <time class="listing-expiry-countdown"
+                                          datetime="{{ listing['expiry_date']|replace(' ', 'T') }}"
+                                          data-expiry="{{ listing['expiry_date']|replace(' ', 'T') }}">
+                                        {{ listing['expiry_date'][:16] }}
+                                    </time>
+                                    <span class="text-muted">·</span>
+                                    <span class="listing-expiry-remaining"
+                                          data-expiry="{{ listing['expiry_date']|replace(' ', 'T') }}">
+                                        Calculating time remaining...
+                                    </span>
+                                </p>
+                                {% endif %}
+
                                 {% if listing['listing_type'] == 'looking_for' %}
                                 <p class="text-muted small mb-2">
                                     <i class="fas fa-search"></i> Wants {{ listing['amount'] }} {{ listing['unit'] or 'kg' }} — up to ₱{{ "%.2f"|format(listing['price']) }}
@@ -397,7 +421,7 @@
                                 <div class="row mb-3">
                                     <div class="col-6">
                                         <small class="text-muted">
-                                            {% if listing['listing_type'] == 'looking_for' %}Quantity{% else %}Amount{% endif %}
+                                            Quantity
                                         </small>
                                         <h6>{{ listing['amount'] }} {{ listing['unit'] or 'kg' }}</h6>
                                     </div>
@@ -417,12 +441,16 @@
                     <div class="col-12 text-center py-5">
                         <i class="fas fa-store fa-3x text-muted mb-3"></i>
                         <h4>No Listings Available</h4>
-                        <p class="text-muted">Be the first to list your crops for sale!</p>
+                        <p class="text-muted">Be the first to list your commodities for sale!</p>
                         {% if session.get('role') != 'buyer' %}<a href="/marketplace/add" class="btn btn-success">
                             <i class="fas fa-plus"></i> Add Your First Listing
                         </a>{% endif %}
                     </div>
                 {% endif %}
+            </div>
+            <div id="expiredListingsEmptyState" class="text-center py-4" hidden>
+                <i class="fas fa-store fa-2x text-muted mb-2"></i>
+                <p class="text-muted mb-0">No active listings available.</p>
             </div>
         </div>
     </div>
@@ -475,6 +503,43 @@
         }
 
         filterListings();
+
+        function updateListingExpiryCountdowns() {
+            const now = Date.now();
+            document.querySelectorAll('.listing-expiry-remaining').forEach((countdown) => {
+                const expiryTime = Date.parse(countdown.dataset.expiry);
+                if (!Number.isFinite(expiryTime)) {
+                    countdown.textContent = 'Expiry unavailable';
+                    return;
+                }
+
+                const remainingSeconds = Math.floor((expiryTime - now) / 1000);
+                if (remainingSeconds <= 0) {
+                    const listingItem = countdown.closest('.listing-item');
+                    if (listingItem) listingItem.remove();
+                    const listingsContainer = document.getElementById('listingsContainer');
+                    if (listingsContainer && !listingsContainer.querySelector('.listing-item')) {
+                        document.getElementById('expiredListingsEmptyState').hidden = false;
+                    }
+                    return;
+                }
+
+                const days = Math.floor(remainingSeconds / 86400);
+                const hours = Math.floor((remainingSeconds % 86400) / 3600);
+                const minutes = Math.floor((remainingSeconds % 3600) / 60);
+                const seconds = remainingSeconds % 60;
+                countdown.textContent = days > 0
+                    ? `${days}d ${hours}h ${minutes}m remaining`
+                    : hours > 0
+                        ? `${hours}h ${minutes}m ${seconds}s remaining`
+                        : minutes > 0
+                            ? `${minutes}m ${seconds}s remaining`
+                            : `${seconds}s remaining`;
+            });
+        }
+
+        updateListingExpiryCountdowns();
+        window.setInterval(updateListingExpiryCountdowns, 1000);
     </script>
 </body>
 </html>

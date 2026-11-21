@@ -25,7 +25,7 @@ def normalize_records(records: Iterable[dict[str, Any]] | None):
     for row in records or []:
         if row is None:
             continue
-        crop_name = row.get("crop_name") or row.get("crops_name") or row.get("crop") or ""
+        commodity_name = row.get("commodity_name") or row.get("crop_name") or row.get("crop") or ""
         quantity = row.get("quantity") or row.get("total") or row.get("qty") or 0
         date_value = (
             row.get("date_received")
@@ -36,7 +36,7 @@ def normalize_records(records: Iterable[dict[str, Any]] | None):
         location = row.get("location") or row.get("market_location") or ""
         normalized.append(
             {
-                "crop_name": str(crop_name).strip(),
+                "commodity_name": str(commodity_name).strip(),
                 "quantity": float(quantity) if isinstance(quantity, (int, float)) else float(quantity or 0),
                 "date_received": str(date_value),
                 "location": str(location).strip(),
@@ -57,12 +57,12 @@ def load_transaction_records():
     cur = conn.cursor()
     cur.execute(
         """
-        SELECT c.crops_name AS crop_name, i.quantity, i.date_received, i.location,
+        SELECT c.commodity_name AS commodity_name, i.quantity, i.date_received, i.location,
                cp.pricing_mode, cp.reference_price, cp.price_range,
                cp.minimum_price, cp.maximum_price, cp.price_unit
         FROM inventory i
-        LEFT JOIN crops c ON c.id = i.crop_id
-        LEFT JOIN crop_pricing cp ON cp.crop_id = c.id
+        LEFT JOIN commodities c ON c.id = i.commodity_id
+        LEFT JOIN commodity_pricing cp ON cp.commodity_id = c.id
         WHERE i.source IS NULL OR i.source = 'harvest'
         ORDER BY i.date_received DESC
         """
@@ -71,7 +71,7 @@ def load_transaction_records():
     conn.close()
     return normalize_records(
         [{
-            "crop_name": row["crop_name"],
+            "commodity_name": row["commodity_name"],
             "quantity": row["quantity"],
             "date_received": row["date_received"],
             "location": row["location"],
@@ -89,7 +89,7 @@ def build_crop_history(records: Iterable[dict[str, Any]]):
     """Group records by crop and month for time-series forecasting."""
     crop_history = defaultdict(list)
     for row in normalize_records(records):
-        if not row["crop_name"] or row["quantity"] <= 0:
+        if not row["commodity_name"] or row["quantity"] <= 0:
             continue
-        crop_history[row["crop_name"]].append(row)
+        crop_history[row["commodity_name"]].append(row)
     return crop_history

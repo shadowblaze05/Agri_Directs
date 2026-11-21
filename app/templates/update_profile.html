@@ -30,7 +30,7 @@
     </style>
 </head>
 <body>
-    <div class="sidebar"><nav class="nav flex-column"><a class="nav-link" href="/home"><i class="fas fa-home"></i> Home</a><a class="nav-link" href="/dashboard"><i class="fas fa-chart-line"></i> Dashboard</a>{% if session.get('role') != 'buyer' %}<a class="nav-link" href="/upload"><i class="fas fa-upload"></i> Upload Harvest</a>{% endif %}{% if session.get('role') == 'admin' %}<a class="nav-link" href="/market-intelligence"><i class="fas fa-brain"></i> Market Intelligence</a>{% endif %}<a class="nav-link" href="/marketplace"><i class="fas fa-store"></i> Marketplace</a><a class="nav-link" href="/knowledge"><i class="fas fa-book-open"></i> Knowledge Hub</a><a class="nav-link" href="/messages"><i class="fas fa-comments"></i> Messages</a><a class="nav-link" href="/notifications-center"><i class="fas fa-bell"></i> Notifications</a><a class="nav-link active" href="/profile"><i class="fas fa-user-circle"></i> Profile</a><a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></nav></div>
+    <div class="sidebar"><nav class="nav flex-column"><a class="nav-link" href="/home"><i class="fas fa-home"></i> Home</a><a class="nav-link" href="/dashboard"><i class="fas fa-chart-line"></i> Dashboard</a>{% if session.get('role') != 'buyer' %}<a class="nav-link" href="/upload"><i class="fas fa-upload"></i> Upload Harvest</a>{% endif %}{% if session.get('role') == 'admin' %}<a class="nav-link" href="/market-intelligence"><i class="fas fa-brain"></i> Market Intelligence</a>{% endif %}<a class="nav-link" href="/marketplace"><i class="fas fa-store"></i> Marketplace</a><a class="nav-link" href="/knowledge"><i class="fas fa-book-open"></i> Knowledge Hub</a><a class="nav-link" href="/messages"><i class="fas fa-comments"></i> Messages</a><a class="nav-link" href="/notifications-center"><i class="fas fa-bell"></i> Notifications</a><a class="nav-link" href="/marketplace/my-purchases"><i class="fas fa-shopping-bag"></i> My Purchases</a><a class="nav-link active" href="/profile"><i class="fas fa-user-circle"></i> Profile</a><a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></nav></div>
     <nav class="navbar navbar-dark navbar-custom fixed-top"><div class="container-fluid"><span class="navbar-brand mb-0 h1 ms-5"><i class="fas fa-leaf"></i> Agri-Direct</span><div class="d-flex align-items-center gap-2"><a href="/notifications-center" class="btn btn-outline-light" title="Notifications"><i class="fas fa-bell"></i></a><a href="{{ url_for('profile') }}" class="btn btn-sm btn-outline-light">Cancel</a></div></div></nav>
 
     <main class="main-content"><div class="container edit-wrap">
@@ -46,32 +46,35 @@
             {% endif %}
         {% endwith %}
 
-        <form method="POST">
-            <section class="card mb-4">
+        <section class="card mb-4">
                 <div class="card-body p-4 p-md-5">
-                    <h2 class="h5 mb-2"><i class="fas fa-camera me-2 text-success"></i>Camera-captured profile photo and location</h2>
-                    <p class="text-muted">Take a new profile photo and allow browser location access. The official location is displayed when available. GPS data is retained privately for harvest-range checks.</p>
+                    <h2 class="h5 mb-2"><i class="fas fa-camera me-2 text-success"></i>Profile photo and self-reported location</h2>
+                    <p class="text-muted">Take a new profile photo and allow browser location access. The official place name is displayed when available. Browser GPS and its timestamp are self-reported and retained privately for approximate harvest-proximity checks; they do not verify your location or land ownership.</p>
                     <div class="d-flex align-items-center gap-4">
-                        {% if user.profile_picture %}
-                            <img id="preview" class="avatar-preview" src="{{ user.profile_picture }}" alt="Current profile photo">
-                        {% else %}
-                            <div id="previewIcon" class="avatar-preview" aria-hidden="true"><i class="fas fa-user"></i></div>
-                            <img id="preview" class="avatar-preview d-none" alt="Profile preview">
-                        {% endif %}
+                        <div id="previewIcon" class="avatar-preview {% if profile_photo_url %}d-none{% endif %}" aria-hidden="true"><i class="fas fa-user"></i></div>
+                        <img id="preview" class="avatar-preview {% if not profile_photo_url %}d-none{% endif %}" {% if profile_photo_url %}src="{{ profile_photo_url }}"{% endif %} alt="Profile photo preview">
                     </div>
                     <div class="mt-4">
                         <video id="cameraPreview" class="camera-preview rounded d-none" autoplay muted playsinline aria-label="Live camera preview"></video>
                         <canvas id="photoCanvas" class="d-none"></canvas>
-                        <div class="d-flex flex-wrap gap-2 mt-3">
-                            <button type="button" id="startCamera" class="btn btn-outline-success"><i class="fas fa-video me-1"></i>Start camera</button>
-                            <button type="button" id="capturePhoto" class="btn btn-agri" disabled><i class="fas fa-camera me-1"></i>Take photo and save location</button>
+                        <div class="form-check mt-3">
+                            <input class="form-check-input" type="checkbox" id="cameraConsent">
+                            <label class="form-check-label" for="cameraConsent">I consent to camera access and public display of the first centered frame accepted in a successful scan; profile edits require a successful scan. Exhausting attempts removes my existing photo. The server checks one centered face and the requested pose but does not identify me or guarantee spoof protection; other frames are discarded, and no video or biometric data is stored. Browser GPS is sent to OpenStreetMap Nominatim for an approximate place; exact coordinates stay private, and GPS is self-reported. Internet required; photo limit: 5 MB.</label>
                         </div>
-                        <div class="form-text mt-2">Camera access and location permission are required. Your camera image is sent only to Agri-Direct; GPS is captured separately and sent to OpenStreetMap Nominatim to resolve an approximate place name. Exact coordinates remain private. Location lookup requires an internet connection. Maximum photo size: 5 MB.</div>
+                        <div class="d-flex flex-wrap gap-2 mt-3">
+                            <button type="button" id="startCamera" class="btn btn-outline-success" disabled><i class="fas fa-video me-1"></i>Start camera</button>
+                            <button type="button" id="capturePhoto" class="btn btn-agri" disabled><i class="fas fa-random me-1"></i>Begin randomized face scan</button>
+                            <button type="button" id="scanStageCapture" class="btn btn-outline-success d-none" disabled><i class="fas fa-camera me-1"></i>Capture scan step</button>
+                            <button type="button" id="savePhoto" class="btn btn-agri d-none" disabled><i class="fas fa-check me-1"></i>Save photo and location</button>
+                            <a id="viewPublicProfile" class="btn btn-outline-success {% if not user.profile_photo_scan_verified_at or not user.profile_picture or not user.profile_picture_public %}d-none{% endif %}" href="{{ url_for('seller_profile', username=user.username) }}"><i class="fas fa-eye me-1"></i>View public profile</a>
+                        </div>
+                        <div id="scanStep" class="small fw-semibold mt-2" role="status" aria-live="polite"></div>
                         <div id="captureMessage" class="small mt-2" role="status" aria-live="polite"></div>
                     </div>
                 </div>
-            </section>
+        </section>
 
+        <form method="POST">
             <section class="card">
                 <div class="card-body p-4 p-md-5">
                     <h2 class="h5 mb-4"><i class="fas fa-user-pen me-2 text-success"></i>Personal and farm details</h2>
@@ -90,7 +93,7 @@
                             <div id="psgcLocationValue" class="form-control bg-light">{{ user.psgc_location or 'Not available' }}</div>
                             <div class="form-text">This location is resolved from official Philippine Standard Geographic Code data when a match is available.</div>
                         </div>
-                        <div class="col-12"><label class="form-label" for="bio">About you</label><textarea class="form-control" id="bio" name="bio" rows="4" maxlength="800" placeholder="Describe your farm, crops, or farming experience.">{{ user.bio or '' }}</textarea></div>
+                        <div class="col-12"><label class="form-label" for="bio">About you</label><textarea class="form-control" id="bio" name="bio" rows="4" maxlength="800" placeholder="Describe your farm, commodities, or farming experience.">{{ user.bio or '' }}</textarea></div>
                     </div>
                     <div class="d-flex justify-content-end gap-2 mt-4">
                         <a href="{{ url_for('profile') }}" class="btn btn-light border">Cancel</a>
@@ -104,21 +107,82 @@
     <script>
         const startCamera = document.getElementById('startCamera');
         const capturePhoto = document.getElementById('capturePhoto');
+        const scanStageCapture = document.getElementById('scanStageCapture');
+        const savePhoto = document.getElementById('savePhoto');
         const cameraPreview = document.getElementById('cameraPreview');
         const photoCanvas = document.getElementById('photoCanvas');
         const captureMessage = document.getElementById('captureMessage');
+        const scanStep = document.getElementById('scanStep');
         const profilePreview = document.getElementById('preview');
         const previewIcon = document.getElementById('previewIcon');
-        const farmLocationValue = document.getElementById('farmLocationValue');
+        const viewPublicProfile = document.getElementById('viewPublicProfile');
+        const cameraConsent = document.getElementById('cameraConsent');
         let cameraStream = null;
+        let scanChallenge = null;
+        let movementSequence = [];
+        let currentStage = 0;
+        let firstAcceptedFrameBlob = null;
+        let profilePhotoBlob = null;
+
+        const movementInstructions = {
+            center: 'Face the camera straight on and keep your face centered.',
+            screen_left: 'Turn slightly so your nose moves toward the left edge of the screen.',
+            screen_right: 'Turn slightly so your nose moves toward the right edge of the screen.'
+        };
+
+        async function readApiResponse(response) {
+            if (response.redirected) {
+                throw new Error('Your session may have expired. Reload the page and try again.');
+            }
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('json')) {
+                const retryAfter = response.headers.get('Retry-After');
+                if (response.status === 429) {
+                    throw new Error(`Too many requests. Wait ${retryAfter || 'a little'} before trying again.`);
+                }
+                throw new Error(`The server returned an unexpected response (HTTP ${response.status}). Reload and try again.`);
+            }
+            return response.json();
+        }
+
         function stopCamera() {
             if (cameraStream) cameraStream.getTracks().forEach(track => track.stop());
             cameraStream = null;
             cameraPreview.srcObject = null;
             cameraPreview.classList.add('d-none');
+            capturePhoto.disabled = true;
+            scanStageCapture.disabled = true;
         }
 
+        function resetScan() {
+            scanChallenge = null;
+            movementSequence = [];
+            currentStage = 0;
+            firstAcceptedFrameBlob = null;
+            profilePhotoBlob = null;
+            scanStep.textContent = '';
+            capturePhoto.classList.remove('d-none');
+            scanStageCapture.classList.add('d-none');
+            savePhoto.classList.add('d-none');
+            capturePhoto.disabled = !cameraStream;
+            scanStageCapture.disabled = true;
+            savePhoto.disabled = true;
+        }
+
+        cameraConsent.addEventListener('change', () => {
+            startCamera.disabled = !cameraConsent.checked;
+            if (!cameraConsent.checked) {
+                resetScan();
+                stopCamera();
+                captureMessage.textContent = '';
+            }
+        });
+
         startCamera.addEventListener('click', async () => {
+            if (!cameraConsent.checked) {
+                captureMessage.textContent = 'Consent to camera access before starting the camera.';
+                return;
+            }
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 captureMessage.textContent = 'Camera capture is unavailable. Use a supported browser over HTTPS or localhost, then allow camera access.';
                 return;
@@ -149,7 +213,11 @@
                 } finally {
                     clearTimeout(cameraRequestTimeout);
                 }
-                if (!cameraStream.getVideoTracks().length) throw new Error('No video camera was returned by the browser.');
+                if (!cameraConsent.checked) {
+                    stopCamera();
+                    return;
+                }
+                if (!cameraStream || !cameraStream.getVideoTracks().length) throw new Error('No video camera was returned by the browser.');
                 cameraPreview.srcObject = cameraStream;
                 cameraPreview.classList.remove('d-none');
                 await cameraPreview.play();
@@ -163,7 +231,7 @@
                     });
                 }
                 capturePhoto.disabled = false;
-                captureMessage.textContent = 'Camera ready. Allow location permission when taking the photo.';
+                captureMessage.textContent = 'Camera ready. Begin the scan when you are positioned in the preview.';
             } catch (error) {
                 stopCamera();
                 captureMessage.textContent = error.name === 'NotAllowedError'
@@ -171,67 +239,163 @@
                     : error.message || 'Could not start the camera. Check that it is available and try again.';
                 capturePhoto.disabled = true;
             } finally {
-                startCamera.disabled = false;
+                startCamera.disabled = !cameraConsent.checked;
             }
         });
 
         capturePhoto.addEventListener('click', async () => {
-            if (!cameraStream || !navigator.geolocation) {
-                captureMessage.textContent = 'Camera and browser location access are both required.';
+            if (!cameraConsent.checked || !cameraStream) {
+                captureMessage.textContent = 'Consent to camera access and start the camera before scanning.';
                 return;
             }
+            capturePhoto.disabled = true;
+            captureMessage.textContent = 'Preparing a server-verified scan...';
+            try {
+                firstAcceptedFrameBlob = null;
+                profilePhotoBlob = null;
+                const response = await fetch('{{ url_for("issue_profile_photo_challenge") }}', { method: 'POST' });
+                const result = await readApiResponse(response);
+                if (!response.ok) throw new Error(result.error || 'Could not prepare the face scan.');
+                scanChallenge = result.challenge;
+                movementSequence = result.movement_sequence;
+                currentStage = 0;
+                capturePhoto.classList.add('d-none');
+                scanStageCapture.classList.remove('d-none');
+                scanStageCapture.disabled = false;
+                scanStep.textContent = `Step 1 of ${movementSequence.length}: ${movementInstructions[movementSequence[0]]}`;
+                captureMessage.textContent = 'Follow each prompt. The server validates every submitted frame.';
+            } catch (error) {
+                capturePhoto.disabled = false;
+                captureMessage.textContent = error.message || 'Could not prepare the face scan.';
+            }
+        });
+
+        async function captureFrame() {
             const width = cameraPreview.videoWidth;
             const height = cameraPreview.videoHeight;
-            if (!width || !height) {
-                captureMessage.textContent = 'Wait for the camera preview, then take the photo again.';
-                return;
-            }
-            photoCanvas.width = width;
-            photoCanvas.height = height;
+            if (!width || !height) throw new Error('Wait for the camera preview before capturing.');
+            const scale = Math.min(1, 1280 / width, 720 / height);
+            photoCanvas.width = Math.round(width * scale);
+            photoCanvas.height = Math.round(height * scale);
             const context = photoCanvas.getContext('2d');
-            if (!context) {
-                captureMessage.textContent = 'The camera photo could not be created in this browser.';
+            if (!context) throw new Error('The camera frame could not be created in this browser.');
+            context.drawImage(cameraPreview, 0, 0, photoCanvas.width, photoCanvas.height);
+            const blob = await new Promise(resolve => photoCanvas.toBlob(resolve, 'image/jpeg', 0.8));
+            if (!blob) throw new Error('The camera frame could not be created. Try again.');
+            return blob;
+        }
+
+        scanStageCapture.addEventListener('click', async () => {
+            if (!cameraConsent.checked || !cameraStream || !scanChallenge) {
+                captureMessage.textContent = 'Start a new scan with camera consent to continue.';
                 return;
             }
-            context.drawImage(cameraPreview, 0, 0, width, height);
-            const photoBlob = await new Promise(resolve => photoCanvas.toBlob(resolve, 'image/jpeg', 0.9));
-            if (!photoBlob) {
-                captureMessage.textContent = 'The camera photo could not be created. Try again.';
-                return;
-            }
-            const previewUrl = URL.createObjectURL(photoBlob);
-            profilePreview.src = previewUrl;
-            profilePreview.classList.remove('d-none');
-            if (previewIcon) previewIcon.classList.add('d-none');
-            captureMessage.textContent = 'Requesting GPS permission...';
-            capturePhoto.disabled = true;
-            navigator.geolocation.getCurrentPosition(async position => {
-                try {
-                    const body = new FormData();
-                    body.append('profile_photo', new File([photoBlob], 'profile-photo.jpg', { type: 'image/jpeg' }));
-                    body.append('latitude', String(position.coords.latitude));
-                    body.append('longitude', String(position.coords.longitude));
-                    body.append('captured_at', new Date(position.timestamp).toISOString());
-                    const response = await fetch('{{ url_for("capture_profile_location") }}', { method: 'POST', body });
-                    const result = await response.json();
-                    if (!response.ok) throw new Error(result.error || 'Could not save profile photo and location.');
-                    document.getElementById('psgcLocationValue').textContent = result.psgc_location || 'Not available';
-                    captureMessage.textContent = result.message;
-                } catch (error) {
-                    captureMessage.textContent = error.message;
-                    capturePhoto.disabled = false;
-                } finally {
-                    stopCamera();
+            scanStageCapture.disabled = true;
+            captureMessage.textContent = 'Checking this scan step...';
+            try {
+                const frame = await captureFrame();
+                const body = new FormData();
+                body.append('challenge', scanChallenge);
+                body.append('frame', new File([frame], 'scan-frame.jpg', { type: 'image/jpeg' }));
+                const response = await fetch('{{ url_for("submit_profile_photo_scan_stage") }}', {
+                    method: 'POST',
+                    body
+                });
+                const result = await readApiResponse(response);
+                if (!response.ok) {
+                    if (result.profile_photo_cleared) {
+                        profilePreview.removeAttribute('src');
+                        profilePreview.classList.add('d-none');
+                        previewIcon.classList.remove('d-none');
+                        viewPublicProfile.classList.add('d-none');
+                    }
+                    if (result.challenge_expired
+                        || (response.status === 409 && result.retry_after_seconds === undefined)) {
+                        resetScan();
+                        captureMessage.textContent = `${result.error} Start a new scan.`;
+                    } else {
+                        captureMessage.textContent = result.remaining_attempts === undefined
+                            ? result.error || 'The scan step could not be checked.'
+                            : `${result.error} ${result.remaining_attempts} attempts remain.`;
+                        scanStageCapture.disabled = false;
+                    }
+                    return;
                 }
-            }, error => {
-                const messages = {
+                currentStage = result.stage;
+                if (result.stage === 1) firstAcceptedFrameBlob = frame;
+                if (result.complete) {
+                    if (!firstAcceptedFrameBlob) throw new Error('The first scan image is unavailable. Start a new scan.');
+                    profilePhotoBlob = firstAcceptedFrameBlob;
+                    stopCamera();
+                    scanStageCapture.classList.add('d-none');
+                    savePhoto.classList.remove('d-none');
+                    savePhoto.disabled = false;
+                    scanStep.textContent = 'Face scan complete. The first accepted centered image will be used as your public profile photo.';
+                    captureMessage.textContent = 'Allow location permission when you save the photo.';
+                } else {
+                    scanStep.textContent = `Step ${currentStage + 1} of ${movementSequence.length}: ${movementInstructions[result.next_movement]}`;
+                    captureMessage.textContent = 'Scan step accepted.';
+                    scanStageCapture.disabled = false;
+                }
+            } catch (error) {
+                captureMessage.textContent = error.message || 'The scan step could not be checked.';
+                scanStageCapture.disabled = false;
+            }
+        });
+
+        savePhoto.addEventListener('click', async () => {
+            if (!profilePhotoBlob || !scanChallenge || !cameraConsent.checked || !navigator.geolocation) {
+                captureMessage.textContent = 'Consent, complete the face scan, and enable browser location access before saving.';
+                return;
+            }
+            savePhoto.disabled = true;
+            captureMessage.textContent = 'Requesting GPS permission...';
+            let captureSubmitted = false;
+            try {
+                const position = await new Promise((resolve, reject) => {
+                    navigator.geolocation.getCurrentPosition(resolve, reject, {
+                        enableHighAccuracy: true,
+                        timeout: 15000,
+                        maximumAge: 0
+                    });
+                });
+                const body = new FormData();
+                body.append('profile_photo', new File([profilePhotoBlob], 'profile-photo.jpg', { type: 'image/jpeg' }));
+                body.append('latitude', String(position.coords.latitude));
+                body.append('longitude', String(position.coords.longitude));
+                body.append('captured_at', new Date(position.timestamp).toISOString());
+                body.append('challenge', scanChallenge);
+                body.append('public_photo_consent', 'yes');
+                captureSubmitted = true;
+                const response = await fetch('{{ url_for("capture_profile_location") }}', { method: 'POST', body });
+                const result = await readApiResponse(response);
+                if (!response.ok) throw new Error(result.error || 'Could not save the profile photo and location.');
+                document.getElementById('psgcLocationValue').textContent = result.psgc_location || 'Not available';
+                profilePreview.src = result.profile_photo_url;
+                profilePreview.classList.remove('d-none');
+                previewIcon.classList.add('d-none');
+                viewPublicProfile.classList.remove('d-none');
+                captureMessage.textContent = result.message;
+                scanStep.textContent = 'Profile photo and location saved.';
+                firstAcceptedFrameBlob = null;
+                profilePhotoBlob = null;
+            } catch (error) {
+                const locationErrors = {
                     1: 'Location permission was denied. Allow location access and try again.',
                     2: 'Location services are unavailable. Enable them and try again.',
                     3: 'Location capture timed out. Try again.'
                 };
-                captureMessage.textContent = messages[error.code] || 'Could not capture your location.';
-                capturePhoto.disabled = false;
-            }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+                captureMessage.textContent = locationErrors[error.code]
+                    || error.message
+                    || 'Could not capture your location.';
+                if (captureSubmitted) {
+                    resetScan();
+                    stopCamera();
+                    startCamera.disabled = !cameraConsent.checked;
+                }
+            } finally {
+                if (profilePhotoBlob) savePhoto.disabled = false;
+            }
         });
 
         window.addEventListener('beforeunload', () => {

@@ -3,7 +3,7 @@
         {% for row in inventory %}
             <tr>
                 <td><strong>{{ row['farmer'] }}</strong></td>
-                <td><strong>{{ row['crop_name'] }}</strong></td>
+                <td><strong>{{ row['commodity_name'] }}</strong></td>
                 <td><span class="badge bg-success">{{ row['quantity'] }}</span></td>
                 <td>{{ row['location'] or '-' }}</td>
                 <td title="{{ row['date_received'] }}">{{ row['date_received'][:19] }}</td>

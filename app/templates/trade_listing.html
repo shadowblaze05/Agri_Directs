@@ -102,6 +102,12 @@
             <a class="nav-link" href="#" onclick="toggleChat()">
                 <i class="fas fa-comments"></i> Chat
             </a>
+            <a class="nav-link" href="/notifications-center">
+                <i class="fas fa-bell"></i> Notifications
+            </a>
+            <a class="nav-link" href="/marketplace/my-purchases">
+                <i class="fas fa-shopping-bag"></i> My Purchases
+            </a>
             <a class="nav-link" href="/logout">
                 <i class="fas fa-sign-out-alt"></i> Logout
             </a>
@@ -138,13 +144,13 @@
             <div class="row justify-content-center">
                 <div class="col-lg-8">
                     <div class="form-container">
-                        <h3 class="mb-4"><i class="fas fa-exchange-alt"></i> Trade Crop</h3>
+                        <h3 class="mb-4"><i class="fas fa-exchange-alt"></i> Trade Commodity</h3>
                         
                         <div class="listing-summary">
                             <h5>You will receive:</h5>
                             <div class="row">
                                 <div class="col-6">
-                                    <strong>{{ listing['crop_name'] }}</strong>
+                                    <strong>{{ listing['commodity_name'] }}</strong>
                                 </div>
                                 <div class="col-6 text-end">
                                     <span class="badge bg-success">{{ listing['amount'] }} {{ listing['unit'] or 'kg' }}</span>
@@ -168,26 +174,26 @@
                         
                         <form method="POST">
                             <div class="mb-3">
-                                <label for="trade_crop" class="form-label">Your Crop to Trade *</label>
+                                <label for="trade_crop" class="form-label">Your Commodity to Trade *</label>
                                 <select class="form-select" id="trade_crop" name="trade_crop" required>
-                                    <option value="">Select a crop...</option>
+                                    <option value="">Select a commodity...</option>
                                     {% for item in user_inventory %}
-                                    <option value="{{ item['crop_name'] }}">
-                                        {{ item['crop_name'] }} ({{ item['total_quantity'] }} available)
+                                    <option value="{{ item['commodity_name'] }}">
+                                        {{ item['commodity_name'] }} ({{ item['total_quantity'] }} available)
                                     </option>
                                     {% endfor %}
                                 </select>
                             </div>
                             
                             <div class="mb-3">
-                                <label for="trade_amount" class="form-label">Amount to Trade *</label>
+                                <label for="trade_amount" class="form-label">Quantity to Trade (kg) *</label>
                                 <input type="number" class="form-control" id="trade_amount" name="trade_amount" min="1" required>
-                                <small class="text-muted">Enter the quantity of your crop you want to trade</small>
+                                <small class="text-muted">Enter the quantity of your commodity you want to trade</small>
                             </div>
                             
                             <div class="alert alert-info">
                                 <i class="fas fa-info-circle"></i> 
-                                Trading is a direct swap. You will give your crop and receive the seller's crop.
+                                Trading is a direct swap. You will give your commodity and receive the seller's commodity.
                             </div>
                             
                             <div class="d-flex gap-2">

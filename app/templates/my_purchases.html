@@ -10,14 +10,39 @@
     <style>
         :root { --agri-deep: #1a3408; --agri-green: #2d5016; --agri-pale: #eff5e9; }
         body { background: #f3f6f0; color: #253120; }
-        .purchases-nav { background: linear-gradient(110deg, #1a3408, #315d1a); }
-        .purchases-nav .navbar-brand { color: white; font-weight: 700; }
-        .purchases-hero {
-            background: linear-gradient(120deg, #1a3408 0%, #315d1a 68%, #4b7929 100%);
-            color: white; border-radius: 18px; padding: 32px;
-            box-shadow: 0 14px 32px rgba(26,52,8,.15);
+        .app-topbar {
+            position: fixed; inset: 0 0 auto; height: 70px; z-index: 1030;
+            background: linear-gradient(135deg, #1a3408 0%, #0f1f03 100%);
+            box-shadow: 0 2px 10px rgba(0,0,0,.1);
         }
-        .purchases-hero .eyebrow { color: #d4e5c8; font-size: .76rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+        .app-sidebar {
+            position: fixed; inset: 0 auto 0 0; z-index: 1000; width: 250px;
+            padding-top: 80px; overflow-y: auto; background: #1a3408; color: white;
+        }
+        .app-sidebar .nav-link {
+            margin: 5px 10px; padding: 12px 20px; border-radius: 5px;
+            color: rgba(255,255,255,.8);
+        }
+        .app-sidebar .nav-link:hover,
+        .app-sidebar .nav-link.active { color: white; background: rgba(255,255,255,.12); }
+        .app-sidebar .nav-link.active { background: #4caf50; }
+        .app-sidebar .cart-badge {
+            margin-left: 5px; padding: 2px 8px; border-radius: 50%;
+            background: #ff6b6b; color: white; font-size: .75rem;
+        }
+        .main-content { margin: 70px 0 0 250px; padding: 20px; }
+        .dashboard-header, .filter-panel {
+            border: 0; border-radius: 8px; background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,.1);
+        }
+        .dashboard-header { padding: 22px; }
+        .dashboard-header h1 { color: #2d5016; }
+        .filter-panel { padding: 18px; }
+        .filter-panel .form-control:focus,
+        .filter-panel .form-select:focus {
+            border-color: #78a84b; box-shadow: 0 0 0 .2rem rgba(76,175,80,.15);
+        }
+        .filter-result-count { white-space: nowrap; }
         .stage-summary { border: 1px solid #e7eddf; border-radius: 14px; transition: transform .18s, box-shadow .18s; }
         .stage-summary:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(26,52,8,.08); }
         .stage-icon { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--agri-pale); color: var(--agri-green); }
@@ -34,19 +59,16 @@
         .purchase-card { overflow-wrap: anywhere; }
         .purchase-card .btn { min-height: 44px; }
         @media (max-width: 575.98px) {
-            .purchases-nav .container {
-                flex-wrap: wrap;
-                gap: .5rem;
-                padding-top: .5rem;
-                padding-bottom: .5rem;
+            .app-sidebar {
+                position: relative; width: 100%; min-height: 0;
+                padding: 70px 0 6px;
             }
-            .purchases-nav .navbar-brand { width: 100%; }
-            .purchases-nav .container > .d-flex { width: 100%; }
-            .purchases-nav .container > .d-flex .btn { flex: 1 1 0; }
+            .app-sidebar .nav { flex-direction: row !important; overflow-x: auto; }
+            .app-sidebar .nav-link { flex: 0 0 auto; margin: 3px; padding: 9px 12px; }
+            .main-content { margin: 0; padding: 12px; }
             .stage-summary .card-body { gap: .5rem !important; padding: .75rem; }
             .stage-summary .stage-icon { width: 36px; height: 36px; flex-basis: 36px; }
-            .purchases-hero { padding: 23px; }
-            .purchases-hero h1 { font-size: 1.8rem; }
+            .dashboard-header { padding: 17px; }
             .purchase-card .card-body { padding: 17px; }
             .purchase-card .row > [class*="col-"] { min-width: 0; }
             .rating-buttons { margin-top: .5rem; }
@@ -54,25 +76,57 @@
     </style>
 </head>
 <body>
-<nav class="navbar navbar-dark purchases-nav">
-    <div class="container">
-        <a class="navbar-brand" href="{{ url_for('portal_home') }}"><i class="fas fa-leaf me-2"></i>Agri-Direct</a>
-        <div class="d-flex gap-2">
-            <a class="btn btn-outline-light btn-sm" href="{{ url_for('marketplace') }}"><i class="fas fa-store me-1"></i>Marketplace</a>
-            {% if session.get('role') != 'buyer' %}<a class="btn btn-outline-light btn-sm" href="{{ url_for('my_marketplace_listings') }}"><i class="fas fa-list me-1"></i>My Listings</a>{% endif %}
+<nav class="navbar navbar-dark app-topbar">
+    <div class="container-fluid">
+        <a class="navbar-brand fw-bold ms-2" href="{{ url_for('portal_home') }}"><i class="fas fa-leaf me-2"></i>Agri-Direct</a>
+        <div class="d-flex align-items-center gap-2">
+            <span class="text-white d-none d-sm-inline"><i class="fas fa-user-circle me-1"></i>{{ session.get('user', 'User') }}</span>
+            <a class="btn btn-outline-light btn-sm" href="{{ url_for('profile') }}">Profile</a>
+            <a class="btn btn-light btn-sm" href="{{ url_for('logout') }}">Sign out</a>
         </div>
     </div>
 </nav>
+<aside class="app-sidebar">
+    <nav class="nav flex-column" aria-label="Main navigation">
+        <a class="nav-link" href="/home"><i class="fas fa-home me-2"></i>Home</a>
+        <a class="nav-link" href="/dashboard"><i class="fas fa-chart-line me-2"></i>Dashboard</a>
+        {% if session.get('role') != 'buyer' %}
+        <a class="nav-link" href="/upload"><i class="fas fa-upload me-2"></i>Upload Harvest</a>
+        {% endif %}
+        {% if session.get('role') == 'admin' %}
+        <a class="nav-link" href="/market-intelligence"><i class="fas fa-brain me-2"></i>Market Intelligence</a>
+        {% endif %}
+        <a class="nav-link" href="/marketplace"><i class="fas fa-store me-2"></i>Marketplace</a>
+        <a class="nav-link" href="/knowledge"><i class="fas fa-book-open me-2"></i>Knowledge Hub</a>
+        <a class="nav-link" href="/messages"><i class="fas fa-comments me-2"></i>Messages</a>
+        <a class="nav-link" href="/notifications-center"><i class="fas fa-bell me-2"></i>Notifications</a>
+        <a class="nav-link active" href="/marketplace/my-purchases" aria-current="page"><i class="fas fa-bag-shopping me-2"></i>My Purchases</a>
+        <a class="nav-link" href="/profile"><i class="fas fa-user-circle me-2"></i>Profile</a>
+        <a class="nav-link" href="/marketplace/cart">
+            <i class="fas fa-shopping-cart me-2"></i>Cart
+            {% if cart_count > 0 %}<span class="cart-badge">{{ cart_count }}</span>{% endif %}
+        </a>
+        <a class="nav-link" href="/marketplace/my-preorders"><i class="fas fa-clock me-2"></i>My Pre-orders</a>
+        {% if session.get('role') != 'buyer' %}
+        <a class="nav-link" href="/marketplace/my-listings"><i class="fas fa-list me-2"></i>My Listings</a>
+        <a class="nav-link" href="/marketplace/transactions"><i class="fas fa-receipt me-2"></i>Transactions</a>
+        {% endif %}
+        {% if session.get('role') != 'buyer' %}
+        <a class="nav-link" href="/marketplace/my-preorder-requests"><i class="fas fa-inbox me-2"></i>Pre-order Requests</a>
+        {% endif %}
+        <a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt me-2"></i>Logout</a>
+    </nav>
+</aside>
 
-<main class="container py-4 py-lg-5">
-    <header class="purchases-hero mb-4">
-        <div class="eyebrow mb-2">Order tracking</div>
-        <div class="d-flex flex-wrap justify-content-between align-items-end gap-3">
+<main class="main-content">
+<div class="container-fluid px-0">
+    <header class="dashboard-header mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
             <div>
-                <h1 class="display-6 fw-bold mb-2"><i class="fas fa-bag-shopping me-2"></i>My Purchases</h1>
-                <p class="mb-0 opacity-75">Follow your order from seller preparation to delivery and receipt.</p>
+                <h1 class="h2 fw-bold mb-1"><i class="fas fa-bag-shopping me-2"></i>My Purchases</h1>
+                <p class="text-muted mb-0">Track orders and payment, shipping, and delivery progress.</p>
             </div>
-            <a class="btn btn-light text-success fw-semibold" href="{{ url_for('marketplace') }}"><i class="fas fa-plus me-1"></i>Find produce</a>
+            <a class="btn btn-success" href="{{ url_for('marketplace') }}"><i class="fas fa-plus me-1"></i>Find produce</a>
         </div>
     </header>
 
@@ -88,6 +142,42 @@
         ('To Receive', 'to-receive', 'fa-truck', to_receive_purchases),
         ('Completed', 'completed', 'fa-circle-check', completed_purchases)
     ] %}
+    {% set total_purchases = purchases|length %}
+    <section class="card filter-panel mb-4" aria-label="Filter purchases">
+        <div class="row g-3 align-items-end">
+            <div class="col-lg-5">
+                <label class="form-label fw-semibold" for="purchase-search">Search purchases</label>
+                <div class="input-group">
+                    <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+                    <input id="purchase-search" class="form-control" type="search" placeholder="Commodity, seller, order number, address...">
+                </div>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label fw-semibold" for="purchase-status-filter">Status</label>
+                <select id="purchase-status-filter" class="form-select">
+                    <option value="">All statuses</option>
+                    <option value="awaiting_payment">Awaiting payment</option>
+                    <option value="to_pay">To pay</option>
+                    <option value="to_ship">To ship</option>
+                    <option value="to_receive">To receive</option>
+                    <option value="completed">Completed</option>
+                </select>
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label fw-semibold" for="purchase-date-from">From</label>
+                <input id="purchase-date-from" class="form-control" type="date">
+            </div>
+            <div class="col-sm-6 col-lg-2">
+                <label class="form-label fw-semibold" for="purchase-date-to">To</label>
+                <input id="purchase-date-to" class="form-control" type="date">
+            </div>
+            <div class="col-sm-6 col-lg-1">
+                <button id="purchase-filter-clear" class="btn btn-outline-secondary w-100" type="button" aria-label="Clear filters" title="Clear filters"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+        <div class="small text-muted mt-3"><span id="purchase-result-count">{{ total_purchases }}</span> of {{ total_purchases }} orders</div>
+    </section>
+
     <div class="row g-3 mb-5">
         {% for stage_name, stage_id, stage_icon, stage_orders in stages %}
         <div class="col-6 col-lg-3">
@@ -96,7 +186,7 @@
                     <span class="stage-icon"><i class="fas {{ stage_icon }}"></i></span>
                     <div>
                         <div class="small text-muted">{{ stage_name }}</div>
-                        <div class="h4 mb-0 fw-bold">{{ stage_orders|length }}</div>
+                        <div class="h4 mb-0 fw-bold" id="purchase-stage-count-{{ stage_id }}">{{ stage_orders|length }}</div>
                     </div>
                 </div>
             </a>
@@ -105,7 +195,7 @@
     </div>
 
     {% for stage_name, stage_id, stage_icon, stage_orders in stages %}
-    <section class="stage-section mb-5" id="{{ stage_id }}">
+    <section class="stage-section mb-5" id="{{ stage_id }}" data-stage-section>
         <div class="d-flex align-items-center gap-3 mb-3">
             <span class="stage-icon"><i class="fas {{ stage_icon }}"></i></span>
             <div>
@@ -116,11 +206,15 @@
 
         {% if stage_orders %}
             {% for order in stage_orders %}
-            <article class="card purchase-card shadow-sm mb-3">
+            {% set display_stage = 'Awaiting Payment' if order['order_status'] == 'awaiting_payment' else stage_name %}
+            <article class="card purchase-card shadow-sm mb-3 purchase-item"
+                data-status="{{ display_stage|lower|replace(' ', '_') }}"
+                data-date="{{ (order['order_date'] or '')[:10] }}"
+                data-search="{{ [order['id'], order['commodity_name'], order['seller_name'], order['delivery_street'], order['delivery_barangay'], order['delivery_city'], order['delivery_province']]|join(' ')|lower }}">
                 <div class="card-body">
                     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
                         <div>
-                            <h3 class="h5 fw-bold mb-1">{{ order['crop_name'] }}</h3>
+                            <h3 class="h5 fw-bold mb-1">{{ order['commodity_name'] }}</h3>
                             <div class="text-muted small">
                                 <i class="fas fa-user me-1"></i>
                                 <a href="{{ url_for('seller_profile', username=order['seller_name']) }}">{{ order['seller_name'] }}</a>
@@ -128,7 +222,8 @@
                                 {% if order['order_date'] %}Ordered {{ order['order_date'][:16] }}{% else %}Date unavailable{% endif %}
                             </div>
                         </div>
-                        <span class="badge rounded-pill purchase-status px-3 py-2">{{ stage_name }}</span>
+                        <span class="badge rounded-pill purchase-status px-3 py-2">{{ display_stage }}</span>
+                        <span class="small text-muted d-block">Order #{{ order['id'] }}</span>
                     </div>
 
                     {% if order['delivery_province'] and order['delivery_city'] and order['delivery_barangay'] and order['delivery_street'] %}
@@ -148,8 +243,27 @@
                         </div>
                         <div class="col-md-7">
                             {% if stage_name == 'To Pay' %}
-                                <div class="progress order-progress mb-2"><div class="progress-bar" style="width: 10%"></div></div>
-                                <small class="text-muted"><i class="fas fa-clock me-1"></i>Waiting for the seller to start packing your order.</small>
+                                {% if order['order_status'] == 'awaiting_payment' %}
+                                    <div class="progress order-progress mb-2"><div class="progress-bar" style="width: 5%"></div></div>
+                                    <small class="text-muted d-block mb-2"><i class="fas fa-clock me-1"></i>Waiting for Xendit to confirm your payment.</small>
+                                    {% if order['xendit_checkout_url'] %}
+                                    <a class="btn btn-success btn-sm" href="{{ order['xendit_checkout_url'] }}" target="_blank" rel="noopener noreferrer">
+                                        <i class="fas fa-lock me-1"></i>Continue to payment
+                                    </a>
+                                    {% endif %}
+                                    <form class="mt-2" method="POST" action="{{ url_for('cancel_pending_marketplace_payment', listing_id=order['id']) }}" onsubmit="return confirm('Cancel this unpaid checkout? Do not cancel if you have already paid. This will release all produce in the same checkout.');">
+                                        <button class="btn btn-outline-danger btn-sm" type="submit">
+                                            <i class="fas fa-xmark me-1"></i>Cancel unpaid checkout
+                                        </button>
+                                    </form>
+                                    <small class="text-muted d-block mt-1">Only cancel if you did not complete payment. This cancels all items from the same checkout.</small>
+                                {% elif order['payment_method'] == 'cod' %}
+                                    <div class="progress order-progress mb-2"><div class="progress-bar" style="width: 10%"></div></div>
+                                    <small class="text-muted"><i class="fas fa-money-bill-wave me-1"></i>Cash on delivery. Pay the seller when your order arrives.</small>
+                                {% else %}
+                                    <div class="progress order-progress mb-2"><div class="progress-bar" style="width: 10%"></div></div>
+                                    <small class="text-muted"><i class="fas fa-clock me-1"></i>Waiting for the seller to start packing your order.</small>
+                                {% endif %}
                             {% elif stage_name == 'To Ship' %}
                                 <div class="progress order-progress mb-2"><div class="progress-bar" style="width: 40%"></div></div>
                                 <small class="text-muted"><i class="fas fa-box-open me-1"></i>{{ 'The seller is packing your order.' if order['order_status'] == 'packing' else 'Your order has been prepared for shipping.' }}</small>
@@ -194,6 +308,57 @@
         {% endif %}
     </section>
     {% endfor %}
+    <div id="purchase-no-results" class="alert alert-light border text-center py-4" hidden>No purchases match your search and filters.</div>
+</div>
 </main>
+<script>
+    (() => {
+        const cards = Array.from(document.querySelectorAll(".purchase-item"));
+        const search = document.getElementById("purchase-search");
+        const status = document.getElementById("purchase-status-filter");
+        const dateFrom = document.getElementById("purchase-date-from");
+        const dateTo = document.getElementById("purchase-date-to");
+        const count = document.getElementById("purchase-result-count");
+        const noResults = document.getElementById("purchase-no-results");
+        const clear = document.getElementById("purchase-filter-clear");
+        if (!search || !status || !dateFrom || !dateTo) return;
+
+        const filterPurchases = () => {
+            const query = search.value.trim().toLocaleLowerCase();
+            let visible = 0;
+            cards.forEach((card) => {
+                const date = card.dataset.date || "";
+                const matches = (!query || card.dataset.search.includes(query))
+                    && (!status.value || card.dataset.status === status.value)
+                    && (!dateFrom.value || (date && date >= dateFrom.value))
+                    && (!dateTo.value || (date && date <= dateTo.value));
+                card.hidden = !matches;
+                if (matches) visible += 1;
+            });
+            document.querySelectorAll("[data-stage-section]").forEach((section) => {
+                const sectionCards = Array.from(section.querySelectorAll(".purchase-item"));
+                const sectionVisible = sectionCards.filter((card) => !card.hidden).length;
+                section.hidden = cards.length > 0
+                    && (sectionCards.length === 0 || sectionVisible === 0);
+                const countId = `purchase-stage-count-${section.id}`;
+                const stageCount = document.getElementById(countId);
+                if (stageCount) stageCount.textContent = sectionVisible;
+            });
+            if (count) count.textContent = visible;
+            if (noResults) noResults.hidden = visible !== 0 || cards.length === 0;
+        };
+        [search, status, dateFrom, dateTo].forEach((control) => {
+            control.addEventListener(control === search ? "input" : "change", filterPurchases);
+        });
+        clear.addEventListener("click", () => {
+            search.value = "";
+            status.value = "";
+            dateFrom.value = "";
+            dateTo.value = "";
+            filterPurchases();
+        });
+        filterPurchases();
+    })();
+</script>
 </body>
 </html>

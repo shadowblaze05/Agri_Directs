@@ -119,6 +119,7 @@
             <a class="nav-link" href="/knowledge"><i class="fas fa-book-open"></i> Knowledge Hub</a>
             <a class="nav-link" href="/messages"><i class="fas fa-comments"></i> Messages</a>
             <a class="nav-link" href="/notifications-center"><i class="fas fa-bell"></i> Notifications</a>
+            <a class="nav-link" href="/marketplace/my-purchases"><i class="fas fa-shopping-bag"></i> My Purchases</a>
             <a class="nav-link" href="/profile"><i class="fas fa-user-circle"></i> Profile</a>
             <a class="nav-link" href="/marketplace/cart">
                 <i class="fas fa-shopping-cart"></i> Cart
@@ -175,7 +176,10 @@
                     <div class="request-card-body">
                         {% if order['main_image'] %}
                         <img src="{{ url_for('static', filename='uploads/marketplace/' + order['main_image']) }}"
-                             class="request-thumb" alt="{{ order['crop_name'] }}">
+                             class="request-thumb" alt="{{ order['commodity_name'] }}">
+                        {% elif order['commodity_default_image'] %}
+                        <img src="{{ url_for('static', filename='uploads/commodity_details/' + order['commodity_default_image']) }}"
+                             class="request-thumb" alt="{{ order['commodity_name'] }}">
                         {% else %}
                         <div class="request-thumb-placeholder">
                             <i class="fas fa-seedling"></i>
@@ -184,7 +188,7 @@
 
                         <div class="request-info">
                             <div class="d-flex justify-content-between align-items-start mb-2">
-                                <h5>{{ order['crop_name'] }}</h5>
+                                <h5>{{ order['commodity_name'] }}</h5>
                                 <span class="status-pill status-{{ order['preorder_status'] or 'pending' }}">
                                     {% if order['preorder_status'] == 'pending' %}Pending
                                     {% elif order['preorder_status'] == 'confirmed' %}Confirmed

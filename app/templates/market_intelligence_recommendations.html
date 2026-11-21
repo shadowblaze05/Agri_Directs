@@ -7,7 +7,7 @@
             <div class="d-flex justify-content-between align-items-center mb-3">
                 <div>
                     <h5 class="mb-1">Weighted scoring model</h5>
-                    <p class="text-muted mb-0">Recommendations include the configured catalog price; crops without a price use a neutral price score.</p>
+                    <p class="text-muted mb-0">Recommendations include the configured catalog price; commodities without a price use a neutral price score.</p>
                 </div>
                 <span class="soft-chip">Scored outlook</span>
             </div>
@@ -18,7 +18,7 @@
     </div>
     <div class="col-lg-4">
         <div class="card chart-card h-100">
-            <h5 class="mb-3">Top recommended crops</h5>
+            <h5 class="mb-3">Top recommended commodities</h5>
             <div class="list-group list-group-flush">
                 {% for item in recommendation_items %}
                 <div class="list-group-item px-0">

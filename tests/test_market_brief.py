@@ -28,21 +28,21 @@ def _inventory_connection():
         CREATE TABLE users (username TEXT PRIMARY KEY, role TEXT, is_active INTEGER);
         INSERT INTO users VALUES
             ('farmer', 'user', 1), ('admin', 'admin', 1);
-        CREATE TABLE crops (id INTEGER PRIMARY KEY, crops_name TEXT);
-        CREATE TABLE crop_pricing (
-            crop_id INTEGER PRIMARY KEY, pricing_mode TEXT, reference_price REAL,
+        CREATE TABLE commodities (id INTEGER PRIMARY KEY, commodity_name TEXT);
+        CREATE TABLE commodity_pricing (
+            commodity_id INTEGER PRIMARY KEY, pricing_mode TEXT, reference_price REAL,
             price_range REAL, minimum_price REAL, maximum_price REAL,
             price_unit TEXT
         );
         CREATE TABLE inventory (
-            crop_id INTEGER,
+            commodity_id INTEGER,
             quantity INTEGER,
             farmer TEXT,
             date_received TEXT,
             location TEXT,
             source TEXT
         );
-        INSERT INTO crops VALUES (1, 'Rice');
+        INSERT INTO commodities VALUES (1, 'Rice');
         INSERT INTO inventory VALUES
             (1, 25, 'farmer-one', '2026-10-01', 'North', 'harvest'),
             (1, 40, 'farmer-two', '2026-10-02', 'South', 'harvest'),
@@ -51,7 +51,7 @@ def _inventory_connection():
             (1, 10, 'legacy-farmer', '2026-09-30', 'East', NULL);
     """)
     connection.execute(
-        "INSERT INTO crop_pricing VALUES (1, 'range', 32.5, 4.5, NULL, NULL, 'kg')"
+        "INSERT INTO commodity_pricing VALUES (1, 'range', 32.5, 4.5, NULL, NULL, 'kg')"
     )
     return connection
 
@@ -110,6 +110,65 @@ def test_market_intelligence_apis_use_the_shared_harvest_dataset(
         "South",
         "East",
     }
+
+
+def test_dashboard_shows_purchase_inventory_instead_of_zero(monkeypatch):
+    monkeypatch.setattr(home_routes, "get_db", _inventory_connection)
+    monkeypatch.setattr(home_routes, "update_analytics", lambda: None)
+    monkeypatch.setattr(
+        home_routes, "_market_analysis_context", _sample_market_analysis
+    )
+    monkeypatch.setattr(home_routes, "get_active_user_role", lambda *_args: "user")
+    monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "user")
+
+    with app_module.app.test_client() as client:
+        with client.session_transaction() as user_session:
+            user_session["user"] = "buyer-one"
+            user_session["role"] = "user"
+
+        response = client.get("/dashboard")
+
+    assert response.status_code == 200
+    assert b"Total Inventory" in response.data
+    assert b'<h3 id="total-quantity">100</h3>' in response.data
+    assert b"buyer-one" in response.data
+
+
+def test_dashboard_stats_include_purchase_inventory(monkeypatch):
+    monkeypatch.setattr(home_routes, "get_db", _inventory_connection)
+    monkeypatch.setattr(home_routes, "get_active_user_role", lambda *_args: "user")
+    monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "user")
+
+    with app_module.app.test_client() as client:
+        with client.session_transaction() as user_session:
+            user_session["user"] = "buyer-one"
+            user_session["role"] = "user"
+
+        response = client.get("/api/stats")
+
+    assert response.status_code == 200
+    stats = response.get_json()
+    assert stats["total_quantity"] == 100
+    assert stats["top_commodity"] == "Rice"
+    assert stats["commodities_count"] == 1
+    assert stats["location_count"] == 1
+
+
+def test_commodity_types_page_includes_the_users_purchase_inventory(monkeypatch):
+    monkeypatch.setattr(home_routes, "get_db", _inventory_connection)
+    monkeypatch.setattr(home_routes, "get_active_user_role", lambda *_args: "user")
+    monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "user")
+
+    with app_module.app.test_client() as client:
+        with client.session_transaction() as user_session:
+            user_session["user"] = "buyer-one"
+            user_session["role"] = "user"
+
+        response = client.get("/crop-types")
+
+    assert response.status_code == 200
+    assert b"Rice" in response.data
+    assert b"100 kg" in response.data
 
 
 class _DashboardCursor:
@@ -229,7 +288,7 @@ def test_signed_in_home_displays_the_market_brief(monkeypatch):
 def test_signed_in_home_displays_verified_marketplace_listing_photo(monkeypatch):
     listing = {
         "id": 17,
-        "crop_name": "Tomatoes",
+        "commodity_name": "Tomatoes",
         "amount": 25,
         "price": 58.5,
         "unit": "kg",
@@ -244,7 +303,7 @@ def test_signed_in_home_displays_verified_marketplace_listing_photo(monkeypatch)
             if "SELECT m.id" in query:
                 self.rows = [listing]
                 self.row = None
-            elif "COUNT(DISTINCT m.crop_name)" in query:
+            elif "COUNT(DISTINCT m.commodity_name)" in query:
                 self.rows = None
                 self.row = {"active_listings": 1, "crop_count": 1}
             else:

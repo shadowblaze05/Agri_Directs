@@ -12,13 +12,13 @@ class Analytics(Model):
     period_type = Column(String(32))
     period_value = Column(String(32))
     total_harvest = Column(Integer)
-    top_crop = Column(String(128))
-    top_crop_volume = Column(Integer)
-    top_crop_id = Column(
+    top_commodity = Column(String(128))
+    top_commodity_volume = Column(Integer)
+    top_commodity_id = Column(
         Integer,
         ForeignKey(
-            "crops.id",
-            name="fk_analytics_top_crop_id_crops",
+            "commodities.id",
+            name="fk_analytics_top_commodity_id_commodities",
             ondelete="SET NULL",
         ),
         nullable=True,

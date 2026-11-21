@@ -73,15 +73,15 @@ def build_market_analysis(records):
     }
 
     for row in records:
-        crop_name = str(row["crop_name"] or "").strip()
+        commodity_name = str(row["commodity_name"] or "").strip()
         quantity = int(row["quantity"] or 0)
-        if not crop_name or quantity <= 0:
+        if not commodity_name or quantity <= 0:
             continue
 
-        crop_totals[crop_name] += quantity
+        crop_totals[commodity_name] += quantity
         month_key = _parse_inventory_datetime(row.get("date_received")).strftime("%Y-%m")
         monthly_totals[month_key] += quantity
-        crop_history[crop_name].append((month_key, quantity))
+        crop_history[commodity_name].append((month_key, quantity))
 
     if not crop_totals:
         return {
@@ -106,8 +106,8 @@ def build_market_analysis(records):
     risk_alerts = []
     forecast = []
 
-    for crop_name, total_quantity in sorted(crop_totals.items()):
-        history_entries = sorted(crop_history.get(crop_name, []), key=lambda item: item[0])
+    for commodity_name, total_quantity in sorted(crop_totals.items()):
+        history_entries = sorted(crop_history.get(commodity_name, []), key=lambda item: item[0])
         monthly_series = [value for _, value in history_entries]
         average_supply = sum(monthly_series) / len(monthly_series) if monthly_series else total_quantity
         supply_pressure = total_quantity / max(average_supply, 1)
@@ -119,11 +119,11 @@ def build_market_analysis(records):
         price_index = max(60, min(180, price_index))
 
         demand_score = min(1.0, supply_pressure / 1.5)
-        seasonal_score = 1.0 if (datetime.now().month in season_map.get(crop_name.lower(), [])) else 0.7
+        seasonal_score = 1.0 if (datetime.now().month in season_map.get(commodity_name.lower(), [])) else 0.7
         recommendation_score = round((demand_score * 0.45) + ((price_index - 80) / 100 * 0.35) + (seasonal_score * 0.2), 2)
 
         price_monitoring.append({
-            "crop": crop_name,
+            "crop": commodity_name,
             "current_supply": total_quantity,
             "average_supply": round(average_supply, 2),
             "price_index": price_index,
@@ -134,21 +134,21 @@ def build_market_analysis(records):
 
         if supply_pressure >= 1.35:
             risk_alerts.append({
-                "crop": crop_name,
+                "crop": commodity_name,
                 "type": "Oversupply risk",
-                "message": f"Current supply for {crop_name} is {round(supply_pressure * 100)}% above the recent average.",
+                "message": f"Current supply for {commodity_name} is {round(supply_pressure * 100)}% above the recent average.",
                 "severity": "high"
             })
         elif supply_pressure <= 0.75:
             risk_alerts.append({
-                "crop": crop_name,
+                "crop": commodity_name,
                 "type": "Undersupply risk",
-                "message": f"Current supply for {crop_name} is {round((1 - supply_pressure) * 100)}% below the recent average.",
+                "message": f"Current supply for {commodity_name} is {round((1 - supply_pressure) * 100)}% below the recent average.",
                 "severity": "medium"
             })
 
         forecast.append({
-            "crop": crop_name,
+            "crop": commodity_name,
             "forecast_quantity": _linear_forecast(monthly_series),
             "trend": "increasing" if (monthly_series[-1] if monthly_series else 0) >= (monthly_series[-2] if len(monthly_series) > 1 else 0) else "decreasing",
             "recommendation_score": recommendation_score,

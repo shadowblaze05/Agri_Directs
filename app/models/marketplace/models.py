@@ -31,12 +31,12 @@ class MarketplaceListing(Model):
         ),
         nullable=True,
     )
-    crop_id = Column(
+    commodity_id = Column(
         Integer,
-        ForeignKey("crops.id", ondelete="RESTRICT"),
+        ForeignKey("commodities.id", ondelete="RESTRICT"),
         nullable=True,
     )
-    crop_name = Column(String(128))
+    commodity_name = Column(String(128))
     amount = Column(Integer)
     price = Column(Float)
     unit = Column(String(16), default="kg")
@@ -58,6 +58,11 @@ class MarketplaceListing(Model):
     buyer_confirm_date = Column(String(32))
     buyer_rating = Column(Integer)
     buyer_rating_date = Column(String(32))
+    xendit_reference_id = Column(String(64), nullable=True, index=True)
+    xendit_session_id = Column(String(128), nullable=True)
+    xendit_checkout_url = Column(Text, nullable=True)
+    payment_method = Column(String(16), nullable=True)
+    reserved_from_listing_id = Column(Integer, nullable=True)
     main_image = Column(String(255), nullable=True)
     thumbnail_verified = Column(Integer, nullable=False, default=0)
     thumbnail_latitude = Column(Float, nullable=True)

@@ -1,5 +1,7 @@
 """Compatibility exports for agriculture models."""
 
-from ..agriculture.models import Crop, Harvest, Inventory
+from ..agriculture.models import Commodity, Harvest, Inventory
 
-__all__ = ["Crop", "Harvest", "Inventory"]
+Crop = Commodity
+
+__all__ = ["Commodity", "Crop", "Harvest", "Inventory"]

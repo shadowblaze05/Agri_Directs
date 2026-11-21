@@ -9,7 +9,7 @@ from datetime import datetime
 import time
 from urllib.parse import urlsplit
 
-from flask import Flask, g, jsonify, request, session, url_for
+from flask import Flask, abort, g, jsonify, request, session, url_for
 from sqlalchemy.exc import SQLAlchemyError
 
 from .config import Config
@@ -105,8 +105,18 @@ def create_app(config_overrides=None):
         return None
 
     @app.before_request
+    def block_legacy_public_profile_photo_urls():
+        legacy_photo_prefix = (
+            app.static_url_path.rstrip("/") + "/uploads/profiles/"
+        ).lower()
+        if request.path.lower().startswith(legacy_photo_prefix):
+            abort(404)
+
+    @app.before_request
     def enforce_same_origin_mutations():
         if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+            return None
+        if request.endpoint == "xendit_payment_webhook":
             return None
         if not app.config["CSRF_ENFORCE_ORIGIN"]:
             return None
@@ -133,9 +143,37 @@ def create_app(config_overrides=None):
 
         if allowed:
             return None
-        if request.is_json:
+        if request.is_json or request.endpoint in {
+            "issue_profile_photo_challenge",
+            "submit_profile_photo_scan_stage",
+            "capture_profile_location",
+        }:
             return jsonify({"error": "Cross-origin request rejected"}), 403
         return "Cross-origin request rejected", 403
+
+    @app.errorhandler(429)
+    def handle_rate_limit_error(error):
+        if request.endpoint in {
+            "issue_profile_photo_challenge",
+            "submit_profile_photo_scan_stage",
+            "capture_profile_location",
+        }:
+            return jsonify({
+                "error": "Too many profile-photo requests. Wait briefly before trying again."
+            }), 429
+        return error
+
+    @app.errorhandler(413)
+    def handle_profile_upload_too_large(error):
+        if request.endpoint in {
+            "issue_profile_photo_challenge",
+            "submit_profile_photo_scan_stage",
+            "capture_profile_location",
+        }:
+            return jsonify({
+                "error": "The uploaded photo or scan frame exceeds the allowed size."
+            }), 413
+        return error
 
     @app.after_request
     def write_audit_event(response):

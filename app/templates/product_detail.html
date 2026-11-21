@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ listing.crop_name }} - Agri-Direct</title>
+    <title>{{ listing.commodity_name }} - Agri-Direct</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
@@ -259,6 +259,9 @@
             <a class="nav-link" href="/notifications-center">
                 <i class="fas fa-bell"></i> Notifications
             </a>
+            <a class="nav-link" href="/marketplace/my-purchases">
+                <i class="fas fa-shopping-bag"></i> My Purchases
+            </a>
             <a class="nav-link" href="/profile">
                 <i class="fas fa-user-circle"></i> Profile
             </a>
@@ -316,7 +319,7 @@
             <nav aria-label="breadcrumb">
                 <ol class="breadcrumb">
                     <li class="breadcrumb-item"><a href="/marketplace">Marketplace</a></li>
-                    <li class="breadcrumb-item active">{{ listing.crop_name }}</li>
+                    <li class="breadcrumb-item active">{{ listing.commodity_name }}</li>
                 </ol>
             </nav>
 
@@ -329,9 +332,9 @@
                             <div class="carousel-inner">
                                 {% for img in images %}
                                 <div class="carousel-item {% if loop.first %}active{% endif %}">
-                                    <img src="{{ url_for('static', filename='uploads/marketplace/' + img.image_filename) }}" 
+                                    <img src="{{ url_for('static', filename=('uploads/commodity_details/' if img.is_commodity_default else 'uploads/marketplace/') + img.image_filename) }}"
                                          class="d-block w-100" 
-                                         alt="{{ listing.crop_name }} - Image {{ loop.index }}"
+                                         alt="{{ listing.commodity_name }} - Image {{ loop.index }}"
                                          onerror="this.style.objectFit='fill'; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'400\' height=\'400\'%3E%3Crect fill=\'%23e9ecef\' width=\'400\' height=\'400\'/%3E%3Ctext x=\'200\' y=\'210\' font-family=\'Arial\' font-size=\'20\' fill=\'%236c757d\' text-anchor=\'middle\'%3ENo Image%3C/text%3E%3C/svg%3E'">
                                 </div>
                                 {% endfor %}
@@ -357,7 +360,7 @@
                             <div class="thumbnail-wrapper {% if loop.first %}active{% endif %}" 
                                  onclick="goToSlide({{ loop.index0 }})"
                                  data-slide="{{ loop.index0 }}">
-                                <img src="{{ url_for('static', filename='uploads/marketplace/' + img.image_filename) }}" 
+                                <img src="{{ url_for('static', filename=('uploads/commodity_details/' if img.is_commodity_default else 'uploads/marketplace/') + img.image_filename) }}"
                                      alt="Thumbnail {{ loop.index }}">
                             </div>
                             {% endfor %}
@@ -375,7 +378,7 @@
                 <div class="col-md-6">
                     <div class="product-details">
                         <div class="d-flex justify-content-between align-items-start mb-3">
-                            <h1>{{ listing.crop_name }}</h1>
+                            <h1>{{ listing.commodity_name }}</h1>
                             {% if listing.listing_type == 'preorder' %}
                             <span class="status-badge" style="background:#fff3cd;color:#856404;">Pre-order</span>
                             {% elif listing.listing_type == 'looking_for' %}
@@ -391,7 +394,7 @@
                         <div class="row mb-3">
                             <div class="col-6">
                                 <strong>
-                                    {% if listing.listing_type == 'looking_for' %}Quantity Wanted{% else %}Amount Available{% endif %}:
+                                    {% if listing.listing_type == 'looking_for' %}Quantity Wanted{% else %}Quantity Available{% endif %}:
                                 </strong>
                                 <span>{{ listing.amount }} {{ listing.unit or 'kg' }}</span>
                             </div>
@@ -442,14 +445,14 @@
                             <i class="fas fa-search"></i>
                             <strong>Looking For:</strong> this user wants to buy
                             <strong>{{ listing.amount }} {{ listing.unit or 'kg' }}</strong> of
-                            <strong>{{ listing.crop_name }}</strong> at up to
+                            <strong>{{ listing.commodity_name }}</strong> at up to
                             <strong>₱{{ "%.2f"|format(listing.price) }}/{{ listing.unit or 'kg' }}</strong>.
-                            Message them if you have this crop.
+                            Message them if you have this commodity.
                         </div>
                         {% elif listing.listing_type == 'preorder' %}
                         <div class="alert alert-warning small">
                             <i class="far fa-clock"></i>
-                            <strong>Pre-order:</strong> this crop will be ready on <strong>{{ listing.available_date[:16] }}</strong>.
+                            <strong>Pre-order:</strong> this commodity will be ready on <strong>{{ listing.available_date[:16] }}</strong>.
                             The seller will confirm your reservation first.
                         </div>
                         {% endif %}
@@ -485,16 +488,16 @@
                     {% for item in seller_other_listings %}
                     <div class="col-md-3 col-sm-6 mb-3" onclick="window.location.href='/marketplace/product/{{ item.id }}'">
                         <div class="card h-100">
-                            {% if item.main_image and item.thumbnail_verified %}
+                            {% if item.main_image %}
                             <img src="{{ url_for('static', filename='uploads/marketplace/' + item.main_image) }}" 
-                                 class="card-img-top" alt="{{ item.crop_name }}" style="height:150px; object-fit:cover;">
+                                 class="card-img-top" alt="{{ item.commodity_name }}" style="height:150px; object-fit:cover;">
                             {% else %}
                             <div class="card-img-top d-flex align-items-center justify-content-center bg-light" style="height:150px;">
                                 <i class="fas fa-seedling fa-2x text-muted"></i>
                             </div>
                             {% endif %}
                             <div class="card-body">
-                                <h6 class="card-title">{{ item.crop_name }}</h6>
+                                <h6 class="card-title">{{ item.commodity_name }}</h6>
                                 <p class="card-text text-success fw-bold">₱{{ "%.2f"|format(item.price) }}</p>
                                 <small class="text-muted">{{ item.amount }} {{ item.unit or 'kg' }} available</small>
                             </div>

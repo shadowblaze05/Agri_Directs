@@ -145,6 +145,10 @@ class Config:
         MAIL_SUPPRESS_SEND = _mail_suppress_override.lower() in {"1", "true", "yes", "on"}
 
     APP_BASE_URL = os.environ.get("APP_BASE_URL", "http://localhost:5000")
+    XENDIT_SECRET_KEY = os.environ.get("XENDIT_SECRET_KEY", "").strip()
+    XENDIT_WEBHOOK_TOKEN = os.environ.get("XENDIT_WEBHOOK_TOKEN", "").strip()
+    XENDIT_COUNTRY = os.environ.get("XENDIT_COUNTRY", "PH").strip().upper()
+    XENDIT_CURRENCY = os.environ.get("XENDIT_CURRENCY", "PHP").strip().upper()
 
     @staticmethod
     def validate(config):

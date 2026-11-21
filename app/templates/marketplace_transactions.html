@@ -26,6 +26,74 @@
         background: #f3f6f0;
         color: #253120;
       }
+      .app-topbar {
+        position: fixed;
+        inset: 0 0 auto;
+        height: 70px;
+        z-index: 1030;
+        background: linear-gradient(135deg, #1a3408 0%, #0f1f03 100%);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .app-sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        z-index: 1000;
+        width: 250px;
+        padding-top: 80px;
+        overflow-y: auto;
+        background: #1a3408;
+        color: white;
+      }
+      .app-sidebar .nav-link {
+        margin: 5px 10px;
+        padding: 12px 20px;
+        border-radius: 5px;
+        color: rgba(255, 255, 255, 0.8);
+      }
+      .app-sidebar .nav-link:hover,
+      .app-sidebar .nav-link.active {
+        color: white;
+        background: rgba(255, 255, 255, 0.12);
+      }
+      .app-sidebar .nav-link.active {
+        background: #4caf50;
+      }
+      .app-sidebar .cart-badge {
+        margin-left: 5px;
+        padding: 2px 8px;
+        border-radius: 50%;
+        background: #ff6b6b;
+        color: white;
+        font-size: 0.75rem;
+      }
+      .main-content {
+        margin: 70px 0 0 250px;
+        padding: 20px;
+      }
+      .dashboard-header,
+      .filter-panel {
+        border: 0;
+        border-radius: 8px;
+        background: white;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+      .dashboard-header {
+        padding: 22px;
+      }
+      .dashboard-header h1 {
+        color: #2d5016;
+      }
+      .filter-panel {
+        padding: 18px;
+      }
+      .filter-panel .form-control:focus,
+      .filter-panel .form-select:focus {
+        border-color: #78a84b;
+        box-shadow: 0 0 0 0.2rem rgba(76, 175, 80, 0.15);
+      }
+      .filter-result-count {
+        white-space: nowrap;
+      }
       .transactions-nav {
         background: linear-gradient(110deg, #1a3408, #315d1a);
       }
@@ -99,35 +167,30 @@
         min-height: 44px;
       }
       @media (max-width: 575.98px) {
-        .transactions-nav .container {
-          flex-wrap: wrap;
-          gap: 0.5rem;
-          padding-top: 0.5rem;
-          padding-bottom: 0.5rem;
-        }
-        .transactions-nav .navbar-brand {
+        .app-sidebar {
+          position: relative;
           width: 100%;
+          min-height: 0;
+          padding: 70px 0 6px;
         }
-        .transactions-nav .container > .d-flex {
-          width: 100%;
+        .app-sidebar .nav {
+          flex-direction: row !important;
+          overflow-x: auto;
         }
-        .transactions-nav .container > .d-flex .btn {
-          flex: 1 1 0;
+        .app-sidebar .nav-link {
+          flex: 0 0 auto;
+          margin: 3px;
+          padding: 9px 12px;
         }
-        .transaction-hero {
-          padding: 22px;
+        .main-content {
+          margin: 0;
+          padding: 12px;
         }
-        .transaction-hero h1 {
-          font-size: 1.8rem;
+        .dashboard-header {
+          padding: 17px;
         }
         .transaction-card .card-body {
           padding: 17px;
-        }
-        .transaction-hero .text-end {
-          text-align: left !important;
-        }
-        .transaction-hero .btn {
-          white-space: normal;
         }
         .progress-label {
           font-size: 0.62rem;
@@ -144,53 +207,56 @@
     </style>
   </head>
   <body>
-    <nav class="navbar navbar-dark transactions-nav">
-      <div class="container">
-        <a class="navbar-brand" href="{{ url_for('portal_home') }}"
-          ><i class="fas fa-leaf me-2"></i>Agri-Direct</a
-        >
-        <div class="d-flex gap-2">
-          {% if session.get('role') != 'buyer' %}
-          <a
-            class="btn btn-outline-light btn-sm"
-            href="{{ url_for('my_marketplace_listings') }}"
-            ><i class="fas fa-list me-1"></i>My Listings</a
-          >
-          {% endif %}
-          <a
-            class="btn btn-outline-light btn-sm"
-            href="{{ url_for('my_marketplace_purchases') }}"
-            ><i class="fas fa-bag-shopping me-1"></i>My Purchases</a
-          >
+    <nav class="navbar navbar-dark app-topbar">
+      <div class="container-fluid">
+        <a class="navbar-brand fw-bold ms-2" href="{{ url_for('portal_home') }}"><i class="fas fa-leaf me-2"></i>Agri-Direct</a>
+        <div class="d-flex align-items-center gap-2">
+          <span class="text-white d-none d-sm-inline"><i class="fas fa-user-circle me-1"></i>{{ session.get('user', 'User') }}</span>
+          <a class="btn btn-outline-light btn-sm" href="{{ url_for('profile') }}">Profile</a>
+          <a class="btn btn-light btn-sm" href="{{ url_for('logout') }}">Sign out</a>
         </div>
       </div>
     </nav>
-    <main class="container py-5">
-      <header class="transaction-hero mb-4">
-        <div class="eyebrow mb-2">Seller workspace</div>
-        <div
-          class="d-flex flex-wrap justify-content-between align-items-end gap-3"
-        >
+    <aside class="app-sidebar">
+      <nav class="nav flex-column" aria-label="Main navigation">
+        <a class="nav-link" href="/home"><i class="fas fa-home me-2"></i>Home</a>
+        <a class="nav-link" href="/dashboard"><i class="fas fa-chart-line me-2"></i>Dashboard</a>
+        {% if session.get('role') != 'buyer' %}
+        <a class="nav-link" href="/upload"><i class="fas fa-upload me-2"></i>Upload Harvest</a>
+        {% endif %}
+        {% if session.get('role') == 'admin' %}
+        <a class="nav-link" href="/market-intelligence"><i class="fas fa-brain me-2"></i>Market Intelligence</a>
+        {% endif %}
+        <a class="nav-link" href="/marketplace"><i class="fas fa-store me-2"></i>Marketplace</a>
+        <a class="nav-link" href="/knowledge"><i class="fas fa-book-open me-2"></i>Knowledge Hub</a>
+        <a class="nav-link" href="/messages"><i class="fas fa-comments me-2"></i>Messages</a>
+        <a class="nav-link" href="/notifications-center"><i class="fas fa-bell me-2"></i>Notifications</a>
+        <a class="nav-link" href="/marketplace/my-purchases"><i class="fas fa-shopping-bag me-2"></i>My Purchases</a>
+        <a class="nav-link" href="/profile"><i class="fas fa-user-circle me-2"></i>Profile</a>
+        <a class="nav-link" href="/marketplace/cart">
+          <i class="fas fa-shopping-cart me-2"></i>Cart
+          {% if cart_count > 0 %}<span class="cart-badge">{{ cart_count }}</span>{% endif %}
+        </a>
+        <a class="nav-link" href="/marketplace/my-preorders"><i class="fas fa-clock me-2"></i>My Pre-orders</a>
+        {% if session.get('role') != 'buyer' %}
+        <a class="nav-link" href="{{ url_for('my_marketplace_listings') }}"><i class="fas fa-list me-2"></i>My Listings</a>
+        <a class="nav-link active" href="{{ url_for('my_marketplace_transactions') }}" aria-current="page"><i class="fas fa-receipt me-2"></i>Transactions</a>
+        {% endif %}
+        {% if session.get('role') != 'buyer' %}
+        <a class="nav-link" href="/marketplace/my-preorder-requests"><i class="fas fa-inbox me-2"></i>Pre-order Requests</a>
+        {% endif %}
+        <a class="nav-link" href="/logout"><i class="fas fa-sign-out-alt me-2"></i>Logout</a>
+      </nav>
+    </aside>
+    <main class="main-content">
+      <div class="container-fluid px-0">
+      <header class="dashboard-header mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
           <div>
-            <h1 class="display-6 fw-bold mb-2">
-              <i class="fas fa-receipt me-2"></i>Transactions
-            </h1>
-            <p class="mb-0 opacity-75">
-              Keep buyers informed and manage every order from packing to
-              receipt.
-            </p>
+            <h1 class="h2 fw-bold mb-1"><i class="fas fa-receipt me-2"></i>Transactions</h1>
+            <p class="text-muted mb-0">Manage buyer orders from payment through delivery.</p>
           </div>
-          <div class="d-flex align-items-center gap-3">
-            <div class="text-end">
-              <div class="small opacity-75">Orders</div>
-              <div class="h3 fw-bold mb-0">{{ transactions|length }}</div>
-            </div>
-            <a
-              class="btn btn-light text-success fw-semibold"
-              href="{{ url_for('add_marketplace_listing') }}"
-              ><i class="fas fa-plus me-1"></i>New Listing</a
-            >
-          </div>
+          <a class="btn btn-success" href="{{ url_for('add_marketplace_listing') }}"><i class="fas fa-plus me-1"></i>New Listing</a>
         </div>
       </header>
 
@@ -204,19 +270,62 @@
       'completed' or order['buyer_confirmed'] %} {% set status_label =
       'Completed' %} {% set progress = 100 %} {% elif current_status ==
       'packing' %} {% set status_label = 'Packing' %} {% set progress = 25 %} {%
+      elif current_status == 'awaiting_payment' %} {% set status_label =
+      'Awaiting Payment' %} {% set progress = 0 %} {%
       elif current_status == 'to_ship' %} {% set status_label = 'To Ship' %} {%
       set progress = 50 %} {% elif current_status == 'to_receive' or
       order['delivery_confirmed'] %} {% set status_label = 'To Receive' %} {%
       set progress = 75 %} {% else %} {% set status_label = 'To Pay' %} {% set
       progress = 0 %} {% endif %}
 
-      <article class="card transaction-card shadow-sm mb-4">
+      {% if loop.first %}
+      <section class="card filter-panel mb-4" aria-label="Filter transactions">
+        <div class="row g-3 align-items-end">
+          <div class="col-lg-5">
+            <label class="form-label fw-semibold" for="transaction-search">Search orders</label>
+            <div class="input-group">
+              <span class="input-group-text bg-white"><i class="fas fa-search text-muted"></i></span>
+              <input id="transaction-search" class="form-control" type="search" placeholder="Commodity, buyer, email, order number...">
+            </div>
+          </div>
+          <div class="col-sm-6 col-lg-2">
+            <label class="form-label fw-semibold" for="transaction-status-filter">Status</label>
+            <select id="transaction-status-filter" class="form-select">
+              <option value="">All statuses</option>
+              <option value="awaiting_payment">Awaiting payment</option>
+              <option value="to_pay">To pay</option>
+              <option value="packing">Packing</option>
+              <option value="to_ship">To ship</option>
+              <option value="to_receive">To receive</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+          <div class="col-sm-6 col-lg-2">
+            <label class="form-label fw-semibold" for="transaction-date-from">From</label>
+            <input id="transaction-date-from" class="form-control" type="date">
+          </div>
+          <div class="col-sm-6 col-lg-2">
+            <label class="form-label fw-semibold" for="transaction-date-to">To</label>
+            <input id="transaction-date-to" class="form-control" type="date">
+          </div>
+          <div class="col-sm-6 col-lg-1">
+            <button id="transaction-filter-clear" class="btn btn-outline-secondary w-100" type="button" aria-label="Clear filters" title="Clear filters"><i class="fas fa-times"></i></button>
+          </div>
+        </div>
+        <div class="small text-muted mt-3"><span id="transaction-result-count">{{ transactions|length }}</span> of {{ transactions|length }} orders</div>
+      </section>
+      {% endif %}
+
+      <article class="card transaction-card shadow-sm mb-4 transaction-item"
+        data-status="{{ status_label|lower|replace(' ', '_') }}"
+        data-date="{{ (order['order_date'] or '')[:10] }}"
+        data-search="{{ [order['id'], order['commodity_name'], order['buyer_username'], buyer_name, order['buyer_email'], order['buyer_phone_number'], order['buyer_location'], order['delivery_city'], order['delivery_province'], order['delivery_barangay']]|join(' ')|lower }}">
         <div class="card-body p-4">
           <div
             class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3"
           >
             <div>
-              <h2 class="h4 mb-1">{{ order['crop_name'] }}</h2>
+              <h2 class="h4 mb-1">{{ order['commodity_name'] }}</h2>
               <div class="text-muted small">
                 Order #{{ order['id'] }} {% if order['order_date'] %} · Placed
                 {{ order['order_date'][:16] }}{% endif %}
@@ -342,7 +451,20 @@
               </div>
 
               <div class="mt-4">
-                {% if current_status == 'to_pay' or current_status == 'sold' %}
+                {% if order['payment_method'] == 'cod' %}
+                <p class="small text-muted mb-2">
+                  <i class="fas fa-money-bill-wave me-1"></i>Cash on delivery
+                </p>
+                {% elif order['payment_method'] == 'xendit' %}
+                <p class="small text-muted mb-2">
+                  <i class="fas fa-lock me-1"></i>Online payment via Xendit
+                </p>
+                {% endif %}
+                {% if current_status == 'awaiting_payment' %}
+                <p class="small text-muted mb-0">
+                  <i class="fas fa-clock me-1"></i>Waiting for the buyer's payment confirmation.
+                </p>
+                {% elif current_status == 'to_pay' or current_status == 'sold' %}
                 <form
                   method="POST"
                   action="{{ url_for('update_marketplace_order_status', listing_id=order['id']) }}"
@@ -400,6 +522,48 @@
         </div>
       </div>
       {% endfor %}
+      <div id="transaction-no-results" class="alert alert-light border text-center py-4" hidden>No orders match your search and filters.</div>
+      </div>
     </main>
+    <script>
+      (() => {
+        const cards = Array.from(document.querySelectorAll(".transaction-item"));
+        const search = document.getElementById("transaction-search");
+        const status = document.getElementById("transaction-status-filter");
+        const dateFrom = document.getElementById("transaction-date-from");
+        const dateTo = document.getElementById("transaction-date-to");
+        const count = document.getElementById("transaction-result-count");
+        const noResults = document.getElementById("transaction-no-results");
+        const clear = document.getElementById("transaction-filter-clear");
+        if (!search || !status || !dateFrom || !dateTo) return;
+
+        const filterOrders = () => {
+          const query = search.value.trim().toLocaleLowerCase();
+          let visible = 0;
+          cards.forEach((card) => {
+            const date = card.dataset.date || "";
+            const matches = (!query || card.dataset.search.includes(query))
+              && (!status.value || card.dataset.status === status.value)
+              && (!dateFrom.value || (date && date >= dateFrom.value))
+              && (!dateTo.value || (date && date <= dateTo.value));
+            card.hidden = !matches;
+            if (matches) visible += 1;
+          });
+          if (count) count.textContent = visible;
+          if (noResults) noResults.hidden = visible !== 0 || cards.length === 0;
+        };
+        [search, status, dateFrom, dateTo].forEach((control) => {
+          control.addEventListener(control === search ? "input" : "change", filterOrders);
+        });
+        clear.addEventListener("click", () => {
+          search.value = "";
+          status.value = "";
+          dateFrom.value = "";
+          dateTo.value = "";
+          filterOrders();
+        });
+        filterOrders();
+      })();
+    </script>
   </body>
 </html>

@@ -12,35 +12,34 @@ from sqlalchemy.orm import relationship
 from ..base import Column, Model
 
 
-class Crop(Model):
-    __tablename__ = "crops"
+class Commodity(Model):
+    __tablename__ = "commodities"
 
     id = Column(Integer, primary_key=True)
-    crops_name = Column(String(128), unique=True, nullable=False)
+    commodity_name = Column(String(128), unique=True, nullable=False)
+    description = Column(Text, nullable=True)
+    default_image = Column(String(255), nullable=True)
+    default_price_unit = Column(String(32), nullable=False, default="kg", server_default="kg")
 
     category_id = Column(
         Integer,
-        ForeignKey("crop_categories.id"),
+        ForeignKey("commodity_categories.id"),
         nullable=True
     )
     pricing = relationship(
-        "CropPricing",
-        back_populates="crop",
+        "CommodityPricing",
+        back_populates="commodity",
         uselist=False,
         cascade="all, delete-orphan",
     )
 
 
-class CropPricing(Model):
-    __tablename__ = "crop_pricing"
+class CommodityPricing(Model):
+    __tablename__ = "commodity_pricing"
     __table_args__ = (
         CheckConstraint(
             "pricing_mode IN ('range', 'bounds')",
-            name="ck_crop_pricing_mode",
-        ),
-        CheckConstraint(
-            "price_unit = 'kg'",
-            name="ck_crop_pricing_unit",
+            name="ck_commodity_pricing_mode",
         ),
         CheckConstraint(
             "(pricing_mode = 'range' AND reference_price > 0 "
@@ -51,22 +50,22 @@ class CropPricing(Model):
             "AND maximum_price >= minimum_price AND price_range IS NULL "
             "AND (reference_price IS NULL OR reference_price BETWEEN "
             "minimum_price AND maximum_price))",
-            name="ck_crop_pricing_values",
+            name="ck_commodity_pricing_values",
         ),
     )
 
-    crop_id = Column(
+    commodity_id = Column(
         Integer,
-        ForeignKey("crops.id", ondelete="CASCADE"),
+        ForeignKey("commodities.id", ondelete="CASCADE"),
         primary_key=True,
     )
     pricing_mode = Column(String(16), nullable=False)
-    price_unit = Column(String(16), nullable=False, default="kg", server_default="kg")
+    price_unit = Column(String(32), nullable=False, default="kg", server_default="kg")
     reference_price = Column(Numeric(10, 2), nullable=True)
     price_range = Column(Numeric(10, 2), nullable=True)
     minimum_price = Column(Numeric(10, 2), nullable=True)
     maximum_price = Column(Numeric(10, 2), nullable=True)
-    crop = relationship("Crop", back_populates="pricing")
+    commodity = relationship("Commodity", back_populates="pricing")
 
 
 class Harvest(Model):
@@ -74,9 +73,9 @@ class Harvest(Model):
 
     id = Column(Integer, primary_key=True)
 
-    crop_id = Column(
+    commodity_id = Column(
         Integer,
-        ForeignKey("crops.id"),
+        ForeignKey("commodities.id"),
         nullable=False
     )
 
@@ -100,14 +99,14 @@ class Inventory(Model):
 
     id = Column(Integer, primary_key=True)
 
-    crop_id = Column(
+    commodity_id = Column(
         Integer,
-        ForeignKey("crops.id"),
+        ForeignKey("commodities.id"),
         nullable=False
     )
 
     quantity = Column(Integer)
-    crop_name = Column(String(128))
+    commodity_name = Column(String(128))
     farmer = Column(String(128))
     farmer_user_id = Column(
         Integer,
@@ -141,10 +140,22 @@ class Inventory(Model):
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
 
-class CropCategory(Model):
-    __tablename__ = "crop_categories"
+class CommodityCategory(Model):
+    __tablename__ = "commodity_categories"
 
     id = Column(Integer, primary_key=True)
     name = Column(String(128), unique=True, nullable=False)
     description = Column(Text)
+    default_price_unit = Column(String(32), nullable=False, default="kg", server_default="kg")
+
+
+class CommodityPriceUnit(Model):
+    __tablename__ = "commodity_price_units"
+
+    unit = Column(String(32), primary_key=True)
+
+
+Crop = Commodity
+CropPricing = CommodityPricing
+CropCategory = CommodityCategory
     

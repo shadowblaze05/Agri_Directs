@@ -15,7 +15,8 @@
   <div class="row g-4">
     {% for title, description, count, icon, endpoint in [
       ('Users & roles', 'Manage accounts, roles, passwords, and access.', stats.users, 'users', 'admin_users'),
-      ('Crop catalog', 'Manage crops and crop categories.', stats.crops, 'seedling', 'admin_catalog'),
+      ('Commodity catalog', 'Manage commodities and their categories.', stats.commodities, 'seedling', 'admin_catalog'),
+      ('Commodity details & images', 'Edit commodity descriptions and default images shown on listings.', stats.commodities, 'images', 'admin_commodity_details'),
       ('Knowledge', 'Manage articles, drafts, and knowledge categories.', stats.articles, 'book-open', 'admin_knowledge'),
       ('Inventory', 'Review and moderate farmer inventory records.', 'View records', 'boxes-stacked', 'admin_inventory'),
       ('Marketplace', 'Create, edit, and remove marketplace listings.', stats.marketplace, 'store', 'admin_marketplace'),

@@ -1,6 +1,7 @@
 from decimal import Decimal, InvalidOperation
+import re
 
-PRICE_UNITS = {"kg"}
+PRICE_UNITS = {"kg", "pc", "pack"}
 
 
 def parse_pricing_rule(
@@ -13,8 +14,11 @@ def parse_pricing_rule(
 ):
     if pricing_mode not in {"range", "bounds"}:
         raise ValueError("Price rule must be 'range' or 'bounds'.")
-    if price_unit not in PRICE_UNITS:
-        raise ValueError("The only supported price unit is kg.")
+    if (
+        not isinstance(price_unit, str)
+        or not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", price_unit)
+    ):
+        raise ValueError("Choose a valid registered price unit.")
 
     def read_price(value, label, required=False):
         value = str(value).strip() if value is not None else ""
@@ -95,7 +99,7 @@ def price_bounds(pricing):
         "reference": float(reference) if reference is not None else None,
         "minimum": float(minimum),
         "maximum": float(maximum),
-        "unit": "kg",
+        "unit": pricing.get("price_unit") or "kg",
     }
 
 

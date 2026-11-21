@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Top Crop - Agri-Direct</title>
+    <title>Top Commodity - Agri-Direct</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
@@ -16,14 +16,14 @@
     </style>
 </head>
 <body class="analytics-page">
-    {% set analytics_page_title = 'Top Crop' %}
+    {% set analytics_page_title = 'Top Commodity' %}
     {% include '_analytics_navigation.html' %}
     <main class="analytics-content">
         <div class="analytics-page-header">
             <div>
-                <div class="analytics-eyebrow">Crop performance</div>
-                <h1><i class="fas fa-crown"></i> Top Crop</h1>
-                <p>See which crops contribute the most to your harvest over time.</p>
+                <div class="analytics-eyebrow">Commodity performance</div>
+                <h1><i class="fas fa-crown"></i> Top Commodity</h1>
+                <p>See which commodities contribute the most to your inventory over time.</p>
             </div>
             <a href="/dashboard" class="btn btn-outline-success"><i class="fas fa-arrow-left me-1"></i> Back to Dashboard</a>
         </div>
@@ -67,12 +67,12 @@
             <div class="col-md-6">
                 <div class="card shadow-sm">
                     <div class="card-body">
-                        <h5 class="card-title">Top Performing Crop</h5>
+                        <h5 class="card-title">Top Performing Commodity</h5>
                         {% if top %}
-                        <p class="display-5 mb-1 text-success">{{ top['crop_name'] }}</p>
-                        <p class="mb-0 text-muted">Total quantity: <strong>{{ top['total'] }}</strong></p>
+                        <p class="display-5 mb-1 text-success">{{ top['commodity_name'] }}</p>
+                        <p class="mb-0 text-muted">Total quantity: <strong>{{ top['total'] }} kg</strong></p>
                         {% else %}
-                        <p class="text-muted">No crop data available yet.</p>
+                        <p class="text-muted">No commodity data available yet.</p>
                         {% endif %}
                     </div>
                 </div>
@@ -80,11 +80,11 @@
             <div class="col-md-6">
                 <div class="card shadow-sm chart-card">
                     <div class="card-body">
-                        <h5 class="card-title">Top 5 Crops</h5>
+                        <h5 class="card-title">Top 5 Commodities</h5>
                         {% if top_crops %}
                         <canvas id="topCropChart" height="220"></canvas>
                         {% else %}
-                        <p class="text-muted">No crop data available yet.</p>
+                        <p class="text-muted">No commodity data available yet.</p>
                         {% endif %}
                     </div>
                 </div>
@@ -93,28 +93,28 @@
 
         <div class="card shadow-sm">
             <div class="card-header bg-light">
-                <h5 class="mb-0"><i class="fas fa-list"></i> Top Crop List</h5>
+                <h5 class="mb-0"><i class="fas fa-list"></i> Top Commodity List</h5>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
                         <thead>
                             <tr>
-                                <th>Crop</th>
-                                <th>Total Quantity</th>
+                                <th>Commodity</th>
+                                <th>Total Quantity (kg)</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% if top_crops %}
                                 {% for crop in top_crops[:5] %}
                                 <tr>
-                                    <td>{{ crop['crop_name'] }}</td>
-                                    <td>{{ crop['total'] }}</td>
+                                    <td>{{ crop['commodity_name'] }}</td>
+                                    <td>{{ crop['total'] }} kg</td>
                                 </tr>
                                 {% endfor %}
                             {% else %}
                                 <tr>
-                                    <td colspan="2" class="text-center text-muted">No crop data yet.</td>
+                                    <td colspan="2" class="text-center text-muted">No commodity data yet.</td>
                                 </tr>
                             {% endif %}
                         </tbody>
@@ -127,7 +127,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         {% if top_crops %}
-        const topCropLabels = {{ top_crops[:5] | map(attribute='crop_name') | list | tojson }};
+        const topCropLabels = {{ top_crops[:5] | map(attribute='commodity_name') | list | tojson }};
         const topCropValues = {{ top_crops[:5] | map(attribute='total') | list | tojson }};
 
         new Chart(document.getElementById('topCropChart'), {
@@ -154,7 +154,7 @@
         {% endif %}
     </script>
     <script>
-        // Summary scripts for top_crop page
+        // Summary scripts for top_commodity page
         let topMonthlyChart = null;
         let topYearlyChart = null;
 

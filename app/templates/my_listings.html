@@ -205,6 +205,7 @@
             <a class="nav-link" href="/knowledge"><i class="fas fa-book-open"></i> Knowledge Hub</a>
             <a class="nav-link" href="/messages"><i class="fas fa-comments"></i> Messages</a>
             <a class="nav-link" href="/notifications-center"><i class="fas fa-bell"></i> Notifications</a>
+            <a class="nav-link" href="/marketplace/my-purchases"><i class="fas fa-shopping-bag"></i> My Purchases</a>
             <a class="nav-link" href="/profile"><i class="fas fa-user-circle"></i> Profile</a>
             <a class="nav-link" href="/marketplace/cart">
                 <i class="fas fa-shopping-cart"></i> Cart
@@ -274,14 +275,19 @@
                 {% for listing in active_listings %}
                 <div class="listing-card card" onclick="window.location.href='/marketplace/product/{{ listing['id'] }}'">
                     <div class="card-img-wrapper">
-                        {% if listing['main_image'] and listing['thumbnail_verified'] %}
+                        {% if listing['main_image'] %}
                         <img src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}"
                              class="card-img-top"
-                             alt="{{ listing['crop_name'] }}"
+                             alt="{{ listing['commodity_name'] }}"
                              onerror="this.style.display='none'; this.parentElement.querySelector('.image-count-badge').style.display='none'; this.parentElement.innerHTML='<div class=\'card-img-top-placeholder\'><i class=\'fas fa-seedling\'></i></div>'">
                         <span class="image-count-badge">
                             <i class="fas fa-image"></i> 1
                         </span>
+                        {% elif listing['commodity_default_image'] %}
+                        <img src="{{ url_for('static', filename='uploads/commodity_details/' + listing['commodity_default_image']) }}"
+                             class="card-img-top"
+                             alt="{{ listing['commodity_name'] }}"
+                             onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\'card-img-top-placeholder\'><i class=\'fas fa-seedling\'></i></div>'">
                         {% else %}
                         <div class="card-img-top-placeholder">
                             <i class="fas fa-seedling"></i>
@@ -290,7 +296,7 @@
                     </div>
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start">
-                            <h5 class="card-title">{{ listing['crop_name'] }}</h5>
+                            <h5 class="card-title">{{ listing['commodity_name'] }}</h5>
                             {% if listing['listing_type'] == 'preorder' %}
                             <span class="status-badge status-preorder">Pre-order</span>
                             {% else %}
@@ -299,7 +305,7 @@
                         </div>
                         <div class="row mt-3">
                             <div class="col-6">
-                                <small class="text-muted">Amount</small>
+                                <small class="text-muted">Quantity</small>
                                 <h6>{{ listing['amount'] }} {{ listing['unit'] or 'kg' }}</h6>
                             </div>
                             <div class="col-6 text-end">
@@ -349,9 +355,19 @@
             <div class="listing-grid">
                 {% for listing in looking_for_listings %}
                 <div class="listing-card card" onclick="window.location.href='/marketplace/product/{{ listing['id'] }}'">
+                    <div class="card-img-wrapper">
+                        {% if listing['commodity_default_image'] %}
+                        <img src="{{ url_for('static', filename='uploads/commodity_details/' + listing['commodity_default_image']) }}"
+                             class="card-img-top"
+                             alt="{{ listing['commodity_name'] }}"
+                             onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\'card-img-top-placeholder\'><i class=\'fas fa-seedling\'></i></div>'">
+                        {% else %}
+                        <div class="card-img-top-placeholder"><i class="fas fa-seedling"></i></div>
+                        {% endif %}
+                    </div>
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start">
-                            <h5 class="card-title">{{ listing['crop_name'] }}</h5>
+                            <h5 class="card-title">{{ listing['commodity_name'] }}</h5>
                             <span class="status-badge status-looking-for">Looking For</span>
                         </div>
                         <div class="row mt-3">
@@ -394,10 +410,15 @@
                 {% for listing in preorder_requests %}
                 <div class="listing-card card" onclick="window.location.href='/marketplace/my-preorder-requests'">
                     <div class="card-img-wrapper">
-                        {% if listing['main_image'] and listing['thumbnail_verified'] %}
+                        {% if listing['main_image'] %}
                         <img src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}"
                              class="card-img-top"
-                             alt="{{ listing['crop_name'] }}"
+                             alt="{{ listing['commodity_name'] }}"
+                             onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\'card-img-top-placeholder\'><i class=\'fas fa-seedling\'></i></div>'">
+                        {% elif listing['commodity_default_image'] %}
+                        <img src="{{ url_for('static', filename='uploads/commodity_details/' + listing['commodity_default_image']) }}"
+                             class="card-img-top"
+                             alt="{{ listing['commodity_name'] }}"
                              onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\'card-img-top-placeholder\'><i class=\'fas fa-seedling\'></i></div>'">
                         {% else %}
                         <div class="card-img-top-placeholder">
@@ -407,7 +428,7 @@
                     </div>
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start">
-                            <h5 class="card-title">{{ listing['crop_name'] }}</h5>
+                            <h5 class="card-title">{{ listing['commodity_name'] }}</h5>
                             {% if listing['preorder_status'] == 'pending' %}
                             <span class="status-badge status-traded">Pending</span>
                             {% elif listing['preorder_status'] == 'confirmed' %}
@@ -420,7 +441,7 @@
                         </div>
                         <div class="row mt-3">
                             <div class="col-6">
-                                <small class="text-muted">Amount</small>
+                                <small class="text-muted">Quantity</small>
                                 <h6>{{ listing['amount'] }} {{ listing['unit'] or 'kg' }}</h6>
                             </div>
                             <div class="col-6 text-end">
@@ -457,10 +478,15 @@
                 {% for listing in traded_listings %}
                 <div class="listing-card card" onclick="window.location.href='/marketplace/product/{{ listing['id'] }}'">
                     <div class="card-img-wrapper">
-                        {% if listing['main_image'] and listing['thumbnail_verified'] %}
+                        {% if listing['main_image'] %}
                         <img src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}"
                              class="card-img-top"
-                             alt="{{ listing['crop_name'] }}"
+                             alt="{{ listing['commodity_name'] }}"
+                             onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\'card-img-top-placeholder\'><i class=\'fas fa-seedling\'></i></div>'">
+                        {% elif listing['commodity_default_image'] %}
+                        <img src="{{ url_for('static', filename='uploads/commodity_details/' + listing['commodity_default_image']) }}"
+                             class="card-img-top"
+                             alt="{{ listing['commodity_name'] }}"
                              onerror="this.style.display='none'; this.parentElement.innerHTML='<div class=\'card-img-top-placeholder\'><i class=\'fas fa-seedling\'></i></div>'">
                         {% else %}
                         <div class="card-img-top-placeholder">
@@ -470,12 +496,12 @@
                     </div>
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start">
-                            <h5 class="card-title">{{ listing['crop_name'] }}</h5>
+                            <h5 class="card-title">{{ listing['commodity_name'] }}</h5>
                             <span class="status-badge status-traded">Traded</span>
                         </div>
                         <div class="row mt-3">
                             <div class="col-6">
-                                <small class="text-muted">Amount</small>
+                                <small class="text-muted">Quantity</small>
                                 <h6>{{ listing['amount'] }} {{ listing['unit'] or 'kg' }}</h6>
                             </div>
                             <div class="col-6 text-end">

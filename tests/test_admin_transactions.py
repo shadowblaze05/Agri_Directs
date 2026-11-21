@@ -21,6 +21,8 @@ class FakeCursor:
         return self
 
     def fetchone(self):
+        if "SELECT auth_version FROM users" in self.calls[-1][0]:
+            return {"auth_version": 0}
         if "SELECT role, is_active FROM users" in self.calls[-1][0]:
             return {"role": self.role, "is_active": 1}
         return {"total": 2, "completed": 1}
@@ -29,7 +31,7 @@ class FakeCursor:
         return [
             {
                 "id": 12,
-                "crop_name": "Tomatoes",
+                "commodity_name": "Tomatoes",
                 "username": "farmer",
                 "seller_name": "farmer",
                 "buyer_username": "buyer",
@@ -49,7 +51,7 @@ class FakeCursor:
             },
             {
                 "id": 13,
-                "crop_name": "Sweet corn",
+                "commodity_name": "Sweet corn",
                 "username": "farmer",
                 "seller_name": "farmer",
                 "buyer_username": "buyer2",
@@ -150,11 +152,12 @@ def test_admin_transactions_query_includes_all_order_states_not_open_listings(tm
         with db.engine.begin() as connection:
             connection.execute(text(
                 "CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, role TEXT, "
-                "is_active INTEGER NOT NULL DEFAULT 1)"
+                "is_active INTEGER NOT NULL DEFAULT 1, "
+                "auth_version INTEGER NOT NULL DEFAULT 0)"
             ))
             connection.execute(text("""
                 CREATE TABLE marketplace (
-                    id INTEGER PRIMARY KEY, user_id INTEGER, username TEXT, crop_name TEXT,
+                    id INTEGER PRIMARY KEY, user_id INTEGER, username TEXT, commodity_name TEXT,
                     buyer_username TEXT, amount INTEGER, preorder_quantity INTEGER,
                     unit TEXT, price FLOAT, listing_type TEXT, order_status TEXT,
                     preorder_status TEXT, status TEXT, order_date TEXT, delivery_date TEXT,
@@ -168,7 +171,7 @@ def test_admin_transactions_query_includes_all_order_states_not_open_listings(tm
             ))
             connection.execute(text("""
                 INSERT INTO marketplace (
-                    id, user_id, username, crop_name, buyer_username, amount, unit, price,
+                    id, user_id, username, commodity_name, buyer_username, amount, unit, price,
                     listing_type, order_status, status, order_date, delivery_confirmed,
                     buyer_confirmed, listing_date
                 ) VALUES

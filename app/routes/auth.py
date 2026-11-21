@@ -15,7 +15,7 @@ from .. import legacy as core
 from ..password_policy import password_policy_error
 from ..legacy import logger
 from ..models.database import get_db, update_analytics
-from ..services.auth_service import generate_jwt_token, token_required, verify_jwt_token
+from ..services.auth_service import generate_jwt_token, token_required
 from ..services.admin_notification_service import send_notification_email
 from ..services.geotag_service import validate_coordinates, verify_crop_location
 from ..services.profile_service import missing_harvest_profile_requirements
@@ -79,7 +79,8 @@ def login():
         cur = conn.cursor()
 
         cur.execute(
-            "SELECT username, password, role, is_active, is_verified FROM users WHERE username=? OR email=?",
+            "SELECT username, password, role, is_active, is_verified, auth_version "
+            "FROM users WHERE username=? OR email=?",
             (identifier, identifier),
         )
         user = cur.fetchone()
@@ -112,6 +113,7 @@ def login():
                 session.clear()
                 session["user"] = user["username"]
                 session["role"] = user["role"] if user["role"] else 'buyer'
+                session["auth_version"] = user["auth_version"]
                 logger.info(f"User {user['username']} logged in")
                 return redirect("/home")
             else:
@@ -537,7 +539,10 @@ def reset_password():
         return render_template("reset_password.html")
 
     hashed_password = generate_password_hash(new_password)
-    cur.execute("UPDATE users SET password = ? WHERE id = ?", (hashed_password, user_id))
+    cur.execute(
+        "UPDATE users SET password = ?, auth_version = auth_version + 1 WHERE id = ?",
+        (hashed_password, user_id),
+    )
     conn.commit()
     conn.close()
     send_notification_email(
@@ -566,7 +571,8 @@ def get_token():
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "SELECT username, password, role, is_active, is_verified FROM users WHERE username=?",
+        "SELECT username, password, role, is_active, is_verified, auth_version "
+        "FROM users WHERE username=?",
         (username,),
     )
     user = cur.fetchone()
@@ -582,7 +588,7 @@ def get_token():
         return jsonify({"error": "Account is inactive"}), 403
     g.audit_actor = user["username"]
     g.audit_role = user["role"] or "user"
-    token = generate_jwt_token(username)
+    token = generate_jwt_token(username, user["auth_version"])
     if not token:
         return jsonify({"error": "Failed to generate token"}), 500
     
@@ -597,8 +603,9 @@ def api_harvest():
             return jsonify({"error": "Submit harvest data as a JSON object"}), 400
         
         # Validate input
-        if not data.get("crop_name") or not data.get("quantity"):
-            return jsonify({"error": "Missing crop_name or quantity"}), 400
+        commodity_name = data.get("commodity_name") or data.get("crop_name")
+        if not commodity_name or not data.get("quantity"):
+            return jsonify({"error": "Missing commodity_name/crop_name or quantity"}), 400
 
         # Require location in API submissions
         if not data.get("location"):
@@ -611,10 +618,7 @@ def api_harvest():
         except (TypeError, ValueError):
             return jsonify({"error": "Quantity must be a number"}), 400
         
-        token = request.headers.get("Authorization")
-        username = verify_jwt_token(token)
-        if not username:
-            return jsonify({"error": "Invalid or expired token"}), 401
+        username = g.audit_actor
 
         latitude = longitude = capture_time = None
         latitude_value = data.get("latitude")
@@ -643,8 +647,9 @@ def api_harvest():
         cur = conn.cursor()
         cur.execute(
             "SELECT first_name, last_name, email, profile_picture, profile_photo_captured_at, "
+            "profile_photo_scan_verified_at, "
             "location, psgc_location, geotag_location, location_latitude, location_longitude, "
-            "location_verified, is_active, role "
+            "is_active, role, auth_version "
             "FROM users WHERE username=?",
             (username,),
         )
@@ -655,6 +660,9 @@ def api_harvest():
         if not profile["is_active"]:
             conn.close()
             return jsonify({"error": "The authenticated account is inactive"}), 403
+        if profile["auth_version"] != g.jwt_auth_version:
+            conn.close()
+            return jsonify({"error": "Invalid or expired token"}), 401
         if (profile["role"] or "user") not in {"seller", "user", "admin"}:
             conn.close()
             return jsonify({"error": "Only Sellers can submit harvest records"}), 403
@@ -667,7 +675,10 @@ def api_harvest():
                 "missing_profile_requirements": missing_requirements,
             }), 403
 
-        has_reference_location = bool(profile["location_verified"])
+        has_reference_location = (
+            profile["location_latitude"] is not None
+            and profile["location_longitude"] is not None
+        )
         proximity_status, distance = verify_crop_location(
             profile["location_latitude"] if has_reference_location else None,
             profile["location_longitude"] if has_reference_location else None,
@@ -675,19 +686,22 @@ def api_harvest():
             longitude,
             current_app.config["MAX_CROP_DISTANCE_METERS"],
         )
-        notes = ["API submissions do not include crop photo evidence."]
+        notes = [
+            "API submissions do not include commodity photo evidence.",
+            "GPS coordinates and timestamp are self-reported; proximity is not verification.",
+        ]
         if not has_reference_location:
-            notes.append("Farmer has no captured reference location.")
+            notes.append("Farmer has no saved reference coordinates.")
         if latitude is None or capture_time is None:
             notes.append("Harvest GPS capture is missing or incomplete.")
         verification_status = "manual_review"
 
         cur.execute("""
         INSERT INTO inventory(
-            crop_id, quantity, farmer, date_received, location, latitude, longitude,
+            commodity_id, quantity, farmer, date_received, location, latitude, longitude,
             capture_time, distance_from_user, verification_status, verification_notes
         )
-        SELECT id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM crops WHERE crops_name=?
+        SELECT id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM commodities WHERE commodity_name=?
         """, (
             quantity,
             username,
@@ -699,20 +713,21 @@ def api_harvest():
             distance,
             verification_status,
             " ".join(notes),
-            data["crop_name"].strip(),
+            commodity_name.strip(),
         ))
         if cur.rowcount == 0:
             conn.close()
-            return jsonify({"error": "Crop was not found"}), 404
+            return jsonify({"error": "Commodity was not found"}), 404
         
         conn.commit()
         conn.close()
         update_analytics()
         
-        logger.info(f"Harvest recorded via API: {data['crop_name']} x{quantity} by {username}")
+        logger.info(f"Harvest recorded via API: {commodity_name} x{quantity} by {username}")
         return jsonify({
             "status": "harvest recorded",
-            "crop": data["crop_name"],
+            "crop": commodity_name,
+            "commodity": commodity_name,
             "quantity": quantity,
             "verification_status": verification_status,
             "proximity_status": proximity_status,
@@ -727,7 +742,7 @@ def api_harvest():
 
 def logout():
     session.clear()
-    return redirect(url_for("login"))
+    return redirect(url_for("home"))
 
 # Preserve decorator ordering from the legacy module.
 api_harvest = token_required(api_harvest)

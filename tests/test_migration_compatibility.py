@@ -1,9 +1,12 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import create_engine, inspect, text
+
+from app.models.database import PostgreSQLCursor
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,6 +37,16 @@ def run_downgrade(connection, migration, monkeypatch):
         Operations(MigrationContext.configure(connection)),
     )
     migration.downgrade()
+
+
+def test_legacy_inventory_insert_rejects_invalid_column_names():
+    cursor = PostgreSQLCursor()
+
+    with pytest.raises(ValueError, match="invalid column names"):
+        cursor.execute(
+            "INSERT INTO inventory (crop_name, location; DROP TABLE users) VALUES (?, ?)",
+            ("Wheat", "Farm"),
+        )
 
 
 def test_schema_ahead_of_revision_can_upgrade_without_duplicate_columns_or_data_loss(monkeypatch):
@@ -120,6 +133,93 @@ def test_missing_legacy_columns_are_added_by_upgrade(monkeypatch):
         }
         assert "thumbnail_verified" in {
             column["name"] for column in inspect(connection).get_columns("marketplace")
+        }
+
+
+def test_auth_version_migration_defaults_existing_users_to_zero(monkeypatch):
+    engine = create_engine("sqlite://")
+    migration = load_migration("cfe42a17b690_revoke_auth_on_password_change.py")
+    with engine.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL)"
+        ))
+        connection.execute(text(
+            "INSERT INTO users (id, username) VALUES (1, 'existing-user')"
+        ))
+
+        run_upgrade(connection, migration, monkeypatch)
+
+        assert connection.execute(
+            text("SELECT auth_version FROM users WHERE id=1")
+        ).scalar_one() == 0
+        connection.execute(
+            text("INSERT INTO users (id, username) VALUES (2, 'new-user')")
+        )
+        assert connection.execute(
+            text("SELECT auth_version FROM users WHERE id=2")
+        ).scalar_one() == 0
+
+
+def test_auth_version_migration_preserves_existing_column_and_repairs_nulls(monkeypatch):
+    engine = create_engine("sqlite://")
+    migration = load_migration("cfe42a17b690_revoke_auth_on_password_change.py")
+    with engine.begin() as connection:
+        connection.execute(text("""
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                username TEXT NOT NULL,
+                auth_version INTEGER
+            )
+        """))
+        connection.execute(text(
+            "INSERT INTO users (id, username, auth_version) "
+            "VALUES (1, 'existing-user', NULL), (2, 'versioned-user', 4)"
+        ))
+
+        run_upgrade(connection, migration, monkeypatch)
+
+        assert connection.execute(
+            text("SELECT auth_version FROM users WHERE id=1")
+        ).scalar_one() == 0
+        assert connection.execute(
+            text("SELECT auth_version FROM users WHERE id=2")
+        ).scalar_one() == 4
+
+
+def test_profile_photo_privacy_migration_defaults_existing_photos_to_private(monkeypatch):
+    engine = create_engine("sqlite://")
+    migration = load_migration(
+        "a9d2f3c7e601_profile_photo_privacy_challenges.py"
+    )
+    with engine.begin() as connection:
+        connection.execute(text("""
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                username VARCHAR(128) NOT NULL,
+                profile_picture VARCHAR(255)
+            )
+        """))
+        connection.execute(text(
+            "INSERT INTO users (id, username, profile_picture) "
+            "VALUES (1, 'existing-user', '/static/uploads/profiles/existing.jpg')"
+        ))
+
+        run_upgrade(connection, migration, monkeypatch)
+
+        assert not bool(connection.execute(
+            text("SELECT profile_picture_public FROM users WHERE id=1")
+        ).scalar_one())
+        connection.execute(
+            text("INSERT INTO users (id, username) VALUES (2, 'new-user')")
+        )
+        assert not bool(connection.execute(
+            text("SELECT profile_picture_public FROM users WHERE id=2")
+        ).scalar_one())
+        inspector = inspect(connection)
+        assert "profile_photo_challenges" in inspector.get_table_names()
+        assert "ix_profile_photo_challenges_user_expiry" in {
+            index["name"]
+            for index in inspector.get_indexes("profile_photo_challenges")
         }
 
 
@@ -226,3 +326,208 @@ def test_profile_report_evidence_migration_can_be_rolled_back(monkeypatch):
             column["name"]
             for column in inspect(connection).get_columns("profile_reports")
         })
+
+
+def test_face_scan_challenge_migration_adds_and_removes_stage_state(monkeypatch):
+    engine = create_engine("sqlite://")
+    migration = load_migration(
+        "ce82a314fd17_face_scan_challenge_stages.py"
+    )
+    with engine.begin() as connection:
+        connection.execute(text("""
+            CREATE TABLE profile_photo_challenges (
+                challenge_hash VARCHAR(64) PRIMARY KEY,
+                username VARCHAR(128) NOT NULL,
+                expires_at VARCHAR(40) NOT NULL,
+                consumed_at VARCHAR(40),
+                created_at VARCHAR(40) NOT NULL
+            )
+        """))
+        connection.execute(text(
+            "INSERT INTO profile_photo_challenges "
+            "(challenge_hash, username, expires_at, created_at) "
+            "VALUES ('hash', 'owner', 'later', 'now')"
+        ))
+
+        run_upgrade(connection, migration, monkeypatch)
+        run_upgrade(connection, migration, monkeypatch)
+
+        scan_columns = {
+            column["name"]
+            for column in inspect(connection).get_columns("profile_photo_challenges")
+        }
+        assert {
+            "movement_sequence",
+            "current_stage",
+            "last_stage_at",
+            "failed_attempts",
+        } <= scan_columns
+        assert connection.execute(text(
+            "SELECT movement_sequence, current_stage, failed_attempts "
+            "FROM profile_photo_challenges WHERE challenge_hash='hash'"
+        )).one() == ("[]", 0, 0)
+
+        run_downgrade(connection, migration, monkeypatch)
+        remaining_columns = {
+            column["name"]
+            for column in inspect(connection).get_columns("profile_photo_challenges")
+        }
+        assert {
+            "movement_sequence",
+            "current_stage",
+            "last_stage_at",
+            "failed_attempts",
+        }.isdisjoint(remaining_columns)
+
+
+def test_profile_scan_verification_migration_preserves_existing_profile_data(monkeypatch):
+    engine = create_engine("sqlite://")
+    migration = load_migration(
+        "c2f0a8e4d531_require_verified_profile_photo_scan.py"
+    )
+    with engine.begin() as connection:
+        connection.execute(text("""
+            CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                username VARCHAR(128) NOT NULL,
+                profile_picture VARCHAR(255),
+                profile_photo_captured_at DATETIME
+            )
+        """))
+        connection.execute(text("""
+            INSERT INTO users (id, username, profile_picture)
+            VALUES (1, 'owner', 'existing.jpg')
+        """))
+
+        run_upgrade(connection, migration, monkeypatch)
+        run_upgrade(connection, migration, monkeypatch)
+        user_columns = {
+            column["name"] for column in inspect(connection).get_columns("users")
+        }
+        assert "profile_photo_scan_verified_at" in user_columns
+        assert connection.execute(text(
+            "SELECT profile_picture, profile_photo_scan_verified_at "
+            "FROM users WHERE username='owner'"
+        )).one() == ("existing.jpg", None)
+
+        run_downgrade(connection, migration, monkeypatch)
+        user_columns = {
+            column["name"] for column in inspect(connection).get_columns("users")
+        }
+        assert "profile_photo_scan_verified_at" not in user_columns
+        assert connection.execute(text(
+            "SELECT profile_picture FROM users WHERE username='owner'"
+        )).scalar_one() == "existing.jpg"
+
+    engine.dispose()
+
+
+def test_commodity_schema_migration_renames_tables_and_preserves_rows(monkeypatch):
+    engine = create_engine("sqlite://")
+    migration = load_migration(
+        "df14a6c8b209_rename_crops_to_commodities.py"
+    )
+    with engine.begin() as connection:
+        connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+        connection.execute(text("""
+            CREATE TABLE crop_categories (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL
+            )
+        """))
+        connection.execute(text("""
+            CREATE TABLE crops (
+                id INTEGER PRIMARY KEY,
+                crops_name VARCHAR(128) NOT NULL,
+                category_id INTEGER REFERENCES crop_categories(id)
+            )
+        """))
+        connection.execute(text("""
+            CREATE TABLE crop_pricing (
+                crop_id INTEGER PRIMARY KEY REFERENCES crops(id),
+                pricing_mode VARCHAR(16) NOT NULL
+            )
+        """))
+        connection.execute(text("""
+            CREATE TABLE inventory (
+                id INTEGER PRIMARY KEY,
+                crop_id INTEGER REFERENCES crops(id),
+                crop_name VARCHAR(128),
+                quantity INTEGER
+            )
+        """))
+        connection.execute(text("""
+            CREATE TABLE harvest (
+                id INTEGER PRIMARY KEY,
+                crop_id INTEGER REFERENCES crops(id),
+                quantity INTEGER
+            )
+        """))
+        connection.execute(text("""
+            CREATE TABLE marketplace (
+                id INTEGER PRIMARY KEY,
+                crop_id INTEGER REFERENCES crops(id),
+                crop_name VARCHAR(128),
+                amount INTEGER
+            )
+        """))
+        connection.execute(text("""
+            CREATE TABLE analytics (
+                id INTEGER PRIMARY KEY,
+                top_crop VARCHAR(128),
+                top_crop_volume INTEGER,
+                top_crop_id INTEGER REFERENCES crops(id)
+            )
+        """))
+        connection.execute(text("INSERT INTO crop_categories VALUES (1, 'Grains')"))
+        connection.execute(text("INSERT INTO crops VALUES (1, 'Rice', 1)"))
+        connection.execute(text("INSERT INTO crop_pricing VALUES (1, 'range')"))
+        connection.execute(text("INSERT INTO inventory VALUES (1, 1, 'Rice', 250)"))
+        connection.execute(text("INSERT INTO harvest VALUES (1, 1, 250)"))
+        connection.execute(text("INSERT INTO marketplace VALUES (1, 1, 'Rice', 100)"))
+        connection.execute(text(
+            "INSERT INTO analytics VALUES (1, 'Rice', 250, 1)"
+        ))
+
+        run_upgrade(connection, migration, monkeypatch)
+
+        inspector = inspect(connection)
+        assert {
+            "commodities",
+            "commodity_categories",
+            "commodity_pricing",
+        } <= set(inspector.get_table_names())
+        assert {"commodity_id", "commodity_name"} <= {
+            column["name"] for column in inspector.get_columns("inventory")
+        }
+        assert connection.execute(text(
+            "SELECT commodity_name, category_id FROM commodities WHERE id=1"
+        )).one() == ("Rice", 1)
+        assert connection.execute(text(
+            "SELECT commodity_id, commodity_name, quantity FROM inventory WHERE id=1"
+        )).one() == (1, "Rice", 250)
+        assert connection.execute(text(
+            "SELECT commodity_id FROM harvest WHERE id=1"
+        )).scalar_one() == 1
+        assert connection.execute(text(
+            "SELECT top_commodity, top_commodity_volume, top_commodity_id "
+            "FROM analytics WHERE id=1"
+        )).one() == ("Rice", 250, 1)
+        assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
+
+        run_downgrade(connection, migration, monkeypatch)
+
+        inspector = inspect(connection)
+        assert {"crops", "crop_categories", "crop_pricing"} <= set(
+            inspector.get_table_names()
+        )
+        assert {"crop_id", "crop_name"} <= {
+            column["name"] for column in inspector.get_columns("inventory")
+        }
+        assert connection.execute(text(
+            "SELECT crops_name FROM crops WHERE id=1"
+        )).scalar_one() == "Rice"
+        assert connection.execute(text(
+            "SELECT crop_id, crop_name, quantity FROM inventory WHERE id=1"
+        )).one() == (1, "Rice", 250)
+        assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []

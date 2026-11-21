@@ -6,12 +6,17 @@ from collections import defaultdict
 from typing import Any, Iterable
 
 
+def record_commodity_name(row):
+    row = row or {}
+    return row.get("commodity_name") or row.get("crop_name") or row.get("crop") or ""
+
+
 def aggregate_supply(records: Iterable[dict[str, Any]]):
     """Aggregate inventory by crop and month to support threshold logic."""
     by_crop = defaultdict(float)
     monthly = defaultdict(float)
     for row in records or []:
-        crop = (row or {}).get("crop_name") or ""
+        crop = record_commodity_name(row)
         quantity = float((row or {}).get("quantity") or 0)
         if not crop or quantity <= 0:
             continue

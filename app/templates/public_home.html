@@ -938,7 +938,7 @@
             <div class="hero-photo-card">
               <img
                 src="{{ url_for('static', filename='images/logo.png') }}"
-                alt="A farmer tending green crop rows on a sunny farm"
+                alt="A farmer tending green commodity rows on a sunny farm"
               />
               <div class="hero-photo-caption">
                 <span>Local produce, real prices</span>
@@ -967,11 +967,18 @@
             <div class="commodity-grid">
               {% for item in featured_commodities %}
                 <article class="commodity-card">
-                  {% if item.main_image and item.thumbnail_verified %}
+                  {% if item.main_image %}
                     <img
                       class="commodity-photo"
                       src="{{ url_for('static', filename='uploads/marketplace/' + item.main_image) }}"
-                      alt="{{ item.crop_name }} listed by a local seller"
+                      alt="{{ item.commodity_name }} listed by a local seller"
+                      loading="lazy"
+                    />
+                  {% elif item.commodity_default_image %}
+                    <img
+                      class="commodity-photo"
+                      src="{{ url_for('static', filename='uploads/commodity_details/' + item.commodity_default_image) }}"
+                      alt="{{ item.commodity_name }} listed by a local seller"
                       loading="lazy"
                     />
                   {% else %}
@@ -980,7 +987,7 @@
                     </div>
                   {% endif %}
                   <div class="commodity-content">
-                    <h3 class="commodity-name">{{ item.crop_name or 'Fresh produce' }}</h3>
+                    <h3 class="commodity-name">{{ item.commodity_name or 'Fresh produce' }}</h3>
                     {% if item.price is not none %}
                       <div class="commodity-price">
                         ₱{{ "%.2f"|format(item.price) }}<small> / {{ item.unit or 'kg' }}</small>
