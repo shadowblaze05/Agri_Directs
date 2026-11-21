@@ -17,6 +17,45 @@ from ..config import Config
 
 logger = logging.getLogger(__name__)
 
+PHILIPPINE_TIMEZONE = timezone(timedelta(hours=8))
+
+
+def activate_due_accounts(connection_factory=None, username=None):
+    """Reactivate accounts whose Philippine-calendar reactivation date has arrived."""
+    if connection_factory is None:
+        from ..models.database import get_db
+
+        connection_factory = get_db
+
+    today = datetime.now(PHILIPPINE_TIMEZONE).date().isoformat()
+    connection = connection_factory()
+    try:
+        cursor = connection.cursor()
+        if username:
+            cursor.execute(
+                """UPDATE users
+                   SET is_active=TRUE, reactivate_on=NULL,
+                       auth_version=auth_version+1
+                   WHERE username=? AND is_active=FALSE
+                     AND reactivate_on IS NOT NULL AND reactivate_on<=?""",
+                (username, today),
+            )
+        else:
+            cursor.execute(
+                """UPDATE users
+                   SET is_active=TRUE, reactivate_on=NULL,
+                       auth_version=auth_version+1
+                   WHERE is_active=FALSE
+                     AND reactivate_on IS NOT NULL AND reactivate_on<=?""",
+                (today,),
+            )
+        activated_count = getattr(cursor, "rowcount", 0)
+        if activated_count:
+            connection.commit()
+        return activated_count
+    finally:
+        connection.close()
+
 
 def get_active_user_role(username, connection_factory=None):
     if not username:

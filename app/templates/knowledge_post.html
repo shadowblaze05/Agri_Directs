@@ -72,7 +72,9 @@
     <nav class="navbar navbar-dark navbar-custom fixed-top">
         <div class="container-fluid">
             <a class="navbar-brand mb-0 h1 ms-5 text-white text-decoration-none" href="/home"><i class="fas fa-leaf me-2"></i>Agri-Direct</a>
-            <div class="dropdown">
+            <div class="d-flex align-items-center gap-2">
+                {% include '_notification_bell.html' %}
+                <div class="dropdown">
                 <button class="btn btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false"><i class="fas fa-user-circle me-1"></i>{{ session.get('user', 'User') }}</button>
                 <ul class="dropdown-menu dropdown-menu-end">
                     <li><a class="dropdown-item" href="/profile"><i class="fas fa-id-badge me-2"></i>Profile</a></li>
@@ -80,6 +82,7 @@
                     <li><hr class="dropdown-divider"></li>
                     <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt me-2"></i>Logout</a></li>
                 </ul>
+                </div>
             </div>
         </div>
     </nav>

@@ -24,6 +24,7 @@
   <div class="analytics-topbar-context"><span>ANALYTICS</span><i class="fas fa-chevron-right"></i><strong>{{ analytics_page_title }}</strong></div>
   <div class="d-flex align-items-center gap-2">
     <a class="btn btn-sm btn-outline-light" href="{{ url_for('dashboard') }}"><i class="fas fa-chart-line me-1"></i>Dashboard</a>
+    {% include '_notification_bell.html' %}
     <span class="analytics-user"><i class="fas fa-user-circle"></i>{{ session.get('user', 'User') }}</span>
   </div>
 </header>

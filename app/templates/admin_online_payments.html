@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Online payment monitoring | Agri-Direct Admin</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+</head>
+<body class="admin-page">
+  <nav class="navbar navbar-dark admin-navbar px-4 py-3">
+    <a class="navbar-brand fw-bold" href="{{ url_for('admin') }}">Agri-Direct / Admin</a>
+    <a href="{{ url_for('admin') }}" class="btn btn-outline-light btn-sm">Overview</a>
+  </nav>
+  <main class="container-fluid container-xxl py-4">
+    <a class="breadcrumb-link" href="{{ url_for('admin') }}">Admin Console</a>
+    <div class="page-heading mt-2 mb-4">
+      <h1 class="h3 mb-1">Online payment monitoring</h1>
+      <p class="text-muted mb-0">Monitor Xendit checkout sessions and their current marketplace order state.</p>
+    </div>
+
+    <div class="alert alert-info" role="note">
+      Statuses reflect the latest state saved by Agri-Direct. Provider callback payloads, checkout links, and credentials are not exposed in this workspace.
+    </div>
+
+    <div class="row g-3 mb-4">
+      <div class="col-sm-6 col-xl"><div class="card h-100"><div class="card-body">
+        <div class="small text-muted">Online payment orders</div><div class="fs-3 fw-bold">{{ total_count }}</div>
+      </div></div></div>
+      <div class="col-sm-6 col-xl"><div class="card h-100"><div class="card-body">
+        <div class="small text-muted">Awaiting confirmation</div><div class="fs-3 fw-bold text-warning">{{ pending_count }}</div>
+      </div></div></div>
+      <div class="col-sm-6 col-xl"><div class="card h-100"><div class="card-body">
+        <div class="small text-muted">Payment confirmed</div><div class="fs-3 fw-bold text-success">{{ confirmed_count }}</div>
+      </div></div></div>
+      <div class="col-sm-6 col-xl"><div class="card h-100"><div class="card-body">
+        <div class="small text-muted">Confirmed order value</div><div class="fs-3 fw-bold">PHP {{ '%.2f'|format(confirmed_value) }}</div>
+      </div></div></div>
+      <div class="col-sm-6 col-xl"><div class="card h-100"><div class="card-body">
+        <div class="small text-muted">Failed / rejected events</div><div class="fs-3 fw-bold text-danger">{{ failed_event_count }}</div>
+      </div></div></div>
+    </div>
+
+    <section class="card shadow-sm border-0">
+      <div class="card-body">
+        <h2 class="h5">Online payment order details</h2>
+        <p class="small text-muted">An awaiting-payment order is waiting for Xendit confirmation. A recorded session ID means checkout was created; a confirmed order has advanced past awaiting payment.</p>
+        <form class="row g-2 mb-3" method="get">
+          <div class="col-md">
+            <label class="visually-hidden" for="payment-search">Search payment orders</label>
+            <input id="payment-search" name="q" value="{{ search }}" class="form-control" placeholder="Search order, buyer, seller, commodity, reference, session">
+          </div>
+          <div class="col-md-3">
+            <label class="visually-hidden" for="payment-status">Order payment status</label>
+            <select id="payment-status" name="status" class="form-select">
+              <option value="" {% if not status_filter %}selected{% endif %}>All order statuses</option>
+              <option value="awaiting_payment" {% if status_filter == 'awaiting_payment' %}selected{% endif %}>Awaiting payment</option>
+              <option value="to_pay" {% if status_filter == 'to_pay' %}selected{% endif %}>To pay</option>
+              <option value="to_ship" {% if status_filter == 'to_ship' %}selected{% endif %}>To ship</option>
+              <option value="to_receive" {% if status_filter == 'to_receive' %}selected{% endif %}>To receive</option>
+              <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+              <option value="cancelled" {% if status_filter == 'cancelled' %}selected{% endif %}>Cancelled</option>
+            </select>
+          </div>
+          <div class="col-auto"><button class="btn btn-success" type="submit"><i class="fas fa-search me-1"></i>Filter</button></div>
+          {% if search or status_filter %}<div class="col-auto"><a class="btn btn-outline-secondary" href="{{ url_for('admin_online_payments') }}">Clear</a></div>{% endif %}
+        </form>
+
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>Order</th><th>Buyer / seller</th><th>Commodity</th><th>Amount</th><th>Payment state</th><th>Reference / session</th></tr></thead>
+            <tbody>
+              {% for payment in payments %}
+              <tr>
+                <td><strong>#{{ payment['id'] }}</strong><br><small class="text-muted">{{ payment['order_date'] or 'Date unavailable' }}</small></td>
+                <td><div>Buyer: {{ payment['buyer_username'] or 'Not recorded' }}</div><small class="text-muted">Seller: {{ payment['seller'] or 'Not recorded' }}</small></td>
+                <td>{{ payment['commodity_name'] or 'Unnamed commodity' }}</td>
+                <td>PHP {{ '%.2f'|format(payment['payment_amount'] or 0) }}<br><small class="text-muted">{{ payment['amount'] or 0 }} {{ payment['unit'] or 'kg' }} × PHP {{ '%.2f'|format(payment['price'] or 0) }}</small></td>
+                <td>
+                  {% if payment['order_status'] == 'awaiting_payment' %}
+                    <span class="badge text-bg-warning">Awaiting payment</span>
+                    <div class="small text-muted">{{ 'Waiting for Xendit confirmation' if payment['xendit_session_id'] else 'Checkout session not recorded' }}</div>
+                  {% elif payment['payment_method'] == 'xendit' %}
+                    <span class="badge text-bg-success">Payment confirmed</span>
+                    <div class="small text-muted">Order: {{ (payment['order_status'] or 'unknown')|replace('_', ' ')|title }}</div>
+                  {% else %}
+                    <span class="badge text-bg-secondary">{{ payment['order_status'] or 'Unknown' }}</span>
+                  {% endif %}
+                </td>
+                <td><small>Reference: <span class="font-monospace">{{ payment['xendit_reference_id'] or 'Not retained' }}</span><br>Session: <span class="font-monospace">{{ payment['xendit_session_id'] or 'Not created' }}</span></small></td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="text-center py-4 text-muted">No online payment orders match these filters.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="card shadow-sm border-0 mt-4">
+      <div class="card-body">
+        <h2 class="h5">Xendit event history</h2>
+        <p class="small text-muted">Shows checkout creation and authenticated callback outcomes. Only event metadata is retained; raw callback payloads and callback tokens are never stored.</p>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>Received</th><th>Order IDs</th><th>Event</th><th>Result</th><th>Reference / session</th><th>Reported amount</th></tr></thead>
+            <tbody>
+              {% for event in payment_events %}
+              <tr>
+                <td>{{ event['received_at'] }}</td>
+                <td>{{ event['order_ids'] or 'Not matched' }}</td>
+                <td>{{ event['event_name'] }}</td>
+                <td>
+                  {% set event_failed = event['result'] in ['failed', 'not_succeeded', 'session_mismatch', 'amount_mismatch', 'currency_mismatch', 'unknown'] %}
+                  {% set event_badge = 'danger' if event_failed else 'warning' if event['result'] == 'expired' else 'secondary' if event['result'] == 'already_processed' else 'success' %}
+                  <span class="badge text-bg-{{ event_badge }}">{{ event['result']|replace('_', ' ')|title }}</span>
+                </td>
+                <td><small>Reference: <span class="font-monospace">{{ event['reference_id'] }}</span><br>Session: <span class="font-monospace">{{ event['session_id'] or 'Not recorded' }}</span></small></td>
+                <td>{{ event['amount'] or 'Not reported' }} {{ event['currency'] or '' }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="text-center py-4 text-muted">No Xendit checkout or callback events recorded.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

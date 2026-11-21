@@ -33,6 +33,7 @@ from ..services.admin_notification_service import notify_superadmin
 from ..services.face_scanning import (
     FaceScannerUnavailable,
     MAX_FRAME_SIZE_BYTES,
+    MAX_SCAN_ATTEMPTS,
     ensure_face_scanner_ready,
     validate_face_frame,
 )
@@ -47,7 +48,7 @@ globals().update({key: value for key, value in core.__dict__.items() if not key.
 
 ALLOWED_PROFILE_IMAGE_FORMATS = {"png": "PNG", "jpg": "JPEG", "jpeg": "JPEG", "webp": "WEBP"}
 PROFILE_PHOTO_CHALLENGE_TTL = 5 * 60
-PROFILE_PHOTO_SCAN_MAX_ATTEMPTS = 5
+PROFILE_PHOTO_SCAN_MAX_ATTEMPTS = MAX_SCAN_ATTEMPTS
 PROFILE_PHOTO_SCAN_MIN_STAGE_SECONDS = 0.5
 
 

@@ -332,6 +332,7 @@ def init_db():
             "knowledge_likes",
             "knowledge_posts",
             "profile_photo_challenges",
+            "xendit_payment_events",
             "notifications",
             "messages",
             "inventory",
@@ -604,6 +605,23 @@ def init_db():
         "CREATE INDEX IF NOT EXISTS ix_marketplace_xendit_reference_id "
         "ON marketplace(xendit_reference_id)"
     )
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS xendit_payment_events(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reference_id TEXT NOT NULL,
+        order_ids TEXT NOT NULL DEFAULT '',
+        event_name TEXT NOT NULL,
+        result TEXT NOT NULL,
+        session_id TEXT,
+        amount TEXT,
+        currency TEXT,
+        received_at TEXT NOT NULL
+    )
+    """)
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS ix_xendit_payment_events_reference_received "
+        "ON xendit_payment_events(reference_id, received_at)"
+    )
     cur.execute("PRAGMA table_info(users)")
     users_columns = [row[1] for row in cur.fetchall()]
     # Keep databases created before the expanded account model compatible with
@@ -613,6 +631,7 @@ def init_db():
         'first_name': 'TEXT',
         'last_name': 'TEXT',
         'is_active': 'BOOLEAN NOT NULL DEFAULT TRUE',
+        'reactivate_on': 'DATE',
         'auth_version': 'INTEGER NOT NULL DEFAULT 0',
         'phone_number': 'TEXT',
         'profile_picture': 'TEXT',

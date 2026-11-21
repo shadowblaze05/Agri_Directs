@@ -22,7 +22,8 @@ def test_admin_can_assign_and_reassign_crops_by_category(tmp_path):
                     role TEXT, email TEXT, first_name TEXT, last_name TEXT,
                     location TEXT, is_active BOOLEAN NOT NULL DEFAULT TRUE,
                     is_verified BOOLEAN NOT NULL DEFAULT TRUE,
-                    auth_version INTEGER NOT NULL DEFAULT 0
+                    auth_version INTEGER NOT NULL DEFAULT 0,
+                    reactivate_on DATE
                 )
             """))
             connection.execute(text("""

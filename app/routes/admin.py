@@ -27,13 +27,18 @@ from ..models.profile_report import ProfileReport
 from ..models.slow_query import SlowQueryStat
 from ..models.database import _save_upload_file, get_db
 from ..services.notification_service import notify_published_announcement
-from ..services.auth_service import get_active_user_role
+from ..services.auth_service import (
+    PHILIPPINE_TIMEZONE,
+    activate_due_accounts,
+    get_active_user_role,
+)
 from ..services.upload_service import save_sanitized_public_image
 from ..services.crop_pricing import (
     parse_pricing_rule,
     price_bounds,
     seller_price_error,
 )
+from ..services.face_scanning import MAX_SCAN_ATTEMPTS
 
 # Route implementations use the shared compatibility context.
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
@@ -175,10 +180,12 @@ def create_admin_user():
 
 @_admin_required
 def edit_admin_user(user_id):
+    activate_due_accounts(get_db)
     conn = get_db()
     cur = conn.cursor()
     user = cur.execute(
-        "SELECT id, username, email, role, is_active FROM users WHERE id=?",
+        "SELECT id, username, email, role, is_active, reactivate_on "
+        "FROM users WHERE id=?",
         (user_id,),
     ).fetchone()
     if not user:
@@ -220,6 +227,29 @@ def edit_admin_user(user_id):
         conn.close()
         flash("You cannot deactivate your own administrator account", "danger")
         return _redirect_admin("admin_users")
+    requested_reactivation = request.form.get("reactivate_on")
+    reactivate_on = None
+    if is_active == "0":
+        if requested_reactivation is None:
+            reactivate_on = user["reactivate_on"]
+        else:
+            requested_reactivation = requested_reactivation.strip()
+            if requested_reactivation:
+                try:
+                    reactivation_date = datetime.strptime(
+                        requested_reactivation, "%Y-%m-%d"
+                    ).date()
+                except ValueError:
+                    conn.close()
+                    flash("Enter a valid reactivation date.", "danger")
+                    return _redirect_admin("admin_users")
+                if reactivation_date <= datetime.now(PHILIPPINE_TIMEZONE).date():
+                    conn.close()
+                    flash("The reactivation date must be in the future.", "danger")
+                    return _redirect_admin("admin_users")
+                reactivate_on = reactivation_date.isoformat()
+
+    status_changed = bool(user["is_active"]) != (is_active == "1")
     password = request.form.get("password", "")
     fields = [
         _form_value("first_name") or user["username"],
@@ -227,24 +257,34 @@ def edit_admin_user(user_id):
         _form_value("email").lower() or f"{user['username']}@example.com",
         role,
         _form_value("location") or None,
+        is_active,
+        reactivate_on,
     ]
     query = """UPDATE users SET first_name=?, last_name=?, email=?, role=?, location=?,
-                is_active=?"""
-    fields.append(is_active)
+                is_active=?, reactivate_on=?"""
     if password:
         password_error = password_policy_error(password)
         if password_error:
             conn.close()
             flash(password_error, "danger")
             return _redirect_admin("admin_users")
-        query += ", password = ?, auth_version = auth_version + 1"
+        query += ", password = ?"
         fields.append(generate_password_hash(password))
+    if password or status_changed:
+        query += ", auth_version = auth_version + 1"
     query += " WHERE id=?"
     fields.append(user_id)
     try:
         cur.execute(query, fields)
         conn.commit()
-        flash(f"User {user['username']} updated", "success")
+        if is_active == "0" and reactivate_on:
+            flash(
+                f"User {user['username']} is inactive until {reactivate_on} "
+                "(Philippine time).",
+                "success",
+            )
+        else:
+            flash(f"User {user['username']} updated", "success")
     except IntegrityError:
         flash("That email address is already in use", "danger")
     finally:
@@ -1171,6 +1211,14 @@ def admin():
         "marketplace_transactions": cur.execute(
             f"SELECT COUNT(*) AS count FROM marketplace m WHERE {MARKETPLACE_TRANSACTION_FILTER}",  # nosec B608
         ).fetchone()["count"],
+        "face_scans_verified": cur.execute(
+            "SELECT COUNT(*) AS count FROM users "
+            "WHERE profile_photo_scan_verified_at IS NOT NULL"
+        ).fetchone()["count"],
+        "online_payments_pending": cur.execute(
+            "SELECT COUNT(*) AS count FROM marketplace "
+            "WHERE payment_method='xendit' AND order_status='awaiting_payment'"
+        ).fetchone()["count"],
         "open_reports": cur.execute(
             "SELECT COUNT(*) AS count FROM profile_reports WHERE status='open'"
         ).fetchone()["count"],
@@ -1193,10 +1241,12 @@ def admin_users():
     from .auth import _ensure_password_reset_table
 
     _ensure_password_reset_table()
+    activate_due_accounts(get_db)
     search = request.args.get("q", "").strip()
     conn = get_db()
     cur = conn.cursor()
-    query = """SELECT id, username, first_name, last_name, email, role, location, is_active,
+    query = """SELECT id, username, first_name, last_name, email, role, location,
+               is_active, reactivate_on,
                CASE WHEN COALESCE(users.is_verified, FALSE)=FALSE AND EXISTS (
                    SELECT 1 FROM password_reset_tokens t WHERE t.user_id=users.id
                    AND t.purpose='email_verification' AND t.used_at IS NULL
@@ -1227,6 +1277,9 @@ def admin_users():
             not bool(user["is_active"]) and not bool(user["pending_verification"])
             for user in users
         ),
+        minimum_reactivation_date=(
+            datetime.now(PHILIPPINE_TIMEZONE).date() + timedelta(days=1)
+        ).isoformat(),
         is_superadmin=_current_user_is_superadmin(),
         superadmin_username=current_app.config["SUPERADMIN_USERNAME"],
     )
@@ -2001,6 +2054,182 @@ def admin_marketplace_transactions():
     )
 
 
+@_admin_required
+def admin_face_scan_monitor():
+    search = request.args.get("q", "").strip()[:100]
+    status_filter = request.args.get("status", "").strip().lower()
+    allowed_statuses = {"", "in_progress", "expired", "failed", "consumed"}
+    if status_filter not in allowed_statuses:
+        status_filter = ""
+
+    now = datetime.now(timezone.utc).isoformat()
+    status_sql = (
+        "CASE WHEN c.failed_attempts >= ? THEN 'failed' "
+        "WHEN c.consumed_at IS NOT NULL THEN 'consumed' "
+        "WHEN c.expires_at <= ? THEN 'expired' ELSE 'in_progress' END"
+    )
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        stats = {
+            "verified_profiles": cur.execute(
+                "SELECT COUNT(*) AS count FROM users "
+                "WHERE profile_photo_scan_verified_at IS NOT NULL"
+            ).fetchone()["count"],
+            "active_challenges": cur.execute(
+                "SELECT COUNT(*) AS count FROM profile_photo_challenges "
+                "WHERE consumed_at IS NULL AND expires_at > ? "
+                "AND failed_attempts < ?",
+                (now, MAX_SCAN_ATTEMPTS),
+            ).fetchone()["count"],
+            "expired_challenges": cur.execute(
+                "SELECT COUNT(*) AS count FROM profile_photo_challenges "
+                "WHERE consumed_at IS NULL AND expires_at <= ?",
+                (now,),
+            ).fetchone()["count"],
+            "failed_challenges": cur.execute(
+                "SELECT COUNT(*) AS count FROM profile_photo_challenges "
+                "WHERE failed_attempts >= ?",
+                (MAX_SCAN_ATTEMPTS,),
+            ).fetchone()["count"],
+            "unverified_captured_photos": cur.execute(
+                "SELECT COUNT(*) AS count FROM users "
+                "WHERE profile_photo_captured_at IS NOT NULL "
+                "AND profile_photo_scan_verified_at IS NULL"
+            ).fetchone()["count"],
+        }
+        challenges = cur.execute(
+            f"""SELECT c.username, u.role, c.created_at, c.last_stage_at,
+                       c.expires_at, c.consumed_at, c.current_stage,
+                       c.failed_attempts, {status_sql} AS scan_status
+                FROM profile_photo_challenges c
+                LEFT JOIN users u ON u.username = c.username
+                WHERE (? = '' OR LOWER(COALESCE(c.username, '')) LIKE LOWER(?))
+                  AND (? = '' OR ({status_sql}) = ?)
+                ORDER BY c.created_at DESC
+                LIMIT 100""",
+            (
+                MAX_SCAN_ATTEMPTS, now, search, f"%{search}%", status_filter,
+                MAX_SCAN_ATTEMPTS, now, status_filter,
+            ),
+        ).fetchall()
+        verified_profiles = cur.execute(
+            """SELECT username, role, profile_photo_captured_at,
+                      profile_photo_scan_verified_at
+               FROM users
+               WHERE profile_photo_scan_verified_at IS NOT NULL
+                 AND (? = '' OR LOWER(COALESCE(username, '')) LIKE LOWER(?))
+               ORDER BY profile_photo_scan_verified_at DESC
+               LIMIT 100""",
+            (search, f"%{search}%"),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    return render_template(
+        "admin_face_scan_monitor.html",
+        stats=stats,
+        challenges=challenges,
+        verified_profiles=verified_profiles,
+        search=search,
+        status_filter=status_filter,
+    )
+
+
+@_admin_required
+def admin_online_payments():
+    search = request.args.get("q", "").strip()[:100]
+    status_filter = request.args.get("status", "").strip().lower()
+    allowed_statuses = {
+        "", "awaiting_payment", "to_pay", "to_ship", "to_receive", "completed",
+        "cancelled",
+    }
+    if status_filter not in allowed_statuses:
+        status_filter = ""
+
+    online_payment_filter = (
+        "(m.payment_method = 'xendit' OR m.xendit_reference_id IS NOT NULL)"
+    )
+    confirmed_filter = (
+        "m.payment_method = 'xendit' AND m.order_status <> 'awaiting_payment'"
+    )
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        totals = cur.execute(
+            f"""SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN m.order_status = 'awaiting_payment'
+                                THEN 1 ELSE 0 END) AS pending,
+                       SUM(CASE WHEN {confirmed_filter}
+                                THEN 1 ELSE 0 END) AS confirmed,
+                       SUM(CASE WHEN {confirmed_filter}
+                                THEN COALESCE(m.price, 0) * COALESCE(m.amount, 0)
+                                ELSE 0 END) AS confirmed_value
+                FROM marketplace m
+                WHERE {online_payment_filter}"""
+        ).fetchone()
+        payments = cur.execute(
+            f"""SELECT m.id, m.username AS seller, m.buyer_username,
+                       m.commodity_name, m.amount, m.unit, m.price,
+                       COALESCE(m.price, 0) * COALESCE(m.amount, 0) AS payment_amount,
+                       m.order_status, m.status AS listing_status, m.order_date,
+                       m.payment_method, m.xendit_reference_id, m.xendit_session_id
+                FROM marketplace m
+                WHERE {online_payment_filter}
+                  AND (? = '' OR CAST(m.id AS TEXT) LIKE ?
+                       OR COALESCE(m.xendit_reference_id, '') LIKE ?
+                       OR COALESCE(m.xendit_session_id, '') LIKE ?
+                       OR COALESCE(m.username, '') LIKE ?
+                       OR COALESCE(m.buyer_username, '') LIKE ?
+                       OR COALESCE(m.commodity_name, '') LIKE ?
+                       OR COALESCE(m.order_status, '') LIKE ?)
+                  AND (? = '' OR m.order_status = ?)
+                ORDER BY COALESCE(m.order_date, '') DESC, m.id DESC
+                LIMIT 200""",
+            (
+                search, f"%{search}%", f"%{search}%", f"%{search}%",
+                f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%",
+                status_filter, status_filter,
+            ),
+        ).fetchall()
+        payment_events = cur.execute(
+            """SELECT id, reference_id, order_ids, event_name, result,
+                      session_id, amount, currency, received_at
+               FROM xendit_payment_events
+               WHERE (? = '' OR reference_id LIKE ? OR order_ids LIKE ?
+                      OR event_name LIKE ? OR result LIKE ? OR session_id LIKE ?)
+               ORDER BY received_at DESC, id DESC
+               LIMIT 100""",
+            (
+                search, f"%{search}%", f"%{search}%", f"%{search}%",
+                f"%{search}%", f"%{search}%",
+            ),
+        ).fetchall()
+        failed_event_count = cur.execute(
+            """SELECT COUNT(*) AS count
+               FROM xendit_payment_events
+               WHERE result IN (
+                   'failed', 'not_succeeded', 'session_mismatch',
+                   'amount_mismatch', 'currency_mismatch', 'unknown'
+               )"""
+        ).fetchone()["count"]
+    finally:
+        conn.close()
+
+    return render_template(
+        "admin_online_payments.html",
+        payments=payments,
+        payment_events=payment_events,
+        search=search,
+        status_filter=status_filter,
+        total_count=totals["total"] or 0,
+        pending_count=totals["pending"] or 0,
+        confirmed_count=totals["confirmed"] or 0,
+        confirmed_value=totals["confirmed_value"] or 0,
+        failed_event_count=failed_event_count,
+    )
+
+
 def _admin_marketplace_values():
     username = _form_value("username")
     crop_id_value = _form_value("commodity_id") or _form_value("crop_id")
@@ -2552,6 +2781,8 @@ def register(application):
     application.add_url_rule('/admin/inventory', endpoint='admin_inventory', view_func=admin_inventory)
     application.add_url_rule('/admin/marketplace', endpoint='admin_marketplace', view_func=admin_marketplace)
     application.add_url_rule('/admin/marketplace/transactions', endpoint='admin_marketplace_transactions', view_func=admin_marketplace_transactions)
+    application.add_url_rule('/admin/face-scan-monitor', endpoint='admin_face_scan_monitor', view_func=admin_face_scan_monitor)
+    application.add_url_rule('/admin/online-payments', endpoint='admin_online_payments', view_func=admin_online_payments)
     application.add_url_rule('/admin/marketplace/create', endpoint='create_admin_marketplace_listing', view_func=create_admin_marketplace_listing, methods=['POST'])
     application.add_url_rule('/admin/marketplace/edit/<int:listing_id>', endpoint='edit_admin_marketplace_listing', view_func=edit_admin_marketplace_listing, methods=['POST'])
     application.add_url_rule('/admin/marketplace/thumbnail/<int:listing_id>', endpoint='update_admin_marketplace_thumbnail', view_func=update_admin_marketplace_thumbnail, methods=['POST'])
@@ -2586,6 +2817,7 @@ def register(application):
 __all__ = [
     'admin_knowledge', 'create_knowledge_post', 'edit_knowledge_post', 'delete_knowledge_post',
     'admin', 'admin_users', 'admin_catalog', 'admin_inventory', 'admin_marketplace', 'admin_marketplace_transactions',
+    'admin_face_scan_monitor', 'admin_online_payments',
     'admin_audit_logs',
     'admin_profile_reports', 'review_profile_report',
     'admin_listing_photo_alerts', 'review_listing_photo_alert',

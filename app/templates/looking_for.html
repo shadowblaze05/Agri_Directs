@@ -12,6 +12,7 @@
     <nav class="navbar navbar-dark px-4" style="background:#1a3408">
         <a class="navbar-brand fw-bold" href="{{ url_for('dashboard') }}">Agri-Direct</a>
         <div class="d-flex gap-2">
+            {% include '_notification_bell.html' %}
             <a class="btn btn-outline-light btn-sm" href="{{ url_for('marketplace') }}">Marketplace</a>
             <a class="btn btn-light btn-sm" href="{{ url_for('dashboard') }}">Dashboard</a>
         </div>

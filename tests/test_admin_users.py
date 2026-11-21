@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -289,4 +290,103 @@ def test_only_superadmin_can_create_or_manage_admin_accounts(tmp_path):
         assert connection.cursor().execute(
             "SELECT role FROM users WHERE username=?", ("new-admin",)
         ).fetchone()["role"] == "admin"
+        connection.close()
+
+
+def test_admin_can_schedule_and_due_date_reactivates_account(tmp_path):
+    application = app_module.create_app({
+        "TESTING": True,
+        "APP_ENV": "testing",
+        "SQLALCHEMY_DATABASE_URI": f"sqlite:///{(tmp_path / 'scheduled-reactivation.db').as_posix()}",
+        "INITIAL_ADMIN_USERNAME": "admin",
+        "INITIAL_ADMIN_PASSWORD": "Test!GardenBloom9",
+    })
+    with application.app_context():
+        init_db()
+        connection = get_db()
+        connection.cursor().execute(
+            "INSERT INTO users (username, password, role) VALUES (?, ?, ?)",
+            ("scheduled-user", generate_password_hash("FarmerPassword7"), "seller"),
+        )
+        user_id = connection.cursor().execute(
+            "SELECT id FROM users WHERE username=?", ("scheduled-user",)
+        ).fetchone()["id"]
+        connection.commit()
+        connection.close()
+
+    today = datetime.now(timezone(timedelta(hours=8))).date()
+    reactivation_date = today + timedelta(days=2)
+    with application.test_client() as admin_client:
+        admin_client.post(
+            "/login",
+            data={"username": "admin", "password": "Test!GardenBloom9"},
+        )
+
+        rejected = admin_client.post(
+            f"/admin/users/edit/{user_id}",
+            data={
+                "role": "seller",
+                "is_active": "0",
+                "reactivate_on": today.isoformat(),
+            },
+            follow_redirects=True,
+        )
+        assert b"reactivation date must be in the future" in rejected.data
+
+        response = admin_client.post(
+            f"/admin/users/edit/{user_id}",
+            data={
+                "role": "seller",
+                "is_active": "0",
+                "reactivate_on": reactivation_date.isoformat(),
+            },
+            follow_redirects=True,
+        )
+        assert b"Reactivates" in response.data
+        assert reactivation_date.isoformat().encode() in response.data
+
+    with application.app_context():
+        connection = get_db()
+        inactive_user = connection.cursor().execute(
+            "SELECT is_active, reactivate_on, auth_version FROM users WHERE id=?",
+            (user_id,),
+        ).fetchone()
+        assert inactive_user["is_active"] == 0
+        assert inactive_user["reactivate_on"] == reactivation_date.isoformat()
+        assert inactive_user["auth_version"] == 1
+        with application.test_client() as scheduled_client:
+            response = scheduled_client.post(
+                "/login",
+                data={"username": "scheduled-user", "password": "FarmerPassword7"},
+            )
+            assert response.status_code == 200
+            assert reactivation_date.strftime("%B %d, %Y").encode() in response.data
+            assert b"12:00 AM Philippine time" in response.data
+
+        connection.cursor().execute(
+            "UPDATE users SET reactivate_on=? WHERE id=?",
+            ((today - timedelta(days=1)).isoformat(), user_id),
+        )
+        connection.commit()
+        connection.close()
+
+    with application.test_client() as user_client:
+        response = user_client.post(
+            "/login",
+            data={"username": "scheduled-user", "password": "FarmerPassword7"},
+        )
+        assert response.status_code == 302
+        assert response.headers["Location"].endswith("/home")
+        with user_client.session_transaction() as user_session:
+            assert user_session["user"] == "scheduled-user"
+
+    with application.app_context():
+        connection = get_db()
+        reactivated_user = connection.cursor().execute(
+            "SELECT is_active, reactivate_on, auth_version FROM users WHERE id=?",
+            (user_id,),
+        ).fetchone()
+        assert reactivated_user["is_active"] == 1
+        assert reactivated_user["reactivate_on"] is None
+        assert reactivated_user["auth_version"] == 2
         connection.close()

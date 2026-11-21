@@ -982,6 +982,53 @@ def _release_xendit_reservation(reference_id):
     conn.close()
 
 
+def _record_xendit_payment_event(reference_id, event_name, result, data=None, order_ids=()):
+    data = data if isinstance(data, dict) else {}
+    amount = data.get("amount")
+    if amount is None:
+        amount = data.get("request_amount")
+    if amount is None:
+        amount = data.get("captured_amount")
+    if amount is not None and not isinstance(amount, (str, int, float)):
+        amount = None
+
+    session_id = data.get("payment_session_id")
+    currency = data.get("currency")
+    conn = get_db()
+    try:
+        conn.cursor().execute(
+            """INSERT INTO xendit_payment_events
+               (reference_id, order_ids, event_name, result, session_id,
+                amount, currency, received_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                str(reference_id)[:128],
+                ",".join(str(int(order_id)) for order_id in order_ids),
+                str(event_name)[:80],
+                str(result)[:80],
+                session_id[:128] if isinstance(session_id, str) else None,
+                str(amount)[:64] if amount is not None else None,
+                currency[:8] if isinstance(currency, str) else None,
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _xendit_order_ids(reference_id):
+    conn = get_db()
+    try:
+        rows = conn.cursor().execute(
+            "SELECT id FROM marketplace WHERE xendit_reference_id = ? ORDER BY id",
+            (reference_id,),
+        ).fetchall()
+        return [row["id"] for row in rows]
+    finally:
+        conn.close()
+
+
 def _process_xendit_payment_event(event_name, reference_id, data):
     capture_events = {"payment.capture", "capture.succeeded"}
     if event_name in capture_events and data.get("status") != "SUCCEEDED":
@@ -1098,11 +1145,25 @@ def _start_xendit_checkout(items, buyer_username, buyer_id, address, cart_ids=No
         "cancel_return_url": purchases_url,
     }
 
+    _record_xendit_payment_event(
+        reference_id,
+        "checkout.started",
+        "started",
+        {"amount": str(total), "currency": current_app.config["XENDIT_CURRENCY"]},
+        _order_ids,
+    )
     try:
         payment_session = create_payment_session(secret_key, payload)
     except XenditError as error:
         logger.error("Xendit checkout creation failed: %s", error)
         _release_xendit_reservation(reference_id)
+        _record_xendit_payment_event(
+            reference_id,
+            "checkout.failed",
+            "failed",
+            {"amount": str(total), "currency": current_app.config["XENDIT_CURRENCY"]},
+            _order_ids,
+        )
         return None, ("Unable to start checkout with Xendit. Please try again.", 502)
 
     conn = get_db()
@@ -1126,6 +1187,17 @@ def _start_xendit_checkout(items, buyer_username, buyer_id, address, cart_ids=No
     conn.commit()
     conn.close()
 
+    _record_xendit_payment_event(
+        reference_id,
+        "checkout.created",
+        "created",
+        {
+            "payment_session_id": payment_session["payment_session_id"],
+            "amount": str(total),
+            "currency": current_app.config["XENDIT_CURRENCY"],
+        },
+        _order_ids,
+    )
     return {
         "status": "redirect",
         "checkout_url": payment_session["payment_link_url"],
@@ -1429,6 +1501,26 @@ def my_marketplace_purchases():
         completed_purchases=completed_purchases,
         cart_count=get_cart_count(session["user"]),
     )
+
+
+def pending_marketplace_payment_status():
+    if "user" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT id
+           FROM marketplace
+           WHERE buyer_username = ? AND order_status = 'awaiting_payment'""",
+        (session["user"],),
+    )
+    pending_order_ids = [row["id"] for row in cur.fetchall()]
+    conn.close()
+
+    response = jsonify({"pending_order_ids": pending_order_ids})
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def cancel_pending_marketplace_payment(listing_id):
@@ -2252,7 +2344,15 @@ def xendit_payment_webhook():
     if not isinstance(reference_id, str) or not reference_id:
         return jsonify({"error": "Webhook is missing its reference ID"}), 400
 
+    order_ids = _xendit_order_ids(reference_id)
     result = _process_xendit_payment_event(event_name, reference_id, data)
+    _record_xendit_payment_event(
+        reference_id,
+        event_name,
+        result,
+        data,
+        order_ids,
+    )
     if result in {"session_mismatch", "amount_mismatch", "currency_mismatch"}:
         current_app.logger.error(
             "Rejected Xendit payment event due to %s for reference %s",
@@ -3025,6 +3125,12 @@ def register(application):
     application.add_url_rule('/marketplace/order-status/<int:listing_id>', endpoint='update_marketplace_order_status', view_func=update_marketplace_order_status, methods=['POST'])
     application.add_url_rule('/marketplace/confirm-receipt/<int:listing_id>', endpoint='confirm_marketplace_receipt', view_func=confirm_marketplace_receipt, methods=['POST'])
     application.add_url_rule('/marketplace/my-purchases', endpoint='my_marketplace_purchases', view_func=my_marketplace_purchases)
+    application.add_url_rule(
+        '/marketplace/pending-payment-status',
+        endpoint='pending_marketplace_payment_status',
+        view_func=pending_marketplace_payment_status,
+        methods=['GET'],
+    )
     application.add_url_rule(
         '/marketplace/cancel-pending-payment/<int:listing_id>',
         endpoint='cancel_pending_marketplace_payment',

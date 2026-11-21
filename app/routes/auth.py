@@ -15,7 +15,11 @@ from .. import legacy as core
 from ..password_policy import password_policy_error
 from ..legacy import logger
 from ..models.database import get_db, update_analytics
-from ..services.auth_service import generate_jwt_token, token_required
+from ..services.auth_service import (
+    activate_due_accounts,
+    generate_jwt_token,
+    token_required,
+)
 from ..services.admin_notification_service import send_notification_email
 from ..services.geotag_service import validate_coordinates, verify_crop_location
 from ..services.profile_service import missing_harvest_profile_requirements
@@ -75,11 +79,13 @@ def login():
             flash("Enter your username or email and password")
             return render_template("login.html")
 
+        activate_due_accounts(get_db)
         conn = get_db()
         cur = conn.cursor()
 
         cur.execute(
-            "SELECT username, password, role, is_active, is_verified, auth_version "
+            "SELECT username, password, role, is_active, is_verified, auth_version, "
+            "reactivate_on "
             "FROM users WHERE username=? OR email=?",
             (identifier, identifier),
         )
@@ -108,7 +114,18 @@ def login():
                         flash("Verify your email address before logging in.")
                         return redirect(url_for("verify_email"))
                 if not user["is_active"]:
-                    flash("This account is inactive. Contact an administrator.")
+                    reactivation_date = user["reactivate_on"]
+                    if reactivation_date:
+                        formatted_date = datetime.strptime(
+                            str(reactivation_date), "%Y-%m-%d"
+                        ).strftime("%B %d, %Y")
+                        flash(
+                            "This account is inactive and is scheduled to reactivate "
+                            f"on {formatted_date} at 12:00 AM Philippine time. "
+                            "Please try logging in again then."
+                        )
+                    else:
+                        flash("This account is inactive. Contact an administrator.")
                     return render_template("login.html")
                 session.clear()
                 session["user"] = user["username"]
@@ -568,6 +585,7 @@ def get_token():
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
     
+    activate_due_accounts(get_db, username)
     conn = get_db()
     cur = conn.cursor()
     cur.execute(

@@ -81,6 +81,7 @@
         <a class="navbar-brand fw-bold ms-2" href="{{ url_for('portal_home') }}"><i class="fas fa-leaf me-2"></i>Agri-Direct</a>
         <div class="d-flex align-items-center gap-2">
             <span class="text-white d-none d-sm-inline"><i class="fas fa-user-circle me-1"></i>{{ session.get('user', 'User') }}</span>
+            {% include '_notification_bell.html' %}
             <a class="btn btn-outline-light btn-sm" href="{{ url_for('profile') }}">Profile</a>
             <a class="btn btn-light btn-sm" href="{{ url_for('logout') }}">Sign out</a>
         </div>
@@ -208,6 +209,7 @@
             {% for order in stage_orders %}
             {% set display_stage = 'Awaiting Payment' if order['order_status'] == 'awaiting_payment' else stage_name %}
             <article class="card purchase-card shadow-sm mb-3 purchase-item"
+                data-order-id="{{ order['id'] }}"
                 data-status="{{ display_stage|lower|replace(' ', '_') }}"
                 data-date="{{ (order['order_date'] or '')[:10] }}"
                 data-search="{{ [order['id'], order['commodity_name'], order['seller_name'], order['delivery_street'], order['delivery_barangay'], order['delivery_city'], order['delivery_province']]|join(' ')|lower }}">
@@ -245,7 +247,7 @@
                             {% if stage_name == 'To Pay' %}
                                 {% if order['order_status'] == 'awaiting_payment' %}
                                     <div class="progress order-progress mb-2"><div class="progress-bar" style="width: 5%"></div></div>
-                                    <small class="text-muted d-block mb-2"><i class="fas fa-clock me-1"></i>Waiting for Xendit to confirm your payment.</small>
+                                    <small class="text-muted d-block mb-2" data-payment-status-message><i class="fas fa-clock me-1"></i>Waiting for Xendit to confirm your payment. This page will update automatically.</small>
                                     {% if order['xendit_checkout_url'] %}
                                     <a class="btn btn-success btn-sm" href="{{ order['xendit_checkout_url'] }}" target="_blank" rel="noopener noreferrer">
                                         <i class="fas fa-lock me-1"></i>Continue to payment
@@ -358,6 +360,53 @@
             filterPurchases();
         });
         filterPurchases();
+
+        const pendingOrderCards = Array.from(
+            document.querySelectorAll('.purchase-item[data-status="awaiting_payment"]')
+        );
+        if (pendingOrderCards.length > 0) {
+            const pendingOrderIds = pendingOrderCards.map((card) => card.dataset.orderId);
+            const statusUrl = {{ url_for('pending_marketplace_payment_status')|tojson }};
+            let checkingStatus = false;
+
+            const checkPaymentStatus = async () => {
+                if (checkingStatus || document.hidden) return;
+                checkingStatus = true;
+                try {
+                    const response = await fetch(statusUrl, {
+                        headers: { Accept: "application/json" },
+                        cache: "no-store",
+                        credentials: "same-origin"
+                    });
+                    if (!response.ok) {
+                        throw new Error(`Payment status check failed (${response.status}).`);
+                    }
+                    const result = await response.json();
+                    if (!Array.isArray(result.pending_order_ids)) {
+                        throw new Error("Payment status response was invalid.");
+                    }
+                    const pendingIds = new Set(result.pending_order_ids.map(String));
+                    if (pendingOrderIds.some((id) => !pendingIds.has(id))) {
+                        window.location.reload();
+                    }
+                } catch (error) {
+                    console.error("Unable to check pending payment status.", error);
+                    pendingOrderCards.forEach((card) => {
+                        const message = card.querySelector("[data-payment-status-message]");
+                        if (message) {
+                            message.textContent = "We can’t check the payment right now. This page will keep trying automatically.";
+                        }
+                    });
+                } finally {
+                    checkingStatus = false;
+                }
+            };
+
+            window.setInterval(checkPaymentStatus, 5000);
+            document.addEventListener("visibilitychange", () => {
+                if (!document.hidden) checkPaymentStatus();
+            });
+        }
     })();
 </script>
 </body>

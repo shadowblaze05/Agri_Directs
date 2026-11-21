@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Face scan monitoring | Agri-Direct Admin</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+</head>
+<body class="admin-page">
+  <nav class="navbar navbar-dark admin-navbar px-4 py-3">
+    <a class="navbar-brand fw-bold" href="{{ url_for('admin') }}">Agri-Direct / Admin</a>
+    <a href="{{ url_for('admin') }}" class="btn btn-outline-light btn-sm">Overview</a>
+  </nav>
+  <main class="container-fluid container-xxl py-4">
+    <a class="breadcrumb-link" href="{{ url_for('admin') }}">Admin Console</a>
+    <div class="page-heading mt-2 mb-4">
+      <h1 class="h3 mb-1">Face scan monitoring</h1>
+      <p class="text-muted mb-0">Review profile-photo scan progress and verification activity.</p>
+    </div>
+
+    <div class="alert alert-info" role="note">
+      <strong>Privacy:</strong> this workspace displays scan status metadata only. Camera frames and face landmarks are not stored or shown here.
+    </div>
+
+    <div class="row g-3 mb-4">
+      <div class="col-sm-6 col-xl">
+        <div class="card h-100"><div class="card-body">
+          <div class="small text-muted">Verified profiles</div>
+          <div class="fs-3 fw-bold">{{ stats.verified_profiles }}</div>
+        </div></div>
+      </div>
+      <div class="col-sm-6 col-xl">
+        <div class="card h-100"><div class="card-body">
+          <div class="small text-muted">Active challenges</div>
+          <div class="fs-3 fw-bold text-primary">{{ stats.active_challenges }}</div>
+        </div></div>
+      </div>
+      <div class="col-sm-6 col-xl">
+        <div class="card h-100"><div class="card-body">
+          <div class="small text-muted">Expired challenges</div>
+          <div class="fs-3 fw-bold text-secondary">{{ stats.expired_challenges }}</div>
+        </div></div>
+      </div>
+      <div class="col-sm-6 col-xl">
+        <div class="card h-100"><div class="card-body">
+          <div class="small text-muted">Attempt-limit reached</div>
+          <div class="fs-3 fw-bold text-danger">{{ stats.failed_challenges }}</div>
+        </div></div>
+      </div>
+      <div class="col-sm-6 col-xl">
+        <div class="card h-100"><div class="card-body">
+          <div class="small text-muted">Captured photo not verified</div>
+          <div class="fs-3 fw-bold text-warning">{{ stats.unverified_captured_photos }}</div>
+        </div></div>
+      </div>
+    </div>
+
+    <section class="card shadow-sm border-0 mb-4">
+      <div class="card-body">
+        <h2 class="h5">Recent scan challenges</h2>
+        <p class="small text-muted">Challenge records are temporary and expired records may be cleaned up when a new scan starts.</p>
+        <form class="row g-2 mb-3" method="get">
+          <div class="col-md">
+            <label class="visually-hidden" for="scan-search">Search by username</label>
+            <input id="scan-search" name="q" value="{{ search }}" class="form-control" placeholder="Search username">
+          </div>
+          <div class="col-md-3">
+            <label class="visually-hidden" for="scan-status">Challenge status</label>
+            <select id="scan-status" name="status" class="form-select">
+              <option value="" {% if not status_filter %}selected{% endif %}>All statuses</option>
+              <option value="in_progress" {% if status_filter == 'in_progress' %}selected{% endif %}>In progress</option>
+              <option value="expired" {% if status_filter == 'expired' %}selected{% endif %}>Expired</option>
+              <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Attempt limit reached</option>
+              <option value="consumed" {% if status_filter == 'consumed' %}selected{% endif %}>Consumed</option>
+            </select>
+          </div>
+          <div class="col-auto"><button class="btn btn-success" type="submit"><i class="fas fa-search me-1"></i>Filter</button></div>
+          {% if search or status_filter %}<div class="col-auto"><a class="btn btn-outline-secondary" href="{{ url_for('admin_face_scan_monitor') }}">Clear</a></div>{% endif %}
+        </form>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>User</th><th>Status</th><th>Progress</th><th>Failed tries at current step</th><th>Started / last accepted step</th><th>Expires</th></tr></thead>
+            <tbody>
+              {% for challenge in challenges %}
+              <tr>
+                <td><strong>@{{ challenge['username'] }}</strong><br><small class="text-muted">{{ challenge['role'] or 'Unknown role' }}</small></td>
+                <td>
+                  {% set badge = 'success' if challenge['scan_status'] == 'consumed' else 'danger' if challenge['scan_status'] == 'failed' else 'secondary' if challenge['scan_status'] == 'expired' else 'primary' %}
+                  <span class="badge text-bg-{{ badge }}">{{ challenge['scan_status']|replace('_', ' ')|title }}</span>
+                  {% if challenge['consumed_at'] %}<br><small class="text-muted">Consumed {{ challenge['consumed_at'] }}</small>{% endif %}
+                </td>
+                <td>{{ challenge['current_stage'] or 0 }} / 5 steps accepted</td>
+                <td>{{ challenge['failed_attempts'] or 0 }}</td>
+                <td>{{ challenge['created_at'] }}<br><small class="text-muted">Last: {{ challenge['last_stage_at'] or 'No step accepted yet' }}</small></td>
+                <td>{{ challenge['expires_at'] }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="6" class="text-center py-4 text-muted">No scan challenges match these filters.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="card shadow-sm border-0">
+      <div class="card-body">
+        <h2 class="h5">Recently verified profile scans</h2>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>User</th><th>Role</th><th>Photo captured</th><th>Scan verified</th></tr></thead>
+            <tbody>
+              {% for profile in verified_profiles %}
+              <tr>
+                <td>@{{ profile['username'] }}</td>
+                <td>{{ profile['role'] or 'Unknown role' }}</td>
+                <td>{{ profile['profile_photo_captured_at'] or 'Not recorded' }}</td>
+                <td>{{ profile['profile_photo_scan_verified_at'] }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-center py-4 text-muted">No verified profile scans match this search.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

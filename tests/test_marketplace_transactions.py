@@ -275,6 +275,40 @@ def test_buyer_purchases_show_a_continue_payment_link_for_pending_xendit_order(m
     assert b"Waiting for Xendit to confirm your payment." in response.data
     assert b'href="https://dev.xen.to/test-session"' in response.data
     assert b"Cancel unpaid checkout" in response.data
+    assert b'data-order-id="29"' in response.data
+    assert b"This page will update automatically." in response.data
+
+
+def test_pending_payment_status_returns_only_the_logged_in_buyers_pending_orders(monkeypatch):
+    class FakeCursor:
+        def execute(self, query, params=()):
+            assert "buyer_username = ?" in query
+            assert "order_status = 'awaiting_payment'" in query
+            assert params == ("buyer",)
+            return self
+
+        def fetchall(self):
+            return [{"id": 29}]
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(marketplace_routes, "get_db", FakeConnection)
+    app_module.app.config.update(TESTING=True)
+
+    with app_module.app.test_client() as client:
+        with client.session_transaction() as session:
+            session["user"] = "buyer"
+
+        response = client.get("/marketplace/pending-payment-status")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"pending_order_ids": [29]}
+    assert "no-store" in response.headers["Cache-Control"]
 
 
 def test_buyer_can_cancel_their_own_pending_xendit_checkout(monkeypatch):

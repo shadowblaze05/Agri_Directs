@@ -58,7 +58,7 @@ def make_profile_report_app(tmp_path):
                 CREATE TABLE marketplace (
                     id INTEGER PRIMARY KEY, username TEXT, buyer_rating INTEGER,
                     status TEXT, buyer_username TEXT, order_status TEXT,
-                    preorder_status TEXT
+                    preorder_status TEXT, payment_method TEXT
                 )
             """))
             connection.execute(text("""

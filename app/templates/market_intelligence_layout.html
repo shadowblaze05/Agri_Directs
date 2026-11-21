@@ -197,7 +197,9 @@
             <span class="navbar-brand mb-0 h1 ms-5">
                 <i class="fas fa-leaf"></i> Agri-Direct
             </span>
-            <div class="dropdown ms-auto">
+            <div class="d-flex align-items-center gap-2 ms-auto">
+                {% include '_notification_bell.html' %}
+                <div class="dropdown">
                 <button class="btn btn-outline-light dropdown-toggle" type="button"
                         id="profileDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                     <i class="fas fa-user-circle"></i> {{ session.get('user', 'User') }}
@@ -211,6 +213,7 @@
                     <li><hr class="dropdown-divider"></li>
                     <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
                 </ul>
+                </div>
             </div>
         </div>
     </nav>

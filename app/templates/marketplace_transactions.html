@@ -212,6 +212,7 @@
         <a class="navbar-brand fw-bold ms-2" href="{{ url_for('portal_home') }}"><i class="fas fa-leaf me-2"></i>Agri-Direct</a>
         <div class="d-flex align-items-center gap-2">
           <span class="text-white d-none d-sm-inline"><i class="fas fa-user-circle me-1"></i>{{ session.get('user', 'User') }}</span>
+          {% include '_notification_bell.html' %}
           <a class="btn btn-outline-light btn-sm" href="{{ url_for('profile') }}">Profile</a>
           <a class="btn btn-light btn-sm" href="{{ url_for('logout') }}">Sign out</a>
         </div>

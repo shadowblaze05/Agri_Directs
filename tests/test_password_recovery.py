@@ -35,7 +35,7 @@ def make_password_recovery_app(database_uri):
                 "id INTEGER PRIMARY KEY, username TEXT NOT NULL, email TEXT NOT NULL, "
                 "password TEXT NOT NULL, role TEXT, is_active INTEGER NOT NULL DEFAULT 1, "
                 "is_verified INTEGER NOT NULL DEFAULT 1, "
-                "auth_version INTEGER NOT NULL DEFAULT 0)"
+                "auth_version INTEGER NOT NULL DEFAULT 0, reactivate_on DATE)"
             )
         )
         db.session.execute(

@@ -17,7 +17,7 @@
       <div>
         <a href="{{ url_for('admin') }}" class="breadcrumb-link">← Admin Console</a>
         <h1 class="h3 mt-2">Users &amp; roles</h1>
-        <p class="text-muted mb-0">Manage accounts, permissions, and access. Pending email registrations are removed after their verification code expires.</p>
+        <p class="text-muted mb-0">Manage accounts, permissions, and access. Inactive accounts can be scheduled to reactivate automatically on a future Philippine calendar date.</p>
       </div>
       <button class="btn btn-success" data-bs-toggle="collapse" data-bs-target="#newUser"><i class="fas fa-plus me-1"></i> New user</button>
     </div>
@@ -69,6 +69,8 @@
                     <span class="badge text-bg-success">Active</span>
                   {% else %}
                     <span class="badge text-bg-danger">Inactive</span>
+                    {% if user['reactivate_on'] %}<div class="small text-muted mt-1">Reactivates {{ user['reactivate_on'] }} (Philippine time)</div>
+                    {% else %}<div class="small text-muted mt-1">Manual reactivation</div>{% endif %}
                   {% endif %}
                 </td>
                 <td>{{ user['location'] or '-' }}</td>
@@ -78,7 +80,7 @@
                   {% elif user['role'] == 'admin' and not is_superadmin %}
                     <span class="text-muted small">Only the super admin can manage admin accounts</span>
                   {% else %}
-                  <form method="post" action="{{ url_for('edit_admin_user', user_id=user['id']) }}" class="d-inline-flex gap-1">
+                  <form method="post" action="{{ url_for('edit_admin_user', user_id=user['id']) }}" class="d-inline-flex gap-1 flex-wrap align-items-start">
                     <input type="hidden" name="first_name" value="{{ user['first_name'] or '' }}">
                     <input type="hidden" name="last_name" value="{{ user['last_name'] or '' }}">
                     <input type="hidden" name="email" value="{{ user['email'] or '' }}">
@@ -96,6 +98,11 @@
                         <option value="1" {% if user['is_active'] %}selected{% endif %}>Active</option>
                         <option value="0" {% if not user['is_active'] %}selected{% endif %}>Inactive</option>
                       </select>
+                      <div>
+                        <label class="visually-hidden" for="reactivate-{{ user['id'] }}">Reactivation date</label>
+                        <input id="reactivate-{{ user['id'] }}" name="reactivate_on" type="date" class="form-control form-control-sm" min="{{ minimum_reactivation_date }}" value="{{ user['reactivate_on'] or '' }}" aria-label="Reactivation date (Philippine time)">
+                        <small class="form-text">Used only when inactive; blank means manual reactivation.</small>
+                      </div>
                     {% endif %}
                     <button class="btn btn-sm btn-outline-primary">Save</button>
                   </form>

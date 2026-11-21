@@ -68,6 +68,17 @@ def payment_database():
             delivery_street TEXT,
             delivery_landmark TEXT
         );
+        CREATE TABLE xendit_payment_events (
+            id INTEGER PRIMARY KEY,
+            reference_id TEXT NOT NULL,
+            order_ids TEXT NOT NULL DEFAULT '',
+            event_name TEXT NOT NULL,
+            result TEXT NOT NULL,
+            session_id TEXT,
+            amount TEXT,
+            currency TEXT,
+            received_at TEXT NOT NULL
+        );
         CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT);
         CREATE TABLE cart (
             id INTEGER PRIMARY KEY,
@@ -291,6 +302,10 @@ def test_capture_webhook_confirms_order(monkeypatch, event_name, amount_field):
         "SELECT order_status FROM marketplace WHERE id = 10"
     ).fetchone()
     assert order["order_status"] == "to_pay"
+    event = connection.execute(
+        "SELECT event_name, result, order_ids, session_id FROM xendit_payment_events"
+    ).fetchone()
+    assert tuple(event) == (event_name, "paid", "10", None)
 
 
 @pytest.mark.parametrize("event_name", ["payment.capture", "capture.succeeded"])

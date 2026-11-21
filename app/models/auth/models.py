@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Float,
@@ -95,6 +96,8 @@ class User(Model):
         default=True,
         nullable=False
     )
+
+    reactivate_on = Column(Date, nullable=True)
 
     auth_version = Column(
         Integer,
