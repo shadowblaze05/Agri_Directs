@@ -7,7 +7,8 @@ from sqlalchemy import (
     Float,
     Integer,
     String,
-    Text
+    Text,
+    false,
 )
 
 from ..base import Column, Model
@@ -61,12 +62,19 @@ class User(Model):
         String(255),
         nullable=True
     )
+    profile_picture_public = Column(
+        Boolean,
+        default=False,
+        server_default=false(),
+        nullable=False,
+    )
 
     location_latitude = Column(Float, nullable=True)
     location_longitude = Column(Float, nullable=True)
     location_verified = Column(Boolean, default=False, nullable=False)
     location_verified_at = Column(DateTime(timezone=True), nullable=True)
     profile_photo_captured_at = Column(DateTime(timezone=True), nullable=True)
+    profile_photo_scan_verified_at = Column(DateTime(timezone=True), nullable=True)
     psgc_location = Column(String(255), nullable=True)
     geotag_location = Column(String(255), nullable=True)
 
@@ -99,6 +107,12 @@ class User(Model):
         String(255),
         nullable=True
     )
+
+    saved_delivery_province = Column(String(255), nullable=True)
+    saved_delivery_city = Column(String(255), nullable=True)
+    saved_delivery_barangay = Column(String(255), nullable=True)
+    saved_delivery_street = Column(String(255), nullable=True)
+    saved_delivery_landmark = Column(String(255), nullable=True)
 
     # Verification
     is_verified = Column(

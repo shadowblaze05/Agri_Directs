@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any, Iterable
 import numpy as np
 from .data_sources.price_data import build_price_snapshot
+from .data_sources.supply_data import record_commodity_name
 
 class SupplyAnalysisService:
 
@@ -9,7 +10,7 @@ class SupplyAnalysisService:
     def _crop_totals(records):
         totals = {}
         for row in records or []:
-            crop = (row or {}).get("crop_name") or ""
+            crop = record_commodity_name(row)
             quantity = float((row or {}).get("quantity") or 0)
             if not crop or quantity <= 0:
                 continue
@@ -34,7 +35,7 @@ class SupplyAnalysisService:
         for crop, total in sorted(totals.items()):
             values = []
             for row in records or []:
-                if (row or {}).get("crop_name") == crop:
+                if record_commodity_name(row) == crop:
                     values.append(float((row or {}).get("quantity") or 0))
             thresholds = self._thresholds(values)
             current = total

@@ -33,20 +33,20 @@ def _application(tmp_path):
                 )
             """))
             connection.execute(text("""
-                CREATE TABLE crop_categories (
+                CREATE TABLE commodity_categories (
                     id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL,
                     description TEXT
                 )
             """))
             connection.execute(text("""
-                CREATE TABLE crops (
-                    id INTEGER PRIMARY KEY, crops_name TEXT UNIQUE,
-                    category_id INTEGER
+                CREATE TABLE commodities (
+                    id INTEGER PRIMARY KEY, commodity_name TEXT UNIQUE,
+                    category_id INTEGER, default_price_unit TEXT NOT NULL DEFAULT 'kg'
                 )
             """))
             connection.execute(text("""
-                CREATE TABLE crop_pricing (
-                    crop_id INTEGER PRIMARY KEY REFERENCES crops(id) ON DELETE CASCADE,
+                CREATE TABLE commodity_pricing (
+                    commodity_id INTEGER PRIMARY KEY REFERENCES commodities(id) ON DELETE CASCADE,
                     pricing_mode TEXT NOT NULL,
                     price_unit TEXT NOT NULL DEFAULT 'kg',
                     reference_price NUMERIC(10, 2),
@@ -56,17 +56,28 @@ def _application(tmp_path):
                 )
             """))
             connection.execute(text("""
+                CREATE TABLE commodity_price_units (unit TEXT PRIMARY KEY NOT NULL)
+            """))
+            connection.execute(
+                text("INSERT INTO commodity_price_units (unit) VALUES ('kg'), ('pc'), ('pack')")
+            )
+            connection.execute(text("""
                 CREATE TABLE inventory (
-                    id INTEGER PRIMARY KEY, crop_id INTEGER, crop_name TEXT,
+                    id INTEGER PRIMARY KEY, commodity_id INTEGER, commodity_name TEXT,
                     farmer TEXT, quantity INTEGER
                 )
             """))
             connection.execute(text("""
                 CREATE TABLE marketplace (
                     id INTEGER PRIMARY KEY, user_id INTEGER, username TEXT,
-                    crop_id INTEGER, crop_name TEXT, amount INTEGER, price REAL,
+                    commodity_id INTEGER, commodity_name TEXT, amount INTEGER, price REAL,
                     unit TEXT, status TEXT, description TEXT, listing_type TEXT,
                     main_image TEXT
+                )
+            """))
+            connection.execute(text("""
+                CREATE TABLE cart (
+                    id INTEGER PRIMARY KEY, user_id INTEGER, quantity INTEGER
                 )
             """))
             connection.execute(text(
@@ -74,19 +85,19 @@ def _application(tmp_path):
                 "(1, 'admin', 'admin'), (2, 'seller', 'user')"
             ))
             connection.execute(text(
-                "INSERT INTO crop_categories (id, name) VALUES (1, 'Vegetables')"
+                "INSERT INTO commodity_categories (id, name) VALUES (1, 'Vegetables')"
             ))
             connection.execute(text(
-                "INSERT INTO crops (id, crops_name, category_id) "
+                "INSERT INTO commodities (id, commodity_name, category_id) "
                 "VALUES (1, 'Tomato', 1)"
             ))
             connection.execute(text(
-                "INSERT INTO inventory (crop_id, farmer, quantity) "
+                "INSERT INTO inventory (commodity_id, farmer, quantity) "
                 "VALUES (1, 'seller', 0)"
             ))
             connection.execute(text("""
                 INSERT INTO marketplace (
-                    id, user_id, username, crop_id, crop_name, amount, price,
+                    id, user_id, username, commodity_id, commodity_name, amount, price,
                     unit, status, description, listing_type, main_image
                 ) VALUES (
                     1, 2, 'seller', 1, 'Tomato', 1, 48, 'kg', 'available',
@@ -125,7 +136,7 @@ def test_admin_price_range_is_saved_and_enforced_for_seller_listings(tmp_path):
         pricing = db.session.execute(
             text(
                 "SELECT pricing_mode, reference_price, price_range "
-                "FROM crop_pricing WHERE crop_id=1"
+                "FROM commodity_pricing WHERE commodity_id=1"
             )
         ).one()
         assert pricing.pricing_mode == "range"
@@ -164,6 +175,7 @@ def test_admin_price_range_is_saved_and_enforced_for_seller_listings(tmp_path):
         for message in _flash_messages(seller_client)
     )
 
+
     with seller_client.session_transaction() as session:
         session.pop("_flashes", None)
     response = seller_client.post(
@@ -193,6 +205,47 @@ def test_admin_price_range_is_saved_and_enforced_for_seller_listings(tmp_path):
             text("SELECT unit FROM marketplace WHERE id=1")
         ).scalar_one()
         assert listing_unit == "kg"
+
+
+def test_seller_listing_uses_commodity_default_price_unit(tmp_path):
+    application = _application(tmp_path)
+    with application.app_context():
+        db.session.execute(
+            text("UPDATE commodities SET default_price_unit='pack' WHERE id=1")
+        )
+        db.session.commit()
+
+    seller_client = application.test_client()
+    _set_user(seller_client, "seller")
+    response = seller_client.post(
+        "/marketplace/add",
+        data={
+            "commodity_id": "1",
+            "amount": "1",
+            "price": "50",
+            "unit": "kg",
+            "listing_type": "standard",
+        },
+    )
+
+    assert response.status_code == 302
+    assert any("Available: 0 pack" in message for message in _flash_messages(seller_client))
+
+
+def test_listing_form_uses_commodity_default_price_unit(tmp_path):
+    application = _application(tmp_path)
+    with application.app_context():
+        db.session.execute(
+            text("UPDATE commodities SET default_price_unit='pack' WHERE id=1")
+        )
+        db.session.commit()
+
+    seller_client = application.test_client()
+    _set_user(seller_client, "seller")
+    response = seller_client.get("/marketplace/add")
+
+    assert response.status_code == 200
+    assert b'data-price-unit="pack"' in response.data
 
 
 def test_admin_can_set_explicit_bounds_and_filter_catalog(tmp_path):
@@ -226,11 +279,11 @@ def test_catalog_has_selected_crop_pricing_editor(tmp_path):
     response = admin_client.get("/admin/catalog")
 
     assert response.status_code == 200
-    assert b"Set rules for crops" in response.data
+    assert b"Set rules for commodities" in response.data
     assert b"addCropPricingRule" in response.data
-    assert b'name="crop_id"' in response.data
+    assert b'name="commodity_id"' in response.data
     assert b"Specific price + range" in response.data
-    assert b"Import a file first to choose crops here." in response.data
+    assert b"Import a file first to choose commodities here." in response.data
 
 
 def test_batch_crop_pricing_saves_rules_then_clears_imported_crops(tmp_path):
@@ -241,7 +294,7 @@ def test_batch_crop_pricing_saves_rules_then_clears_imported_crops(tmp_path):
         session["crop_pricing_import_crop_ids"] = [1, 2]
     with application.app_context():
         db.session.execute(
-            text("INSERT INTO crops(id, crops_name, category_id) VALUES (2, 'Potato', 1)")
+            text("INSERT INTO commodities(id, commodity_name, category_id) VALUES (2, 'Potato', 1)")
         )
         db.session.commit()
 
@@ -259,9 +312,9 @@ def test_batch_crop_pricing_saves_rules_then_clears_imported_crops(tmp_path):
     )
 
     assert response.status_code == 200
-    assert b"Saved price rules for 2 crop(s)." in response.data
+    assert b"Saved price rules for 2 commodities." in response.data
     assert response.data.count(b"class=\"row g-2 align-items-end mb-2 pricing-rule-row\"") == 1
-    assert b"Import a file first to choose crops here." in response.data
+    assert b"Import a file first to choose commodities here." in response.data
     crop_rule_select = response.data.split(b'id="ruleCrop0"', 1)[1].split(
         b"</select>", 1
     )[0]
@@ -272,10 +325,10 @@ def test_batch_crop_pricing_saves_rules_then_clears_imported_crops(tmp_path):
     with application.app_context():
         rules = db.session.execute(
             text(
-                "SELECT crop_id, pricing_mode FROM crop_pricing ORDER BY crop_id"
+                "SELECT commodity_id, pricing_mode FROM commodity_pricing ORDER BY commodity_id"
             )
         ).all()
-        assert [(rule.crop_id, rule.pricing_mode) for rule in rules] == [
+        assert [(rule.commodity_id, rule.pricing_mode) for rule in rules] == [
             (1, "range"),
             (2, "bounds"),
         ]
@@ -289,7 +342,7 @@ def test_batch_crop_pricing_rejects_invalid_rule_without_partial_save(tmp_path):
         session["crop_pricing_import_crop_ids"] = [1, 2]
     with application.app_context():
         db.session.execute(
-            text("INSERT INTO crops(id, crops_name, category_id) VALUES (2, 'Potato', 1)")
+            text("INSERT INTO commodities(id, commodity_name, category_id) VALUES (2, 'Potato', 1)")
         )
         db.session.commit()
 
@@ -310,7 +363,7 @@ def test_batch_crop_pricing_rejects_invalid_rule_without_partial_save(tmp_path):
     assert b"Minimum price must be positive and no greater than maximum price" in response.data
     with application.app_context():
         assert db.session.execute(
-            text("SELECT COUNT(*) FROM crop_pricing")
+            text("SELECT COUNT(*) FROM commodity_pricing")
         ).scalar_one() == 0
 
 
@@ -320,13 +373,13 @@ def test_admin_can_import_csv_and_rejects_invalid_rows_without_partial_save(tmp_
     _set_user(admin_client, "admin")
     with application.app_context():
         db.session.execute(
-            text("INSERT INTO crops(id, crops_name, category_id) VALUES (2, 'Potato', 1)")
+            text("INSERT INTO commodities(id, commodity_name, category_id) VALUES (2, 'Potato', 1)")
         )
         db.session.commit()
 
     template_response = admin_client.get("/admin/catalog/pricing/template")
     assert template_response.status_code == 200
-    assert b"crop_name,category_name,price_unit,price" in template_response.data
+    assert b"commodity_name,category_name,price_unit,price" in template_response.data
     assert b"Rice,Grains,kg,50" in template_response.data
     assert b"Tomato,Vegetables,kg,40" in template_response.data
 
@@ -344,9 +397,9 @@ def test_admin_can_import_csv_and_rejects_invalid_rows_without_partial_save(tmp_
         follow_redirects=True,
     )
     assert response.status_code == 200
-    assert b"updated prices for 1 crop(s)" in response.data
+    assert b"updated prices for 1 commodity" in response.data
     assert b"Tomato" in response.data
-    assert b"Import a file first to choose crops here." not in response.data
+    assert b"Import a file first to choose commodities here." not in response.data
     crop_rule_select = response.data.split(b'id="ruleCrop0"', 1)[1].split(
         b"</select>", 1
     )[0]
@@ -356,14 +409,14 @@ def test_admin_can_import_csv_and_rejects_invalid_rows_without_partial_save(tmp_
         imported_price = db.session.execute(
             text(
                 "SELECT pricing_mode, reference_price, price_range "
-                "FROM crop_pricing WHERE crop_id=1"
+                "FROM commodity_pricing WHERE commodity_id=1"
             )
         ).one()
         assert imported_price.pricing_mode == "range"
         assert float(imported_price.reference_price) == 48
         assert float(imported_price.price_range) == 8
         assert db.session.execute(
-            text("SELECT crops_name FROM crops WHERE id=1")
+            text("SELECT commodity_name FROM commodities WHERE id=1")
         ).scalar_one() == "Tomato"
 
     invalid_csv = (
@@ -383,10 +436,10 @@ def test_admin_can_import_csv_and_rejects_invalid_rows_without_partial_save(tmp_
     assert response.status_code == 200
     assert b"price_unit must be kg" in response.data
     with application.app_context():
-        assert db.session.execute(text("SELECT COUNT(*) FROM crop_pricing")).scalar_one() == 1
-        assert db.session.execute(text("SELECT COUNT(*) FROM crops")).scalar_one() == 2
+        assert db.session.execute(text("SELECT COUNT(*) FROM commodity_pricing")).scalar_one() == 1
+        assert db.session.execute(text("SELECT COUNT(*) FROM commodities")).scalar_one() == 2
         assert db.session.execute(
-            text("SELECT COUNT(*) FROM crop_categories")
+            text("SELECT COUNT(*) FROM commodity_categories")
         ).scalar_one() == 1
 
     valid_new_crop_csv = (
@@ -407,14 +460,14 @@ def test_admin_can_import_csv_and_rejects_invalid_rows_without_partial_save(tmp_
     with application.app_context():
         new_crop = db.session.execute(
             text(
-                "SELECT crops.id, crop_categories.name AS category_name "
-                "FROM crops JOIN crop_categories ON crop_categories.id=crops.category_id "
-                "WHERE crops.crops_name='New Crop'"
+                "SELECT commodities.id, commodity_categories.name AS category_name "
+                "FROM commodities JOIN commodity_categories ON commodity_categories.id=commodities.category_id "
+                "WHERE commodities.commodity_name='New Crop'"
             )
         ).one()
         assert new_crop.category_name == "New Category"
         assert db.session.execute(
-            text("SELECT COUNT(*) FROM crop_pricing WHERE crop_id=:id"),
+            text("SELECT COUNT(*) FROM commodity_pricing WHERE commodity_id=:id"),
             {"id": new_crop.id},
         ).scalar_one() == 1
 
@@ -447,11 +500,11 @@ def test_admin_can_import_excel_crop_prices(tmp_path):
     assert response.status_code == 302
     with application.app_context():
         assert db.session.execute(
-            text("SELECT crops_name FROM crops WHERE id=1")
+            text("SELECT commodity_name FROM commodities WHERE id=1")
         ).scalar_one() == "Tomato"
         imported_price = db.session.execute(
             text(
-                "SELECT reference_price, price_range FROM crop_pricing WHERE crop_id=1"
+                "SELECT reference_price, price_range FROM commodity_pricing WHERE commodity_id=1"
             )
         ).one()
         assert float(imported_price.reference_price) == 48
@@ -480,13 +533,13 @@ def test_admin_can_apply_shared_price_rule_to_all_imported_crops(tmp_path):
 
     assert response.status_code == 200
     assert b"Import successful" in response.data
-    assert b"updated prices for 2 crop(s)" in response.data
+    assert b"updated prices for 2 commodities" in response.data
     assert b"New Crop" in response.data
     with application.app_context():
         rules = db.session.execute(
             text(
                 "SELECT pricing_mode, reference_price, price_range, price_unit "
-                "FROM crop_pricing ORDER BY crop_id"
+                "FROM commodity_pricing ORDER BY commodity_id"
             )
         ).all()
         assert len(rules) == 2
@@ -518,9 +571,9 @@ def test_invalid_price_range_does_not_import_crops(tmp_path):
     assert response.status_code == 200
     assert b"Allowed range must be less than the specific price" in response.data
     with application.app_context():
-        assert db.session.execute(text("SELECT COUNT(*) FROM crops")).scalar_one() == 1
+        assert db.session.execute(text("SELECT COUNT(*) FROM commodities")).scalar_one() == 1
         assert db.session.execute(
-            text("SELECT COUNT(*) FROM crop_categories")
+            text("SELECT COUNT(*) FROM commodity_categories")
         ).scalar_one() == 1
 
 

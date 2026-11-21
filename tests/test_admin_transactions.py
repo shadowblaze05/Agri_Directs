@@ -31,7 +31,7 @@ class FakeCursor:
         return [
             {
                 "id": 12,
-                "crop_name": "Tomatoes",
+                "commodity_name": "Tomatoes",
                 "username": "farmer",
                 "seller_name": "farmer",
                 "buyer_username": "buyer",
@@ -51,7 +51,7 @@ class FakeCursor:
             },
             {
                 "id": 13,
-                "crop_name": "Sweet corn",
+                "commodity_name": "Sweet corn",
                 "username": "farmer",
                 "seller_name": "farmer",
                 "buyer_username": "buyer2",
@@ -157,7 +157,7 @@ def test_admin_transactions_query_includes_all_order_states_not_open_listings(tm
             ))
             connection.execute(text("""
                 CREATE TABLE marketplace (
-                    id INTEGER PRIMARY KEY, user_id INTEGER, username TEXT, crop_name TEXT,
+                    id INTEGER PRIMARY KEY, user_id INTEGER, username TEXT, commodity_name TEXT,
                     buyer_username TEXT, amount INTEGER, preorder_quantity INTEGER,
                     unit TEXT, price FLOAT, listing_type TEXT, order_status TEXT,
                     preorder_status TEXT, status TEXT, order_date TEXT, delivery_date TEXT,
@@ -171,7 +171,7 @@ def test_admin_transactions_query_includes_all_order_states_not_open_listings(tm
             ))
             connection.execute(text("""
                 INSERT INTO marketplace (
-                    id, user_id, username, crop_name, buyer_username, amount, unit, price,
+                    id, user_id, username, commodity_name, buyer_username, amount, unit, price,
                     listing_type, order_status, status, order_date, delivery_confirmed,
                     buyer_confirmed, listing_date
                 ) VALUES

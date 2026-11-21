@@ -603,8 +603,9 @@ def api_harvest():
             return jsonify({"error": "Submit harvest data as a JSON object"}), 400
         
         # Validate input
-        if not data.get("crop_name") or not data.get("quantity"):
-            return jsonify({"error": "Missing crop_name or quantity"}), 400
+        commodity_name = data.get("commodity_name") or data.get("crop_name")
+        if not commodity_name or not data.get("quantity"):
+            return jsonify({"error": "Missing commodity_name/crop_name or quantity"}), 400
 
         # Require location in API submissions
         if not data.get("location"):
@@ -646,6 +647,7 @@ def api_harvest():
         cur = conn.cursor()
         cur.execute(
             "SELECT first_name, last_name, email, profile_picture, profile_photo_captured_at, "
+            "profile_photo_scan_verified_at, "
             "location, psgc_location, geotag_location, location_latitude, location_longitude, "
             "is_active, role, auth_version "
             "FROM users WHERE username=?",
@@ -685,7 +687,7 @@ def api_harvest():
             current_app.config["MAX_CROP_DISTANCE_METERS"],
         )
         notes = [
-            "API submissions do not include crop photo evidence.",
+            "API submissions do not include commodity photo evidence.",
             "GPS coordinates and timestamp are self-reported; proximity is not verification.",
         ]
         if not has_reference_location:
@@ -696,10 +698,10 @@ def api_harvest():
 
         cur.execute("""
         INSERT INTO inventory(
-            crop_id, quantity, farmer, date_received, location, latitude, longitude,
+            commodity_id, quantity, farmer, date_received, location, latitude, longitude,
             capture_time, distance_from_user, verification_status, verification_notes
         )
-        SELECT id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM crops WHERE crops_name=?
+        SELECT id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM commodities WHERE commodity_name=?
         """, (
             quantity,
             username,
@@ -711,20 +713,21 @@ def api_harvest():
             distance,
             verification_status,
             " ".join(notes),
-            data["crop_name"].strip(),
+            commodity_name.strip(),
         ))
         if cur.rowcount == 0:
             conn.close()
-            return jsonify({"error": "Crop was not found"}), 404
+            return jsonify({"error": "Commodity was not found"}), 404
         
         conn.commit()
         conn.close()
         update_analytics()
         
-        logger.info(f"Harvest recorded via API: {data['crop_name']} x{quantity} by {username}")
+        logger.info(f"Harvest recorded via API: {commodity_name} x{quantity} by {username}")
         return jsonify({
             "status": "harvest recorded",
-            "crop": data["crop_name"],
+            "crop": commodity_name,
+            "commodity": commodity_name,
             "quantity": quantity,
             "verification_status": verification_status,
             "proximity_status": proximity_status,

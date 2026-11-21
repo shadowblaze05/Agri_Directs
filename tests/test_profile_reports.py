@@ -37,9 +37,11 @@ def make_profile_report_app(tmp_path):
                 CREATE TABLE users (
                     id INTEGER PRIMARY KEY, username TEXT UNIQUE, first_name TEXT,
                     last_name TEXT, email TEXT, phone_number TEXT,
-                    profile_picture TEXT, bio TEXT, role TEXT, is_verified BOOLEAN,
+                    profile_picture TEXT, profile_picture_public BOOLEAN NOT NULL DEFAULT 0,
+                    bio TEXT, role TEXT, is_verified BOOLEAN,
                     location_latitude FLOAT, location_longitude FLOAT,
                     location_verified BOOLEAN, profile_photo_captured_at DATETIME,
+                    profile_photo_scan_verified_at DATETIME,
                     psgc_location TEXT, geotag_location TEXT,
                     is_active BOOLEAN NOT NULL DEFAULT 1,
                     auth_version INTEGER NOT NULL DEFAULT 0
@@ -61,12 +63,12 @@ def make_profile_report_app(tmp_path):
             """))
             connection.execute(text("""
                 CREATE TABLE inventory (
-                    id INTEGER PRIMARY KEY, crop_id INTEGER, crop_name TEXT
+                    id INTEGER PRIMARY KEY, commodity_id INTEGER, commodity_name TEXT
                 )
             """))
             connection.execute(text("""
-                CREATE TABLE crops (
-                    id INTEGER PRIMARY KEY, crops_name TEXT
+                CREATE TABLE commodities (
+                    id INTEGER PRIMARY KEY, commodity_name TEXT
                 )
             """))
             connection.execute(text("""

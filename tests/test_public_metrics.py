@@ -17,7 +17,7 @@ class MetricsCursor:
 
     def execute(self, query, params=()):
         self.calls.append((query, params))
-        if "SELECT id, crop_name, amount, price, unit, location" in query:
+        if "SELECT m.id, m.commodity_name, m.amount, m.price, m.unit, m.location" in query:
             self.result = self.featured_commodities
         elif "SELECT username AS buyer" in query:
             self.result = {"count": 1250}
@@ -107,7 +107,7 @@ def test_public_landing_page_shows_real_available_marketplace_prices(monkeypatch
     cursor = MetricsCursor(featured_commodities=[
         {
             "id": 17,
-            "crop_name": "Tomatoes",
+            "commodity_name": "Tomatoes",
             "amount": 25,
             "price": 58.5,
             "unit": "kg",
@@ -118,7 +118,7 @@ def test_public_landing_page_shows_real_available_marketplace_prices(monkeypatch
         },
         {
             "id": 18,
-            "crop_name": "Fresh corn",
+            "commodity_name": "Fresh corn",
             "amount": 10,
             "price": None,
             "unit": "bundle",
@@ -145,7 +145,11 @@ def test_public_landing_page_shows_real_available_marketplace_prices(monkeypatch
     assert b"Ask seller for price" in response.data
     assert b"10 bundle available" in response.data
     assert b"Pre-order" in response.data
-    query = next(query for query, _ in cursor.calls if "SELECT id, crop_name, amount, price, unit, location" in query)
+    query = next(
+        query
+        for query, _ in cursor.calls
+        if "SELECT m.id, m.commodity_name, m.amount, m.price, m.unit, m.location" in query
+    )
     assert "status = 'available'" in query
     assert "listing_type <> 'looking_for'" in query
     assert "LIMIT 6" in query
@@ -198,6 +202,11 @@ def test_dashboard_inventory_refresh_is_scoped_for_users_and_global_for_admins(m
         "get_active_user_role",
         lambda username: "admin" if username == "admin" else "user",
     )
+    monkeypatch.setattr(
+        home_routes,
+        "get_active_user_role",
+        lambda username, *_args: "admin" if username == "admin" else "user",
+    )
     app_module.app.config.update(TESTING=True)
 
     with app_module.app.test_client() as client:
@@ -207,6 +216,7 @@ def test_dashboard_inventory_refresh_is_scoped_for_users_and_global_for_admins(m
         response = client.get("/dashboard-data")
         assert response.status_code == 200
         assert "i.farmer = ?" in connection.fake_cursor.query
+        assert "i.source IS NULL OR" not in connection.fake_cursor.query
         assert connection.fake_cursor.params == ("farmer-one",)
 
         with client.session_transaction() as user_session:
@@ -256,6 +266,9 @@ def test_stats_api_scopes_every_inventory_query_to_non_admin(monkeypatch):
     connection = StatsConnection()
     monkeypatch.setattr(home_routes, "get_db", lambda: connection)
     monkeypatch.setattr(app_module, "get_active_user_role", lambda *_args: "user")
+    monkeypatch.setattr(
+        home_routes, "get_active_user_role", lambda *_args: "user"
+    )
     app_module.app.config.update(TESTING=True)
 
     with app_module.app.test_client() as client:
@@ -272,6 +285,7 @@ def test_stats_api_scopes_every_inventory_query_to_non_admin(monkeypatch):
     assert inventory_queries
     assert all("farmer = ?" in query for query, _ in inventory_queries)
     assert all("farmer-one" in params for _, params in inventory_queries)
+    assert all("source IS NULL OR" not in query for query, _ in inventory_queries)
 
 
 def test_locations_page_scopes_harvest_by_user_without_a_map(monkeypatch):

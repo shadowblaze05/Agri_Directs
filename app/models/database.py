@@ -104,7 +104,7 @@ class PostgreSQLCursor:
 
     def execute(self, sql, params=None):
         legacy_insert = re.match(
-            r"^\s*INSERT\s+(?:OR\s+IGNORE\s+)?INTO\s+inventory\s*\(\s*crop_name\s*,\s*(.*?)\)\s*VALUES\s*\(\s*(.*?)\s*\)\s*;?\s*$",
+            r"^\s*INSERT\s+(?:OR\s+IGNORE\s+)?INTO\s+inventory\s*\(\s*(?:commodity_name|crop_name)\s*,\s*(.*?)\)\s*VALUES\s*\(\s*(.*?)\s*\)\s*;?\s*$",
             sql,
             flags=re.IGNORECASE | re.DOTALL,
         )
@@ -126,9 +126,9 @@ class PostgreSQLCursor:
                 legacy_params = tuple(params)
                 if legacy_params:
                     sql = (
-                        "INSERT INTO inventory(crop_id, crop_name, "  # nosec B608
+                        "INSERT INTO inventory(commodity_id, commodity_name, "  # nosec B608
                         + ", ".join(column_names) + ") "  # nosec B608
-                        "VALUES ((SELECT id FROM crops WHERE crops_name = ?), ?, "
+                        "VALUES ((SELECT id FROM commodities WHERE commodity_name = ?), ?, "
                         + ", ".join("?" for _ in range(len(legacy_params) - 1)) + ")"
                     )
                     params = (legacy_params[0],) + legacy_params
@@ -208,12 +208,12 @@ class SQLAlchemyConnection:
 
     def commit(self):
         with _with_app_context():
-            if inspect(db.engine).has_table("inventory") and inspect(db.engine).has_table("crops"):
+            if inspect(db.engine).has_table("inventory") and inspect(db.engine).has_table("commodities"):
                 db.session.execute(
                     text(
                         "UPDATE inventory "
-                        "SET crop_name = (SELECT crops.crops_name FROM crops WHERE crops.id = inventory.crop_id) "
-                        "WHERE crop_name IS NULL AND crop_id IS NOT NULL"
+                        "SET commodity_name = (SELECT commodities.commodity_name FROM commodities WHERE commodities.id = inventory.commodity_id) "
+                        "WHERE commodity_name IS NULL AND commodity_id IS NOT NULL"
                     )
                 )
             db.session.flush()
@@ -261,24 +261,27 @@ def _save_upload_file(uploaded_file, subfolder):
 
 def _seed_default_crops(cur):
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS crops(
+    CREATE TABLE IF NOT EXISTS commodities(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        crops_name TEXT UNIQUE
+        commodity_name TEXT UNIQUE,
+        description TEXT,
+        default_image TEXT,
+        default_price_unit TEXT NOT NULL DEFAULT 'kg'
     )
     """)
 
-    cur.execute("SELECT COUNT(*) AS count FROM crops")
+    cur.execute("SELECT COUNT(*) AS count FROM commodities")
     if cur.fetchone()["count"] == 0:
         default_crops = ["Rice", "Maize", "Tomato", "Cabbage", "Banana", "Corn", "Cassava"]
-        for crop_name in default_crops:
-            cur.execute("INSERT OR IGNORE INTO crops(crops_name) VALUES (?)", (crop_name,))
+        for commodity_name in default_crops:
+            cur.execute("INSERT OR IGNORE INTO commodities(commodity_name) VALUES (?)", (commodity_name,))
 
 
 def _migrate_harvest_to_inventory(cur):
     cur.execute("""
     CREATE TABLE IF NOT EXISTS harvest(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        crop_id INTEGER,
+        commodity_id INTEGER,
         quantity INTEGER,
         farmer TEXT,
         date_received TEXT,
@@ -289,23 +292,23 @@ def _migrate_harvest_to_inventory(cur):
     cur.execute("SELECT COUNT(*) AS count FROM inventory")
     inventory_exists = cur.fetchone()["count"] > 0
 
-    cur.execute("SELECT id, crop_id, quantity, farmer, date_received, location FROM harvest ORDER BY id")
+    cur.execute("SELECT id, commodity_id, quantity, farmer, date_received, location FROM harvest ORDER BY id")
     harvest_rows = cur.fetchall()
 
     for row in harvest_rows:
-        if row["crop_id"] is None:
+        if row["commodity_id"] is None:
             continue
 
         existing = cur.execute(
-            "SELECT id FROM inventory WHERE crop_id=? AND quantity=? AND farmer=? AND date_received=? AND COALESCE(location, '')=COALESCE(?, '')",
-            (row["crop_id"], row["quantity"], row["farmer"], row["date_received"], row["location"])
+            "SELECT id FROM inventory WHERE commodity_id=? AND quantity=? AND farmer=? AND date_received=? AND COALESCE(location, '')=COALESCE(?, '')",
+            (row["commodity_id"], row["quantity"], row["farmer"], row["date_received"], row["location"])
         ).fetchone()
         if existing:
             continue
 
         cur.execute(
-            "INSERT INTO inventory(crop_id, quantity, farmer, date_received, location) VALUES (?, ?, ?, ?, ?)",
-            (row["crop_id"], row["quantity"], row["farmer"], row["date_received"], row["location"])
+            "INSERT INTO inventory(commodity_id, quantity, farmer, date_received, location) VALUES (?, ?, ?, ?, ?)",
+            (row["commodity_id"], row["quantity"], row["farmer"], row["date_received"], row["location"])
         )
 
     if harvest_rows and not inventory_exists:
@@ -328,6 +331,7 @@ def init_db():
             "knowledge_comments",
             "knowledge_likes",
             "knowledge_posts",
+            "profile_photo_challenges",
             "notifications",
             "messages",
             "inventory",
@@ -371,18 +375,41 @@ def init_db():
             cur.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
 
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS crop_categories(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT UNIQUE NOT NULL,
-        description TEXT
+    CREATE TABLE IF NOT EXISTS commodity_price_units(
+        unit TEXT PRIMARY KEY NOT NULL
     )
     """)
+    for unit in ("kg", "pc", "pack"):
+        cur.execute(
+            "INSERT OR IGNORE INTO commodity_price_units(unit) VALUES (?)",
+            (unit,),
+        )
+
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS crop_pricing(
-        crop_id INTEGER PRIMARY KEY,
+    CREATE TABLE IF NOT EXISTS commodity_categories(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE NOT NULL,
+        description TEXT,
+        default_price_unit TEXT NOT NULL DEFAULT 'kg'
+    )
+    """)
+    cur.execute("PRAGMA table_info(commodity_categories)")
+    category_columns = [row[1] for row in cur.fetchall()]
+    category_price_unit_added = "default_price_unit" not in category_columns
+    if category_price_unit_added:
+        cur.execute(
+            "ALTER TABLE commodity_categories "
+            "ADD COLUMN default_price_unit TEXT NOT NULL DEFAULT 'kg'"
+        )
+        cur.execute("""
+            UPDATE commodity_categories SET default_price_unit='pack'
+            WHERE LOWER(name) LIKE '%cigarette%'
+        """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS commodity_pricing(
+        commodity_id INTEGER PRIMARY KEY,
         pricing_mode TEXT NOT NULL CHECK (pricing_mode IN ('range', 'bounds')),
-        price_unit TEXT NOT NULL DEFAULT 'kg'
-            CHECK (price_unit IN ('kg', 'pc', 'pack')),
+        price_unit TEXT NOT NULL DEFAULT 'kg',
         reference_price NUMERIC(10, 2),
         price_range NUMERIC(10, 2),
         minimum_price NUMERIC(10, 2),
@@ -397,33 +424,49 @@ def init_db():
              AND (reference_price IS NULL OR reference_price BETWEEN
                   minimum_price AND maximum_price))
         ),
-        FOREIGN KEY (crop_id) REFERENCES crops(id) ON DELETE CASCADE
+        FOREIGN KEY (commodity_id) REFERENCES commodities(id) ON DELETE CASCADE
     )
     """)
-    cur.execute("PRAGMA table_info(crops)")
+    cur.execute("PRAGMA table_info(commodities)")
     crop_columns = [row[1] for row in cur.fetchall()]
-    if "category_id" not in crop_columns:
-        cur.execute("ALTER TABLE crops ADD COLUMN category_id INTEGER")
+    for column, definition in (
+        ("category_id", "INTEGER"),
+        ("description", "TEXT"),
+        ("default_image", "TEXT"),
+        ("default_price_unit", "TEXT NOT NULL DEFAULT 'kg'"),
+    ):
+        if column not in crop_columns:
+            cur.execute(f"ALTER TABLE commodities ADD COLUMN {column} {definition}")
+    cur.execute("UPDATE commodities SET default_price_unit = 'kg' WHERE default_price_unit IS NULL")
+    if category_price_unit_added:
+        cur.execute("""
+            UPDATE commodities
+            SET default_price_unit='pack'
+            WHERE category_id IN (
+                SELECT id FROM commodity_categories
+                WHERE LOWER(name) LIKE '%cigarette%'
+            )
+        """)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS inventory(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        crop_id INTEGER,
-        crop_name TEXT,
+        commodity_id INTEGER,
+        commodity_name TEXT,
         quantity INTEGER,
         farmer TEXT,
         date_received TEXT,
         location TEXT,
-        FOREIGN KEY (crop_id) REFERENCES crops(id)
+        FOREIGN KEY (commodity_id) REFERENCES commodities(id)
     )
     """)
 
     cur.execute("PRAGMA table_info(inventory)")
     inventory_columns = [row[1] for row in cur.fetchall()]
-    if 'crop_name' not in inventory_columns:
-        cur.execute("ALTER TABLE inventory ADD COLUMN crop_name TEXT")
-    if 'crop_id' not in inventory_columns:
-        cur.execute("ALTER TABLE inventory ADD COLUMN crop_id INTEGER")
+    if 'commodity_name' not in inventory_columns:
+        cur.execute("ALTER TABLE inventory ADD COLUMN commodity_name TEXT")
+    if 'commodity_id' not in inventory_columns:
+        cur.execute("ALTER TABLE inventory ADD COLUMN commodity_id INTEGER")
     inventory_geotag_columns = {
         "photo_path": "TEXT",
         "latitude": "REAL",
@@ -441,25 +484,25 @@ def init_db():
 
     cur.execute("""
         UPDATE inventory
-        SET crop_name = (
-            SELECT crops.crops_name
-            FROM crops
-            WHERE crops.id = inventory.crop_id
+        SET commodity_name = (
+            SELECT commodities.commodity_name
+            FROM commodities
+            WHERE commodities.id = inventory.commodity_id
         )
-        WHERE crop_name IS NULL AND crop_id IS NOT NULL
+        WHERE commodity_name IS NULL AND commodity_id IS NOT NULL
     """)
     cur.execute("""
         UPDATE inventory
-        SET crop_id = (
-            SELECT crops.id
-            FROM crops
-            WHERE crops.crops_name = inventory.crop_name
+        SET commodity_id = (
+            SELECT commodities.id
+            FROM commodities
+            WHERE commodities.commodity_name = inventory.commodity_name
         )
-        WHERE crop_id IS NULL AND crop_name IS NOT NULL
+        WHERE commodity_id IS NULL AND commodity_name IS NOT NULL
     """)
-    unmatched = cur.execute("SELECT COUNT(*) AS count FROM inventory WHERE crop_id IS NULL").fetchone()["count"]
+    unmatched = cur.execute("SELECT COUNT(*) AS count FROM inventory WHERE commodity_id IS NULL").fetchone()["count"]
     if unmatched:
-        raise RuntimeError(f"{unmatched} inventory record(s) could not be matched to crops")
+        raise RuntimeError(f"{unmatched} inventory record(s) could not be matched to commodities")
 
     #NEW MARKETPLACE
     cur.execute("""
@@ -468,8 +511,8 @@ def init_db():
         user_id INTEGER,
         username TEXT,
         buyer_username TEXT,
-        crop_id INTEGER,
-        crop_name TEXT,
+        commodity_id INTEGER,
+        commodity_name TEXT,
         amount INTEGER,
         price REAL,
         unit TEXT DEFAULT 'kg',
@@ -491,6 +534,11 @@ def init_db():
         buyer_confirm_date TEXT,
         buyer_rating INTEGER DEFAULT NULL,
         buyer_rating_date TEXT,
+        xendit_reference_id TEXT,
+        xendit_session_id TEXT,
+        xendit_checkout_url TEXT,
+        payment_method TEXT,
+        reserved_from_listing_id INTEGER,
         main_image TEXT,
         listing_type TEXT DEFAULT 'standard',
         available_date TEXT,
@@ -499,7 +547,7 @@ def init_db():
         cancel_requested_by TEXT,
         cancel_reason TEXT,
         cancel_requested_date TEXT,
-        FOREIGN KEY (crop_id) REFERENCES crops(id) ON DELETE RESTRICT
+        FOREIGN KEY (commodity_id) REFERENCES commodities(id) ON DELETE RESTRICT
     )
     """)
     
@@ -543,10 +591,19 @@ def init_db():
         'cancel_requested_by': 'TEXT',
         'cancel_reason': 'TEXT',
         'cancel_requested_date': 'TEXT',
+        'xendit_reference_id': 'TEXT',
+        'xendit_session_id': 'TEXT',
+        'xendit_checkout_url': 'TEXT',
+        'payment_method': 'TEXT',
+        'reserved_from_listing_id': 'INTEGER',
     }
     for column, definition in marketplace_compatibility_columns.items():
         if column not in marketplace_columns:
             cur.execute(f"ALTER TABLE marketplace ADD COLUMN {column} {definition}")
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS ix_marketplace_xendit_reference_id "
+        "ON marketplace(xendit_reference_id)"
+    )
     cur.execute("PRAGMA table_info(users)")
     users_columns = [row[1] for row in cur.fetchall()]
     # Keep databases created before the expanded account model compatible with
@@ -559,6 +616,7 @@ def init_db():
         'auth_version': 'INTEGER NOT NULL DEFAULT 0',
         'phone_number': 'TEXT',
         'profile_picture': 'TEXT',
+        'profile_picture_public': 'BOOLEAN NOT NULL DEFAULT FALSE',
         'bio': 'TEXT',
         'is_verified': 'INTEGER DEFAULT 0',
         'location_latitude': 'REAL',
@@ -566,14 +624,50 @@ def init_db():
         'location_verified': 'BOOLEAN NOT NULL DEFAULT FALSE',
         'location_verified_at': 'DATETIME',
         'profile_photo_captured_at': 'DATETIME',
+        'profile_photo_scan_verified_at': 'DATETIME',
         'psgc_location': 'TEXT',
         'geotag_location': 'TEXT',
+        'saved_delivery_province': 'TEXT',
+        'saved_delivery_city': 'TEXT',
+        'saved_delivery_barangay': 'TEXT',
+        'saved_delivery_street': 'TEXT',
+        'saved_delivery_landmark': 'TEXT',
         'created_at': 'TEXT',
         'updated_at': 'TEXT',
     }
     for column, definition in profile_columns.items():
         if column not in users_columns:
             cur.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS profile_photo_challenges(
+        challenge_hash TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT,
+        created_at TEXT NOT NULL,
+        movement_sequence TEXT NOT NULL DEFAULT '[]',
+        current_stage INTEGER NOT NULL DEFAULT 0,
+        last_stage_at TEXT,
+        failed_attempts INTEGER NOT NULL DEFAULT 0
+    )
+    """)
+    cur.execute("PRAGMA table_info(profile_photo_challenges)")
+    challenge_columns = [row[1] for row in cur.fetchall()]
+    challenge_compatibility_columns = {
+        "movement_sequence": "TEXT NOT NULL DEFAULT '[]'",
+        "current_stage": "INTEGER NOT NULL DEFAULT 0",
+        "last_stage_at": "TEXT",
+        "failed_attempts": "INTEGER NOT NULL DEFAULT 0",
+    }
+    for column, definition in challenge_compatibility_columns.items():
+        if column not in challenge_columns:
+            cur.execute(
+                f"ALTER TABLE profile_photo_challenges ADD COLUMN {column} {definition}"
+            )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS ix_profile_photo_challenges_user_expiry "
+        "ON profile_photo_challenges(username, expires_at)"
+    )
     if 'reliability_score' not in users_columns:
         cur.execute("ALTER TABLE users ADD COLUMN reliability_score REAL DEFAULT NULL")
     if 'reliability_status' not in users_columns:
@@ -591,9 +685,9 @@ def init_db():
         period_type TEXT,
         period_value TEXT,
         total_harvest INTEGER,
-        top_crop TEXT,
-        top_crop_volume INTEGER,
-        top_crop_id INTEGER,
+        top_commodity TEXT,
+        top_commodity_volume INTEGER,
+        top_commodity_id INTEGER,
         top_location TEXT,
         top_location_volume INTEGER
     )
@@ -601,12 +695,12 @@ def init_db():
 
     cur.execute("PRAGMA table_info(analytics)")
     analytics_columns = [row[1] for row in cur.fetchall()]
-    if 'top_crop' not in analytics_columns:
-        cur.execute("ALTER TABLE analytics ADD COLUMN top_crop TEXT")
-    if 'top_crop_volume' not in analytics_columns:
-        cur.execute("ALTER TABLE analytics ADD COLUMN top_crop_volume INTEGER")
-    if 'top_crop_id' not in analytics_columns:
-        cur.execute("ALTER TABLE analytics ADD COLUMN top_crop_id INTEGER")
+    if 'top_commodity' not in analytics_columns:
+        cur.execute("ALTER TABLE analytics ADD COLUMN top_commodity TEXT")
+    if 'top_commodity_volume' not in analytics_columns:
+        cur.execute("ALTER TABLE analytics ADD COLUMN top_commodity_volume INTEGER")
+    if 'top_commodity_id' not in analytics_columns:
+        cur.execute("ALTER TABLE analytics ADD COLUMN top_commodity_id INTEGER")
 
     _migrate_harvest_to_inventory(cur)
 
@@ -841,8 +935,8 @@ def _create_query_indexes(cur):
         ("ix_marketplace_buyer_status_order_date", "marketplace", ("buyer_username", "status", "order_date")),
         ("ix_marketplace_username_rating", "marketplace", ("username", "buyer_rating")),
         ("ix_marketplace_status_type_listing_date", "marketplace", ("status", "listing_type", "listing_date")),
-        ("ix_inventory_farmer_crop_date", "inventory", ("farmer", "crop_id", "date_received")),
-        ("ix_inventory_crop_date", "inventory", ("crop_id", "date_received")),
+        ("ix_inventory_farmer_crop_date", "inventory", ("farmer", "commodity_id", "date_received")),
+        ("ix_inventory_crop_date", "inventory", ("commodity_id", "date_received")),
         ("ix_inventory_source_date", "inventory", ("source", "date_received")),
         ("ix_knowledge_posts_status_pin_created", "knowledge_posts", ("status", "is_pinned", "created_at")),
         ("ix_knowledge_posts_category_status_created", "knowledge_posts", ("category_id", "status", "created_at")),
@@ -881,9 +975,9 @@ def update_analytics():
         period_type TEXT,
         period_value TEXT,
         total_harvest INTEGER,
-        top_crop TEXT,
-        top_crop_volume INTEGER,
-        top_crop_id INTEGER,
+        top_commodity TEXT,
+        top_commodity_volume INTEGER,
+        top_commodity_id INTEGER,
         top_location TEXT,
         top_location_volume INTEGER
     )
@@ -891,18 +985,18 @@ def update_analytics():
 
     cur.execute("PRAGMA table_info(analytics)")
     analytics_columns = [row[1] for row in cur.fetchall()]
-    if 'top_crop' not in analytics_columns:
-        cur.execute("ALTER TABLE analytics ADD COLUMN top_crop TEXT")
-    if 'top_crop_volume' not in analytics_columns:
-        cur.execute("ALTER TABLE analytics ADD COLUMN top_crop_volume INTEGER")
-    if 'top_crop_id' not in analytics_columns:
-        cur.execute("ALTER TABLE analytics ADD COLUMN top_crop_id INTEGER")
+    if 'top_commodity' not in analytics_columns:
+        cur.execute("ALTER TABLE analytics ADD COLUMN top_commodity TEXT")
+    if 'top_commodity_volume' not in analytics_columns:
+        cur.execute("ALTER TABLE analytics ADD COLUMN top_commodity_volume INTEGER")
+    if 'top_commodity_id' not in analytics_columns:
+        cur.execute("ALTER TABLE analytics ADD COLUMN top_commodity_id INTEGER")
     if 'top_location' not in analytics_columns:
         cur.execute("ALTER TABLE analytics ADD COLUMN top_location TEXT")
     if 'top_location_volume' not in analytics_columns:
         cur.execute("ALTER TABLE analytics ADD COLUMN top_location_volume INTEGER")
 
-    def _upsert_analytics_period(cur, period_type, period_value, total_harvest, crop_name, crop_volume, crop_id, location_name, location_volume):
+    def _upsert_analytics_period(cur, period_type, period_value, total_harvest, commodity_name, crop_volume, commodity_id, location_name, location_volume):
         cur.execute("""
         SELECT id FROM analytics
         WHERE period_type = ?
@@ -912,23 +1006,23 @@ def update_analytics():
         existing_row = cur.fetchone()
 
         if existing_row:
-            if total_harvest == 0 and crop_name is None and location_name is None:
+            if total_harvest == 0 and commodity_name is None and location_name is None:
                 return
 
             cur.execute("""
             UPDATE analytics
             SET total_harvest = ?,
-                top_crop = ?,
-                top_crop_volume = ?,
-                top_crop_id = ?,
+                top_commodity = ?,
+                top_commodity_volume = ?,
+                top_commodity_id = ?,
                 top_location = ?,
                 top_location_volume = ?
             WHERE id = ?
             """, (
                 total_harvest,
-                crop_name,
+                commodity_name,
                 crop_volume,
-                crop_id,
+                commodity_id,
                 location_name,
                 location_volume,
                 existing_row[0]
@@ -939,9 +1033,9 @@ def update_analytics():
                 period_type,
                 period_value,
                 total_harvest,
-                top_crop,
-                top_crop_volume,
-                top_crop_id,
+                top_commodity,
+                top_commodity_volume,
+                top_commodity_id,
                 top_location,
                 top_location_volume
             )
@@ -951,9 +1045,9 @@ def update_analytics():
                 period_type,
                 period_value,
                 total_harvest,
-                crop_name,
+                commodity_name,
                 crop_volume,
-                crop_id,
+                commodity_id,
                 location_name,
                 location_volume
             ))
@@ -1011,23 +1105,23 @@ def update_analytics():
         total_harvest = cur.fetchone()[0]
 
         cur.execute("""
-        SELECT c.crops_name, SUM(i.quantity) AS total, i.crop_id
+        SELECT c.commodity_name, SUM(i.quantity) AS total, i.commodity_id
         FROM inventory i
-        JOIN crops c ON c.id = i.crop_id
+        JOIN commodities c ON c.id = i.commodity_id
         WHERE SUBSTRING(i.date_received FROM 1 FOR 7) = ?
-        GROUP BY i.crop_id, c.crops_name
+        GROUP BY i.commodity_id, c.commodity_name
         ORDER BY total DESC
         LIMIT 1
         """, (period_value,))
-        top_crop = cur.fetchone()
-        if top_crop:
-            crop_name = top_crop[0]
-            crop_volume = top_crop[1]
-            crop_id = top_crop[2]
+        top_commodity = cur.fetchone()
+        if top_commodity:
+            commodity_name = top_commodity[0]
+            crop_volume = top_commodity[1]
+            commodity_id = top_commodity[2]
         else:
-            crop_name = None
+            commodity_name = None
             crop_volume = 0
-            crop_id = None
+            commodity_id = None
 
         cur.execute("""
         SELECT location, SUM(quantity) as total
@@ -1050,9 +1144,9 @@ def update_analytics():
             "Monthly",
             period_value,
             total_harvest,
-            crop_name,
+            commodity_name,
             crop_volume,
-            crop_id,
+            commodity_id,
             location_name,
             location_volume,
         )
@@ -1066,23 +1160,23 @@ def update_analytics():
         total_harvest = cur.fetchone()[0]
 
         cur.execute("""
-        SELECT c.crops_name, SUM(i.quantity) AS total, i.crop_id
+        SELECT c.commodity_name, SUM(i.quantity) AS total, i.commodity_id
         FROM inventory i
-        JOIN crops c ON c.id = i.crop_id
+        JOIN commodities c ON c.id = i.commodity_id
         WHERE SUBSTRING(i.date_received FROM 1 FOR 4) = ?
-        GROUP BY i.crop_id, c.crops_name
+        GROUP BY i.commodity_id, c.commodity_name
         ORDER BY total DESC
         LIMIT 1
         """, (period_value,))
-        top_crop = cur.fetchone()
-        if top_crop:
-            crop_name = top_crop[0]
-            crop_volume = top_crop[1]
-            crop_id = top_crop[2]
+        top_commodity = cur.fetchone()
+        if top_commodity:
+            commodity_name = top_commodity[0]
+            crop_volume = top_commodity[1]
+            commodity_id = top_commodity[2]
         else:
-            crop_name = None
+            commodity_name = None
             crop_volume = 0
-            crop_id = None
+            commodity_id = None
 
         cur.execute("""
         SELECT location, SUM(quantity) as total
@@ -1105,9 +1199,9 @@ def update_analytics():
             "Yearly",
             period_value,
             total_harvest,
-            crop_name,
+            commodity_name,
             crop_volume,
-            crop_id,
+            commodity_id,
             location_name,
             location_volume,
         )

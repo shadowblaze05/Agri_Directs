@@ -6,12 +6,14 @@ import pandas as pd
 from statsmodels.tools.sm_exceptions import ConvergenceWarning, EstimationWarning
 from statsmodels.tsa.arima.model import ARIMA
 
+from .data_sources.supply_data import record_commodity_name
+
 class DemandForecastingService:
     @staticmethod
-    def _series_for_crop(records, crop_name):
+    def _series_for_crop(records, commodity_name):
         history = []
         for row in records or []:
-            if (row or {}).get("crop_name") != crop_name:
+            if record_commodity_name(row) != commodity_name:
                 continue
             value = float((row or {}).get("quantity") or 0)
             if value > 0:
@@ -50,14 +52,14 @@ class DemandForecastingService:
             return max(0.0, float(forecast_value)), "fallback-linear"
 
     def forecast(self, records):
-        crop_names = sorted({(row or {}).get("crop_name") for row in records or [] if (row or {}).get("crop_name")})
+        crop_names = sorted({record_commodity_name(row) for row in records or [] if record_commodity_name(row)})
         items = []
-        for crop_name in crop_names:
-            values = self._series_for_crop(records, crop_name)
+        for commodity_name in crop_names:
+            values = self._series_for_crop(records, commodity_name)
             forecast_value, method = self._forecast_single(values)
             items.append(
                 {
-                    "crop": crop_name,
+                    "crop": commodity_name,
                     "forecast_quantity": round(forecast_value, 2),
                     "method": method,
                     "latest_value": round(float(values[-1]), 2) if values else 0.0,

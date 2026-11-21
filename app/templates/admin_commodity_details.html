@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Commodity Details | Admin</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+</head>
+<body class="admin-page">
+    <nav class="navbar navbar-dark admin-navbar px-4 py-3">
+        <a class="navbar-brand fw-bold" href="{{ url_for('admin') }}">Agri-Direct <span class="fw-normal opacity-75">/ Admin</span></a>
+        <a href="{{ url_for('admin') }}" class="btn btn-outline-light btn-sm">Overview</a>
+    </nav>
+    <main class="container py-4">
+        <a class="breadcrumb-link" href="{{ url_for('admin') }}">← Admin Console</a>
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mt-2 mb-4">
+            <div>
+                <h1 class="h3 mb-1">Commodity details &amp; images</h1>
+                <p class="text-muted mb-0">Manage the commodity information and default pictures used for Looking For and Pre-order listings. Prices remain in the Commodity Catalog.</p>
+            </div>
+            <a class="btn btn-outline-success" href="{{ url_for('admin_catalog') }}">Open commodity catalog &amp; prices</a>
+        </div>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+            {% set alert_class = category if category in ['success', 'danger', 'warning', 'info'] else 'info' %}
+            <div class="alert alert-{{ alert_class }} alert-dismissible fade show" role="status">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+            {% endfor %}
+        {% endwith %}
+
+        <div class="d-flex gap-2 mb-4" role="tablist" aria-label="Commodity management">
+            <button type="button" class="btn btn-success" id="commodityInformationButton"
+                    role="tab" aria-selected="true" aria-controls="commodityInformationPanel">
+                Commodity Information
+            </button>
+            <button type="button" class="btn btn-outline-success" id="commodityCategoryButton"
+                    role="tab" aria-selected="false" aria-controls="commodityCategoryPanel">
+                Commodity Category
+            </button>
+            <button type="button" class="btn btn-outline-success" id="commodityPriceUnitButton"
+                    role="tab" aria-selected="false" aria-controls="commodityPriceUnitPanel">
+                Commodity Price Unit
+            </button>
+        </div>
+
+        <section id="commodityInformationPanel" role="tabpanel" aria-labelledby="commodityInformationButton">
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-body">
+                    <h2 class="h5">Add a commodity</h2>
+                    <form method="post" enctype="multipart/form-data" action="{{ url_for('create_commodity_detail') }}">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label" for="newCommodityName">Commodity name</label>
+                                <input id="newCommodityName" name="name" class="form-control" maxlength="128" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="newCommodityCategory">Category</label>
+                                <select id="newCommodityCategory" name="category_id" class="form-select commodity-category-select">
+                                    <option value="">Uncategorized</option>
+                                    {% for category in categories %}
+                                    <option value="{{ category['id'] }}">{{ category['name'] }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label" for="newCommodityDescription">Description</label>
+                                <textarea id="newCommodityDescription" name="description" class="form-control" rows="3" placeholder="Describe this commodity"></textarea>
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label" for="newCommodityImage">Default picture</label>
+                                <input id="newCommodityImage" name="default_image" class="form-control" type="file" accept=".png,.jpg,.jpeg,.webp" aria-describedby="commodityImageHelp">
+                                <div id="commodityImageHelp" class="form-text">PNG, JPG, JPEG, or WEBP; up to 5 MB.</div>
+                            </div>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <button class="btn btn-success w-100">Add commodity</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-md-7">
+                    <label class="form-label" for="commoditySearch">Search commodities</label>
+                    <input id="commoditySearch" class="form-control" type="search" placeholder="Search by name, description, or category">
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label" for="commodityFilter">Filter by category</label>
+                    <select id="commodityFilter" class="form-select">
+                        <option value="">All categories</option>
+                        <option value="uncategorized">Uncategorized</option>
+                        {% for category in categories %}
+                        <option value="{{ category['id'] }}">{{ category['name'] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <p id="commodityResultCount" class="small text-muted" aria-live="polite"></p>
+            <div id="commodityCards" class="row g-4">
+                {% for commodity in commodities %}
+                <div class="col-xl-6 commodity-card-item"
+                     data-commodity-card
+                     data-name="{{ commodity['commodity_name']|lower }}"
+                     data-description="{{ (commodity['description'] or '')|lower }}"
+                     data-category="{{ commodity['category_name']|lower }}"
+                     data-category-id="{{ commodity['category_id'] or 'uncategorized' }}">
+                    <form method="post" enctype="multipart/form-data" action="{{ url_for('edit_commodity_detail', commodity_id=commodity['id']) }}" class="card shadow-sm border-0 h-100">
+                        <div class="card-body">
+                            <div class="d-flex align-items-start gap-3 mb-3">
+                                {% if commodity['default_image'] %}
+                                <img src="{{ url_for('static', filename='uploads/commodity_details/' + commodity['default_image']) }}" alt="{{ commodity['commodity_name'] }}" class="rounded object-fit-cover" style="width: 96px; height: 96px;">
+                                {% else %}
+                                <div class="rounded bg-light d-flex align-items-center justify-content-center text-success" style="width: 96px; height: 96px;" aria-label="No default picture">
+                                    <i class="fas fa-seedling fa-2x"></i>
+                                </div>
+                                {% endif %}
+                                <div class="flex-grow-1">
+                                    <label class="form-label" for="commodityName{{ commodity['id'] }}">Commodity name</label>
+                                    <input id="commodityName{{ commodity['id'] }}" name="name" class="form-control" maxlength="128" value="{{ commodity['commodity_name'] }}" required>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="commodityCategory{{ commodity['id'] }}">Category</label>
+                                <select id="commodityCategory{{ commodity['id'] }}" name="category_id" class="form-select commodity-category-select">
+                                    <option value="">Uncategorized</option>
+                                    {% for category in categories %}
+                                    <option value="{{ category['id'] }}" {% if commodity['category_id'] == category['id'] %}selected{% endif %}>{{ category['name'] }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="commodityDescription{{ commodity['id'] }}">Description</label>
+                                <textarea id="commodityDescription{{ commodity['id'] }}" name="description" class="form-control" rows="3">{{ commodity['description'] or '' }}</textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label" for="commodityImage{{ commodity['id'] }}">Replace default picture</label>
+                                <input id="commodityImage{{ commodity['id'] }}" name="default_image" class="form-control" type="file" accept=".png,.jpg,.jpeg,.webp">
+                                <div class="form-text">Leave empty to keep the current picture. PNG, JPG, JPEG, or WEBP; up to 5 MB.</div>
+                            </div>
+                            <div class="d-flex flex-wrap align-items-center gap-2">
+                                <button class="btn btn-outline-success">Save commodity details</button>
+                                <button class="btn btn-outline-danger"
+                                        type="submit"
+                                        formmethod="post"
+                                        formaction="{{ url_for('delete_commodity_detail', commodity_id=commodity['id']) }}"
+                                        onclick="return confirm('Delete this commodity? This cannot be undone.')">
+                                    Delete commodity
+                                </button>
+                                <span class="small text-muted">{{ commodity['category_name'] }}</span>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                {% else %}
+                <div class="col-12" id="noCommoditiesMessage"><p class="text-muted">No commodities have been added.</p></div>
+                {% endfor %}
+            </div>
+            <p id="noCommodityMatches" class="alert alert-light border mt-3" hidden>No commodities match those search and filter options.</p>
+        </section>
+
+        <section id="commodityCategoryPanel" role="tabpanel" aria-labelledby="commodityCategoryButton" hidden>
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-body">
+                    <h2 class="h5">Add a category</h2>
+                    <form method="post" action="{{ url_for('create_commodity_detail_category') }}">
+                        <div class="row g-3 align-items-end">
+                            <div class="col-md-5">
+                                <label class="form-label" for="newCategoryName">Category name</label>
+                                <input id="newCategoryName" name="name" class="form-control" maxlength="128" required>
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label" for="newCategoryDescription">Description</label>
+                                <textarea id="newCategoryDescription" name="description" class="form-control" rows="1"></textarea>
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label" for="newCategoryPriceUnit">Default price unit</label>
+                                <select id="newCategoryPriceUnit" name="default_price_unit" class="form-select">
+                                    {% for unit in price_units %}
+                                    <option value="{{ unit['unit'] }}" {% if unit['unit'] == 'kg' %}selected{% endif %}>{{ unit['unit'] }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <button class="btn btn-outline-success w-100">Add category</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            <h2 class="h5 mb-3">Commodity categories</h2>
+            {% if categories %}
+            <div class="row g-3">
+                {% for category in categories %}
+                <div class="col-md-6 col-xl-4">
+                    <form method="post" action="{{ url_for('edit_commodity_detail_category', category_id=category['id']) }}" class="card border-0 shadow-sm h-100">
+                        <div class="card-body">
+                            <label class="form-label small" for="categoryName{{ category['id'] }}">Category name</label>
+                            <input id="categoryName{{ category['id'] }}" name="name" class="form-control mb-2" maxlength="128" value="{{ category['name'] }}" data-original-name="{{ category['name'] }}" required>
+                            <label class="form-label small" for="categoryDescription{{ category['id'] }}">Description</label>
+                            <textarea id="categoryDescription{{ category['id'] }}" name="description" class="form-control mb-3" rows="2">{{ category['description'] or '' }}</textarea>
+                            <label class="form-label small" for="categoryPriceUnit{{ category['id'] }}">Default price unit for this category</label>
+                            <select id="categoryPriceUnit{{ category['id'] }}" name="default_price_unit" class="form-select mb-3">
+                                {% for unit in price_units %}
+                                <option value="{{ unit['unit'] }}" {% if unit['unit'] == category['default_price_unit'] %}selected{% endif %}>{{ unit['unit'] }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-primary btn-sm">Save category</button>
+                                <button class="btn btn-outline-danger btn-sm"
+                                        type="submit"
+                                        formmethod="post"
+                                        formaction="{{ url_for('delete_commodity_detail_category', category_id=category['id']) }}"
+                                        onclick="return confirm('Delete this category? It must not contain any commodities.')">
+                                    Delete category
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted mb-0">No categories have been added.</p>
+            {% endif %}
+        </section>
+
+        <section id="commodityPriceUnitPanel" role="tabpanel" aria-labelledby="commodityPriceUnitButton" hidden>
+            <div class="card shadow-sm border-0">
+                <div class="card-body">
+                    <h2 class="h5">Create a price unit</h2>
+                    <p class="text-muted">Add a reusable unit such as sack, box, or bundle. Use 1–32 lowercase letters, numbers, hyphens, or underscores.</p>
+                    <form method="post" action="{{ url_for('create_commodity_price_unit') }}" class="row g-2 align-items-end mb-4">
+                        <div class="col-md-5">
+                            <label class="form-label" for="newPriceUnit">New price unit</label>
+                            <input id="newPriceUnit" name="unit" class="form-control" maxlength="32" pattern="[a-z][a-z0-9_-]{0,31}" placeholder="e.g. sack" required>
+                        </div>
+                        <div class="col-md-3">
+                            <button class="btn btn-outline-success">Add unit</button>
+                        </div>
+                    </form>
+                    <h2 class="h5">Registered price units</h2>
+                    <div class="table-responsive mb-4">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Unit</th>
+                                    <th scope="col">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for unit in price_units %}
+                                <tr>
+                                    <td>{{ unit['unit'] }}</td>
+                                    <td>
+                                        {% if unit['unit'] in ['kg', 'pc', 'pack'] %}
+                                        <span class="text-muted">Built-in</span>
+                                        {% else %}
+                                        <form method="post" action="{{ url_for('delete_commodity_price_unit', unit=unit['unit']) }}">
+                                            <button class="btn btn-outline-danger btn-sm"
+                                                    onclick="return confirm('Delete this price unit? It must not be assigned to any category, commodity, pricing rule, or marketplace listing.')">
+                                                Delete unit
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <h2 class="h5">Set commodity price units</h2>
+                    <p class="text-muted">Choose a unit for an individual commodity. Changing a category’s default in Commodity Category updates all commodities in that category.</p>
+                    {% if commodities %}
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Commodity</th>
+                                    <th scope="col">Category</th>
+                                    <th scope="col">Price unit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for commodity in commodities %}
+                                <tr>
+                                    <td>{{ commodity['commodity_name'] }}</td>
+                                    <td>{{ commodity['category_name'] }}</td>
+                                    <td>
+                                        <form method="post" action="{{ url_for('update_commodity_price_unit', commodity_id=commodity['id']) }}" class="d-flex gap-2">
+                                            <select name="default_price_unit" class="form-select" aria-label="Price unit for {{ commodity['commodity_name'] }}">
+                                                {% for unit in price_units %}
+                                                <option value="{{ unit['unit'] }}" {% if (commodity['default_price_unit'] or 'kg') == unit['unit'] %}selected{% endif %}>{{ unit['unit'] }}</option>
+                                                {% endfor %}
+                                            </select>
+                                            <button class="btn btn-outline-success btn-sm">Save unit</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted mb-0">No commodities have been added.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+    </main>
+    <script>
+        const informationButton = document.getElementById("commodityInformationButton");
+        const categoryButton = document.getElementById("commodityCategoryButton");
+        const priceUnitButton = document.getElementById("commodityPriceUnitButton");
+        const informationPanel = document.getElementById("commodityInformationPanel");
+        const categoryPanel = document.getElementById("commodityCategoryPanel");
+        const priceUnitPanel = document.getElementById("commodityPriceUnitPanel");
+
+        function showCommodityPanel(panelName) {
+            const panels = {
+                information: [informationButton, informationPanel],
+                category: [categoryButton, categoryPanel],
+                priceUnit: [priceUnitButton, priceUnitPanel]
+            };
+            for (const [name, [button, panel]] of Object.entries(panels)) {
+                const isSelected = name === panelName;
+                panel.hidden = !isSelected;
+                button.classList.toggle("btn-success", isSelected);
+                button.classList.toggle("btn-outline-success", !isSelected);
+                button.setAttribute("aria-selected", String(isSelected));
+            }
+        }
+
+        informationButton.addEventListener("click", () => showCommodityPanel("information"));
+        categoryButton.addEventListener("click", () => showCommodityPanel("category"));
+        priceUnitButton.addEventListener("click", () => showCommodityPanel("priceUnit"));
+        if (window.location.hash === "#commodityPriceUnitPanel") {
+            showCommodityPanel("priceUnit");
+        }
+        const newCategoryName = document.getElementById("newCategoryName");
+        const newCategoryPriceUnit = document.getElementById("newCategoryPriceUnit");
+        newCategoryName.addEventListener("input", () => {
+            const cigaretteCategory = /cigarette/i.test(newCategoryName.value);
+            const defaultUnit = cigaretteCategory ? "pack" : "kg";
+            if (Array.from(newCategoryPriceUnit.options).some((option) => option.value === defaultUnit)) {
+                newCategoryPriceUnit.value = defaultUnit;
+            }
+        });
+        document.querySelectorAll("[id^='categoryName']").forEach((categoryNameInput) => {
+            categoryNameInput.addEventListener("input", () => {
+                const categoryId = categoryNameInput.id.replace("categoryName", "");
+                const unitSelect = document.getElementById(`categoryPriceUnit${categoryId}`);
+                if (!unitSelect) return;
+                const isCigaretteCategory = /cigarette/i.test(categoryNameInput.value);
+                const wasCigaretteCategory = /cigarette/i.test(categoryNameInput.dataset.originalName);
+                const defaultUnit = isCigaretteCategory ? "pack" : "kg";
+                if ((isCigaretteCategory || wasCigaretteCategory) &&
+                    Array.from(unitSelect.options).some((option) => option.value === defaultUnit)) {
+                    unitSelect.value = defaultUnit;
+                }
+            });
+        });
+
+        const commodityCards = Array.from(document.querySelectorAll("[data-commodity-card]"));
+        const commoditySearch = document.getElementById("commoditySearch");
+        const commodityFilter = document.getElementById("commodityFilter");
+        const resultCount = document.getElementById("commodityResultCount");
+        const noMatches = document.getElementById("noCommodityMatches");
+
+        function filterCommodities() {
+            const searchTerm = commoditySearch.value.trim().toLocaleLowerCase();
+            const categoryId = commodityFilter.value;
+            let visibleCount = 0;
+            commodityCards.forEach((card) => {
+                const searchableText = [
+                    card.dataset.name,
+                    card.dataset.description,
+                    card.dataset.category
+                ].join(" ");
+                const matchesSearch = searchableText.includes(searchTerm);
+                const matchesCategory = !categoryId || card.dataset.categoryId === categoryId;
+                card.hidden = !matchesSearch || !matchesCategory;
+                if (!card.hidden) visibleCount += 1;
+            });
+            resultCount.textContent = `${visibleCount} of ${commodityCards.length} commodities`;
+            noMatches.hidden = commodityCards.length === 0 || visibleCount !== 0;
+        }
+
+        commoditySearch.addEventListener("input", filterCommodities);
+        commodityFilter.addEventListener("change", filterCommodities);
+        filterCommodities();
+    </script>
+</body>
+</html>

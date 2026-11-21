@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any, Iterable
 
-from .supply_data import aggregate_supply
+from .supply_data import aggregate_supply, record_commodity_name
 
 
 def _positive_price(value):
@@ -22,7 +22,7 @@ def get_crop_reference_prices(records: Iterable[dict[str, Any]]):
     """Resolve each crop's configured reference price or bounds midpoint."""
     prices = {}
     for row in records or []:
-        crop = (row or {}).get("crop_name") or ""
+        crop = record_commodity_name(row)
         if not crop or crop in prices:
             continue
 
@@ -58,7 +58,7 @@ def get_crop_reference_prices(records: Iterable[dict[str, Any]]):
 
 
 def build_price_snapshot(records: Iterable[dict[str, Any]]):
-    """Build a configured-price comparison for crops in current inventory."""
+    """Build a configured-price comparison for commodities in current inventory."""
     records = list(records or [])
     summary = aggregate_supply(records)
     by_crop = summary["by_crop"]

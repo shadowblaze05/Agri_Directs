@@ -86,6 +86,7 @@ def test_csv_upload_uses_temporary_server_filename_and_cleans_file(monkeypatch, 
                     "email": "farmer@example.test",
                     "profile_picture": "/profile.jpg",
                     "profile_photo_captured_at": datetime.now(timezone.utc).isoformat(),
+                    "profile_photo_scan_verified_at": datetime.now(timezone.utc).isoformat(),
                     "location": "Example City",
                     "psgc_location": "Example City",
                     "geotag_location": "Example City",
@@ -93,12 +94,12 @@ def test_csv_upload_uses_temporary_server_filename_and_cleans_file(monkeypatch, 
                     "location_longitude": 120.98,
                     "location_verified": 1,
                 }
-            if "SELECT id FROM crops" in self.query:
+            if "SELECT id FROM commodities" in self.query:
                 return (1,)
             return None
 
         def fetchall(self):
-            return [{"id": 1, "crops_name": "Rice"}]
+            return [{"id": 1, "commodity_name": "Rice"}]
 
     class FakeConnection:
         def __init__(self):

@@ -37,9 +37,9 @@ def make_security_app(database_path):
             "CREATE TABLE IF NOT EXISTS cart "
             "(id INTEGER PRIMARY KEY, user_id INTEGER, quantity INTEGER)"
         )
-        crop = cursor.execute("SELECT id FROM crops LIMIT 1").fetchone()
+        crop = cursor.execute("SELECT id FROM commodities LIMIT 1").fetchone()
         cursor.execute(
-            """INSERT INTO inventory (crop_id, quantity, farmer, date_received, photo_path)
+            """INSERT INTO inventory (commodity_id, quantity, farmer, date_received, photo_path)
                VALUES (?, ?, ?, ?, ?)""",
             (crop["id"], 3, "owner", "2026-01-01", "private-photo.png"),
         )

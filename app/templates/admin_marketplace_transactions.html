@@ -29,7 +29,7 @@
     <form class="row g-2 mb-3" method="get">
       <div class="col-md">
         <label class="visually-hidden" for="transaction-search">Search transactions</label>
-        <input id="transaction-search" name="q" value="{{ search }}" class="form-control" placeholder="Search order, crop, seller, buyer, or status">
+        <input id="transaction-search" name="q" value="{{ search }}" class="form-control" placeholder="Search order, commodity, seller, buyer, or status">
       </div>
       <div class="col-md-3">
         <label class="visually-hidden" for="completion-filter">Completion status</label>
@@ -46,14 +46,14 @@
     <div class="card">
       <div class="table-responsive">
         <table class="table table-hover align-middle">
-          <thead><tr><th>Order</th><th>Seller / buyer</th><th>Item</th><th>Amount</th><th>Progress</th><th>Confirmation</th></tr></thead>
+          <thead><tr><th>Order</th><th>Seller / buyer</th><th>Item</th><th>Quantity</th><th>Progress</th><th>Confirmation</th></tr></thead>
           <tbody>
             {% for transaction in transactions %}
               {% set status = transaction['preorder_status'] or transaction['order_status'] or transaction['status'] or 'in progress' %}
               <tr>
                 <td><strong>#{{ transaction['id'] }}</strong><br><small class="text-muted">{{ transaction['order_date'] or 'Date unavailable' }}</small></td>
                 <td><div>{{ transaction['seller_name'] or transaction['username'] or 'Unknown seller' }}</div><small class="text-muted">Buyer: {{ transaction['buyer_username'] or 'Not recorded' }}</small></td>
-                <td><strong>{{ transaction['crop_name'] or 'Unnamed crop' }}</strong><br><small class="text-muted">{{ transaction['listing_type'] or 'standard' }}</small></td>
+                <td><strong>{{ transaction['commodity_name'] or 'Unnamed commodity' }}</strong><br><small class="text-muted">{{ transaction['listing_type'] or 'standard' }}</small></td>
                 <td>{{ transaction['transaction_quantity'] or transaction['amount'] or 0 }} {{ transaction['unit'] or 'kg' }}<br><small class="text-muted">PHP {{ '%.2f'|format((transaction['price'] or 0) * (transaction['transaction_quantity'] or transaction['amount'] or 0)) }}</small></td>
                 <td><span class="badge text-bg-light border">{{ status|replace('_', ' ')|title }}</span><br><span class="badge {{ 'text-bg-success' if transaction['completion_state'] == 'completed' else 'text-bg-warning' }} mt-1">{{ transaction['completion_state']|title }}</span></td>
                 <td><small>Delivery: {{ 'Confirmed' if transaction['delivery_confirmed'] else 'Pending' }}<br>Buyer: {{ 'Confirmed' if transaction['buyer_confirmed'] else 'Pending' }}</small></td>

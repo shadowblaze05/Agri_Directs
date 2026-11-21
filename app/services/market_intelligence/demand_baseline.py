@@ -4,6 +4,8 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 
+from .data_sources.supply_data import record_commodity_name
+
 
 class DemandBaselineService:
     @staticmethod
@@ -29,7 +31,7 @@ class DemandBaselineService:
     def evaluate(self, records):
         crop_series = {}
         for row in records or []:
-            crop = (row or {}).get("crop_name") or ""
+            crop = record_commodity_name(row)
             quantity = float((row or {}).get("quantity") or 0)
             if not crop or quantity <= 0:
                 continue

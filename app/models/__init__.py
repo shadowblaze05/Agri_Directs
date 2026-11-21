@@ -1,7 +1,17 @@
 """Database helpers and declarative model exports."""
 
 from .analytics.models import Analytics
-from .agriculture.models import Crop, CropPricing, Harvest, Inventory, CropCategory
+from .agriculture.models import (
+    Commodity,
+    CommodityCategory,
+    CommodityPriceUnit,
+    CommodityPricing,
+    Crop,
+    CropPricing,
+    Harvest,
+    Inventory,
+    CropCategory,
+)
 from .auth.models import PasswordResetToken, User
 from .audit import AuditEvent
 from .listing_photo_location_alert import ListingPhotoLocationAlert
@@ -36,6 +46,8 @@ __all__ = [
     "Analytics",
     "Crop",
     "CropPricing",
+    "Commodity",
+    "CommodityPricing",
     "Harvest",
     "Inventory",
     "User",
@@ -53,4 +65,6 @@ __all__ = [
     "KnowledgeReply",
     "MarketplaceListing",
     "CropCategory",
+    "CommodityCategory",
+    "CommodityPriceUnit",
 ]

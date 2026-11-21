@@ -26,20 +26,22 @@ def test_admin_can_assign_and_reassign_crops_by_category(tmp_path):
                 )
             """))
             connection.execute(text("""
-                CREATE TABLE crop_categories (
+                CREATE TABLE commodity_categories (
                     id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL,
-                    description TEXT
+                    description TEXT,
+                    default_price_unit TEXT NOT NULL DEFAULT 'kg'
                 )
             """))
             connection.execute(text("""
-                CREATE TABLE crops (
-                    id INTEGER PRIMARY KEY, crops_name TEXT UNIQUE,
-                    category_id INTEGER
+                CREATE TABLE commodities (
+                    id INTEGER PRIMARY KEY, commodity_name TEXT UNIQUE,
+                    category_id INTEGER,
+                    default_price_unit TEXT NOT NULL DEFAULT 'kg'
                 )
             """))
             connection.execute(text("""
-                CREATE TABLE crop_pricing (
-                    crop_id INTEGER PRIMARY KEY REFERENCES crops(id) ON DELETE CASCADE,
+                CREATE TABLE commodity_pricing (
+                    commodity_id INTEGER PRIMARY KEY REFERENCES commodities(id) ON DELETE CASCADE,
                     pricing_mode TEXT NOT NULL,
                     price_unit TEXT NOT NULL DEFAULT 'kg',
                     reference_price NUMERIC(10, 2),
@@ -50,7 +52,7 @@ def test_admin_can_assign_and_reassign_crops_by_category(tmp_path):
             """))
             connection.execute(text("""
                 CREATE TABLE inventory (
-                    id INTEGER PRIMARY KEY, crop_id INTEGER, crop_name TEXT
+                    id INTEGER PRIMARY KEY, commodity_id INTEGER, commodity_name TEXT
                 )
             """))
             connection.execute(
@@ -64,13 +66,13 @@ def test_admin_can_assign_and_reassign_crops_by_category(tmp_path):
                 },
             )
             connection.execute(
-                text("INSERT INTO crop_categories (name) VALUES ('Grains'), ('Vegetables')")
+                text("INSERT INTO commodity_categories (name) VALUES ('Grains'), ('Vegetables')")
             )
             connection.execute(
-                text("INSERT INTO crops (crops_name) VALUES ('Rice')")
+                text("INSERT INTO commodities (commodity_name) VALUES ('Rice')")
             )
             category_ids = connection.execute(
-                text("SELECT id, name FROM crop_categories")
+                text("SELECT id, name FROM commodity_categories")
             ).all()
             category_ids = {row.name: row.id for row in category_ids}
             grains_id = category_ids["Grains"]
@@ -87,11 +89,11 @@ def test_admin_can_assign_and_reassign_crops_by_category(tmp_path):
 
         with application.app_context():
             connection = db.session.execute(
-                text("SELECT id, category_id FROM crops WHERE crops_name='Oats'")
+                text("SELECT id, category_id FROM commodities WHERE commodity_name='Oats'")
             ).one()
             oats = {"id": connection.id, "category_id": connection.category_id}
             rice_id = db.session.execute(
-                text("SELECT id FROM crops WHERE crops_name='Rice'")
+                text("SELECT id FROM commodities WHERE commodity_name='Rice'")
             ).scalar_one()
         assert oats["category_id"] == grains_id
 
@@ -108,14 +110,17 @@ def test_admin_can_assign_and_reassign_crops_by_category(tmp_path):
         assert response.status_code == 302
         with application.app_context():
             oats_category_id = db.session.execute(
-                text("SELECT category_id FROM crops WHERE id=:id"),
+                text("SELECT category_id FROM commodities WHERE id=:id"),
                 {"id": oats["id"]},
             ).scalar_one()
         assert oats_category_id == grains_id
 
         response = client.get("/admin/catalog")
         assert response.status_code == 200
-        assert b"Crops by category" in response.data
+        assert b"Delete this commodity?" not in response.data
+        assert b"/admin/crop-categories/edit/" not in response.data
+        assert b"/admin/crop-categories/delete/" not in response.data
+        assert b"Commodities by category" in response.data
         assert b"Grains" in response.data
         assert b"Vegetables" in response.data
         assert b"Oats" in response.data
@@ -129,7 +134,7 @@ def test_admin_can_assign_and_reassign_crops_by_category(tmp_path):
         assert response.status_code == 302
         with application.app_context():
             category = db.session.execute(
-                text("SELECT id FROM crop_categories WHERE id=:id"),
+                text("SELECT id FROM commodity_categories WHERE id=:id"),
                 {"id": grains_id},
             ).first()
             assert category is not None

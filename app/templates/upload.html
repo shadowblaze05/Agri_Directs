@@ -190,6 +190,8 @@
           ><i class="fas fa-comments"></i> Messages</a
         ><a class="nav-link" href="/notifications-center"
           ><i class="fas fa-bell"></i> Notifications</a
+        ><a class="nav-link" href="/marketplace/my-purchases"
+          ><i class="fas fa-shopping-bag"></i> My Purchases</a
         ><a class="nav-link" href="/profile"
           ><i class="fas fa-user-circle"></i> Profile</a
         ><a class="nav-link" href="/logout"
@@ -280,7 +282,7 @@
                   <i class="fas fa-download"></i> Download CSV template
                 </a>
                 <p class="form-text mb-0">
-                  Use the columns crop_name, quantity, and date_received (YYYY-MM-DD).
+                  Use the columns commodity_name, quantity, and date_received (YYYY-MM-DD). Enter quantity in that commodity's default unit.
                 </p>
               </div>
               <div class="file-name" id="fileName">
@@ -293,7 +295,7 @@
                 <h6><i class="fas fa-pen"></i> Manual Entry</h6>
                 <div class="mb-3">
                   <label for="manual_crop_name" class="form-label"
-                    >Crop Name</label
+                    >Commodity Name</label
                   ><input
                     type="text"
                     class="form-control"
@@ -301,18 +303,18 @@
                     name="manual_crop_name"
                     list="cropOptions"
                     autocomplete="off"
-                    placeholder="Start typing a crop name"
+                    placeholder="Start typing a commodity name"
                   /><datalist id="cropOptions">
-                    {% for crop in crops %}
-                    <option value="{{ crop[1] }}" data-id="{{ crop[0] }}">
-                      {{ crop[1] }}
+                    {% for crop in commodities %}
+                    <option value="{{ crop['commodity_name'] }}" data-id="{{ crop['id'] }}" data-unit="{{ crop['default_price_unit'] or 'kg' }}">
+                      {{ crop['commodity_name'] }} ({{ crop['default_price_unit'] or 'kg' }})
                     </option>
                     {% endfor %}</datalist
-                  ><input type="hidden" name="crop_id" id="crop_id" value="" />
+                  ><input type="hidden" name="commodity_id" id="commodity_id" value="" />
                 </div>
                 <div class="mb-3">
-                  <label for="manual_quantity" class="form-label"
-                    >Quantity(Kilograms)</label
+                  <label for="manual_quantity" id="manualQuantityLabel" class="form-label"
+                    >Quantity (kg)</label
                   ><input
                     type="number"
                     min="1"
@@ -321,6 +323,7 @@
                     name="manual_quantity"
                     placeholder="Enter quantity"
                   />
+                  <div class="form-text">Unit: <span id="manualQuantityUnit">kg</span></div>
                 </div>
                 <div class="mb-2">
                   <label for="manual_date" class="form-label">Date</label
@@ -348,7 +351,9 @@
       const fileName = document.getElementById("fileName");
       const selectedName = document.getElementById("selectedName");
       const cropInput = document.getElementById("manual_crop_name");
-      const cropIdInput = document.getElementById("crop_id");
+      const cropIdInput = document.getElementById("commodity_id");
+      const quantityLabel = document.getElementById("manualQuantityLabel");
+      const quantityUnit = document.getElementById("manualQuantityUnit");
       dropZone.addEventListener("click", () => fileInput.click());
       dropZone.addEventListener("dragover", (event) => {
         event.preventDefault();
@@ -380,9 +385,13 @@
           document.querySelectorAll("#cropOptions option"),
         ).find((item) => item.value.toLowerCase() === value);
         cropIdInput.value = option ? option.getAttribute("data-id") || "" : "";
+        const unit = option ? option.dataset.unit || "kg" : "kg";
+        quantityLabel.textContent = `Quantity (${unit})`;
+        quantityUnit.textContent = unit;
       }
       cropInput.addEventListener("input", syncCropSelection);
       cropInput.addEventListener("change", syncCropSelection);
+      syncCropSelection();
 
     </script>
   </body>

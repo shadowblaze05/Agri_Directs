@@ -42,13 +42,13 @@
               </select>
             </div>
             <div class="col-md-4">
-              <label class="form-label" for="new-crop">Crop</label>
-              <select class="form-select" id="new-crop" name="crop_id" required>
-                <option value="">Choose crop</option>
-                {% for crop in crops %}<option value="{{ crop['id'] }}">{{ crop['crops_name'] }}</option>{% endfor %}
+              <label class="form-label" for="new-crop">Commodity</label>
+              <select class="form-select" id="new-crop" name="commodity_id" required>
+                <option value="">Choose commodity</option>
+                {% for crop in commodities %}<option value="{{ crop['id'] }}">{{ crop['commodity_name'] }}</option>{% endfor %}
               </select>
             </div>
-            <div class="col-md-2"><label class="form-label" for="new-amount">Amount (kg)</label><input class="form-control" id="new-amount" name="amount" type="number" min="1" required></div>
+            <div class="col-md-2"><label class="form-label" for="new-amount">Quantity (kg)</label><input class="form-control" id="new-amount" name="amount" type="number" min="1" required></div>
             <div class="col-md-2"><label class="form-label" for="new-price">Price per kg</label><input class="form-control" id="new-price" name="price" type="number" min="0.01" step="0.01" required></div>
             <input type="hidden" name="unit" value="kg">
             <div class="col-md-3">
@@ -70,7 +70,7 @@
       </div>
 
       <form class="input-group my-3">
-        <input name="q" value="{{ search }}" class="form-control" placeholder="Search crop, seller, or status">
+        <input name="q" value="{{ search }}" class="form-control" placeholder="Search commodity, seller, or status">
         <button class="btn btn-outline-secondary">Search</button>
         {% if search %}<a class="btn btn-outline-secondary" href="{{ url_for('admin_marketplace') }}">Clear</a>{% endif %}
       </form>
@@ -78,20 +78,33 @@
       <div class="card shadow-sm border-0">
         <div class="table-responsive">
           <table class="table table-hover align-middle mb-0">
-            <thead><tr><th>Listing</th><th>Seller</th><th>Manage listing</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Listing</th><th>Seller</th><th>Thumbnail</th><th>Manage listing</th><th>Actions</th></tr></thead>
             <tbody>
               {% for listing in listings %}
                 {% set locked = listing['buyer_username'] or listing['status'] not in ['available', 'expired', 'cancelled'] %}
                 <tr>
                   <td>
-                    <strong>{{ listing['crop_name'] or 'Unnamed crop' }}</strong><br>
+                    <strong>{{ listing['commodity_name'] or 'Unnamed commodity' }}</strong><br>
                     <small class="text-muted">#{{ listing['id'] }} · {{ listing['listing_type'] or 'standard' }} · {{ listing['status'] or 'available' }}</small>
                     {% if listing['buyer_username'] %}<br><small class="text-muted">Order buyer: {{ listing['buyer_username'] }}</small>{% endif %}
                   </td>
                   <td>{{ listing['seller_name'] or listing['username'] or 'Unknown seller' }}</td>
                   <td>
+                    {% if listing['main_image'] %}
+                      <img src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}" alt="Current {{ listing['commodity_name'] }} thumbnail" class="img-thumbnail mb-2" style="width: 96px; height: 72px; object-fit: cover;">
+                    {% else %}
+                      <div class="text-muted small mb-2">No thumbnail</div>
+                    {% endif %}
+                    <form method="post" enctype="multipart/form-data" action="{{ url_for('update_admin_marketplace_thumbnail', listing_id=listing['id']) }}">
+                      <label class="form-label small mb-1" for="thumbnail-{{ listing['id'] }}">Replace thumbnail</label>
+                      <input class="form-control form-control-sm mb-2" id="thumbnail-{{ listing['id'] }}" type="file" name="thumbnail" accept=".png,.jpg,.jpeg,.gif,.webp" required>
+                      <button class="btn btn-sm btn-outline-primary">Upload</button>
+                      <div class="form-text">Admin replacements do not require GPS or distance verification.</div>
+                    </form>
+                  </td>
+                  <td>
                     {% if locked %}
-                      <span class="text-muted">This listing state is read-only.</span>
+                      <span class="text-muted">Listing details are read-only; the thumbnail can still be replaced.</span>
                     {% else %}
                       <form method="post" action="{{ url_for('edit_admin_marketplace_listing', listing_id=listing['id']) }}" class="row g-2">
                         <div class="col-lg-3">
@@ -100,11 +113,11 @@
                           </select>
                         </div>
                         <div class="col-lg-3">
-                          <select class="form-select form-select-sm" name="crop_id" aria-label="Crop" required>
-                            {% for crop in crops %}<option value="{{ crop['id'] }}" {% if crop['id'] == listing['crop_id'] %}selected{% endif %}>{{ crop['crops_name'] }}</option>{% endfor %}
+                          <select class="form-select form-select-sm" name="commodity_id" aria-label="Commodity" required>
+                            {% for crop in commodities %}<option value="{{ crop['id'] }}" {% if crop['id'] == listing['commodity_id'] %}selected{% endif %}>{{ crop['commodity_name'] }}</option>{% endfor %}
                           </select>
                         </div>
-                        <div class="col-4 col-lg-2"><input class="form-control form-control-sm" type="number" name="amount" min="1" value="{{ listing['amount'] }}" aria-label="Amount in kg" required></div>
+                        <div class="col-4 col-lg-2"><input class="form-control form-control-sm" type="number" name="amount" min="1" value="{{ listing['amount'] }}" aria-label="Quantity in kg" required></div>
                         <div class="col-4 col-lg-2"><input class="form-control form-control-sm" type="number" name="price" min="0.01" step="0.01" value="{{ listing['price'] }}" aria-label="Price per kg" required></div>
                         <input type="hidden" name="unit" value="kg">
                         <div class="col-md-4">
@@ -136,7 +149,7 @@
                   </td>
                 </tr>
               {% else %}
-                <tr><td colspan="4" class="text-center py-4 text-muted">No matching marketplace listings.</td></tr>
+                <tr><td colspan="5" class="text-center py-4 text-muted">No matching marketplace listings.</td></tr>
               {% endfor %}
             </tbody>
           </table>

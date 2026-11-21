@@ -26,13 +26,13 @@ _PROCESS_STARTED_MONOTONIC = time.monotonic()
 # AGRIBOT COMMAND REGISTRY
 # ==========================================
 BOT_COMMANDS = {
-    "upload": "To upload harvest data, use the Upload page and submit a valid CSV. Each crop entry will be stored with your user name.",
-    "harvest": "To upload harvest data, use the Upload page and submit a valid CSV. Each crop entry will be stored with your user name.",
+    "upload": "To upload harvest data, use the Upload page and submit a valid CSV. Each commodity entry will be stored with your user name.",
+    "harvest": "To upload harvest data, use the Upload page and submit a valid CSV. Each commodity entry will be stored with your user name.",
     "admin": "Admin users can access the Admin page to manage inventory and users. Only admins have full modify rights.",
     "manager": "Admin users can access the Admin page to manage inventory and users. Only admins have full modify rights.",
     "profile": "You can view your profile from the top-right menu. It shows your user role and account details.",
     "about": "Visit the About page to learn more about Agri-Direct and how it helps buyers, farmers, and administrators.",
-    "preorder": "Pre-orders let you reserve crops before harvest. Go to Marketplace and select 'Pre-order' when adding a listing.",
+    "preorder": "Pre-orders let you reserve commodities before harvest. Go to Marketplace and select 'Pre-order' when adding a listing.",
     "look": "Looking For listings let you post what you want to buy. Go to Marketplace and select 'Looking For' when adding a listing."
 }
 
@@ -152,6 +152,7 @@ def _public_metrics(now=None):
           AND email IS NOT NULL AND TRIM(email) <> ''
           AND profile_picture IS NOT NULL AND TRIM(profile_picture) <> ''
           AND profile_photo_captured_at IS NOT NULL
+          AND profile_photo_scan_verified_at IS NOT NULL
           AND location_latitude IS NOT NULL AND location_longitude IS NOT NULL
           AND geotag_location IS NOT NULL AND TRIM(geotag_location) <> ''
     """).fetchone()["count"]
@@ -209,13 +210,15 @@ def home():
     conn = get_db()
     try:
         featured_commodities = conn.cursor().execute("""
-            SELECT id, crop_name, amount, price, unit, location,
-                   main_image, thumbnail_verified, listing_type
-            FROM marketplace
+            SELECT m.id, m.commodity_name, m.amount, m.price, m.unit, m.location,
+                   m.main_image, m.thumbnail_verified, m.listing_type,
+                   c.default_image AS commodity_default_image
+            FROM marketplace m
+            LEFT JOIN commodities c ON c.id = m.commodity_id
             WHERE status = 'available'
-              AND (listing_type IS NULL OR listing_type <> 'looking_for')
-              AND (buyer_username IS NULL OR TRIM(buyer_username) = '')
-            ORDER BY listing_date DESC, id DESC
+              AND (m.listing_type IS NULL OR m.listing_type <> 'looking_for')
+              AND (m.buyer_username IS NULL OR TRIM(m.buyer_username) = '')
+            ORDER BY m.listing_date DESC, m.id DESC
             LIMIT 6
         """).fetchall()
     finally:
@@ -236,14 +239,16 @@ def portal_home():
     cur = conn.cursor()
     updates = _latest_updates(limit=3)
     featured_listings = cur.execute("""
-        SELECT m.id, m.crop_name, m.amount, m.price, m.unit, m.location,
-               m.main_image, m.thumbnail_verified, u.username AS seller_name
+        SELECT m.id, m.commodity_name, m.amount, m.price, m.unit, m.location,
+               m.main_image, m.thumbnail_verified, u.username AS seller_name,
+               c.default_image AS commodity_default_image
         FROM marketplace m JOIN users u ON u.id = m.user_id
+        LEFT JOIN commodities c ON c.id = m.commodity_id
         WHERE m.status = 'available'
         ORDER BY m.listing_date DESC LIMIT 3
     """).fetchall()
     marketplace_summary = cur.execute("""
-        SELECT COUNT(*) AS active_listings, COUNT(DISTINCT m.crop_name) AS crop_count
+        SELECT COUNT(*) AS active_listings, COUNT(DISTINCT m.commodity_name) AS crop_count
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
         WHERE m.status = 'available'
@@ -279,25 +284,36 @@ def cookie_notice():
 def crop_types():
     if "user" not in session:
         return redirect(url_for("login"))
+    current_role = _refresh_session_role()
+    if current_role is None:
+        return redirect(url_for("login"))
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.source IS NULL OR i.source = 'harvest' GROUP BY i.crop_id, c.crops_name ORDER BY total DESC")
-    crops = cur.fetchall()
-    crop_types_count = len(crops)
+    owner_filter = "" if current_role == "admin" else " WHERE i.farmer = ?"
+    owner_params = () if current_role == "admin" else (session["user"],)
+    cur.execute(
+        "SELECT c.commodity_name AS commodity_name, SUM(i.quantity) AS total "
+        "FROM inventory i JOIN commodities c ON c.id=i.commodity_id" +
+        owner_filter +
+        " GROUP BY i.commodity_id, c.commodity_name ORDER BY total DESC",
+        owner_params,
+    )
+    commodities = cur.fetchall()
+    crop_types_count = len(commodities)
     conn.close()
 
-    return render_template("crop_types.html", crops=crops, crop_types_count=crop_types_count)
+    return render_template("crop_types.html", commodities=commodities, crop_types_count=crop_types_count)
 
 def _market_records_from_db():
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "SELECT c.crops_name AS crop_name, i.quantity, i.date_received, i.location, "
+        "SELECT c.commodity_name AS commodity_name, i.quantity, i.date_received, i.location, "
         "cp.pricing_mode, cp.reference_price, cp.price_range, "
         "cp.minimum_price, cp.maximum_price, cp.price_unit "
-        "FROM inventory i JOIN crops c ON c.id = i.crop_id "
-        "LEFT JOIN crop_pricing cp ON cp.crop_id = c.id "
+        "FROM inventory i JOIN commodities c ON c.id = i.commodity_id "
+        "LEFT JOIN commodity_pricing cp ON cp.commodity_id = c.id "
         "WHERE i.source IS NULL OR i.source = 'harvest' "
         "ORDER BY i.date_received DESC"
     )
@@ -305,7 +321,7 @@ def _market_records_from_db():
     conn.close()
     return [
         {
-            "crop_name": row["crop_name"],
+            "commodity_name": row["commodity_name"],
             "quantity": row["quantity"],
             "date_received": row["date_received"],
             "location": row["location"],
@@ -350,19 +366,19 @@ def _market_brief_context(analysis):
 
     if recommendations:
         top_recommendation = recommendations[0]
-        top_crop = top_recommendation.get("crop", "a suitable crop")
+        top_commodity = top_recommendation.get("crop", "a suitable commodity")
         price_context = (
             " and its configured catalog reference price"
             if top_recommendation.get("reference_price") is not None
             else " and other available market signals"
         )
         recommendation = (
-            f"{top_crop} currently ranks as a promising option based on recent "
+            f"{top_commodity} currently ranks as a promising option based on recent "
             f"harvest and supply patterns{price_context}."
         )
     else:
         recommendation = (
-            "There is not enough recent harvest information to suggest a crop yet."
+            "There is not enough recent harvest information to suggest a commodity yet."
         )
 
     priority_alerts = [
@@ -375,7 +391,7 @@ def _market_brief_context(analysis):
     if priority_alerts:
         alert = priority_alerts[0]
         supply_update = (
-            f"{alert.get('crop', 'A crop')}: "
+            f"{alert.get('crop', 'A commodity')}: "
             f"{alert.get('message', 'Supply is outside its usual range.')}"
         )
         next_step = (
@@ -387,7 +403,7 @@ def _market_brief_context(analysis):
         next_step = "Keep your harvest and listings up to date to improve future insights."
     else:
         supply_update = "There is not enough harvest information to assess supply yet."
-        next_step = "Add harvest records to receive more useful crop and supply guidance."
+        next_step = "Add harvest records to receive more useful commodity and supply guidance."
 
     return {
         "active_crops": summary.get("active_crops", 0),
@@ -419,23 +435,23 @@ def market_intelligence():
 
     summary_cards = [
         {"label": "Harvest volume", "badge": summary.get("market_pressure", "Balanced").title(), "value": f"{int(summary.get('total_quantity', 0)):,}", "detail": f"Current live harvest volume for {summary.get('current_month', 'this month')}."},
-        {"label": "Average catalog reference", "badge": f"{len(priced_items)} crops priced", "value": f"₱{average_price:,.2f}/kg" if average_price is not None else "Unavailable", "detail": "Configured crop prices; bounds-only rules use their midpoint."},
-        {"label": "Active crops", "badge": "Live", "value": str(summary.get("active_crops", 0)), "detail": "Crops currently represented in inventory."},
+        {"label": "Average catalog reference", "badge": f"{len(priced_items)} commodities priced", "value": f"₱{average_price:,.2f}/kg" if average_price is not None else "Unavailable", "detail": "Configured commodity prices; bounds-only rules use their midpoint."},
+        {"label": "Active commodities", "badge": "Live", "value": str(summary.get("active_crops", 0)), "detail": "Commodities currently represented in inventory."},
         {"label": "Alert level", "badge": "Watch" if risk_alerts else "Stable", "value": "Moderate" if risk_alerts else "Stable", "detail": "Based on current dynamic supply thresholds."},
     ]
 
     pulse_items = [
-        {"label": item.get("crop", "Crop"), "value": item.get("signal", "Balanced"), "progress": min(100, max(10, int(item.get("price_index", 50))))}
+        {"label": item.get("crop", "Commodity"), "value": item.get("signal", "Balanced"), "progress": min(100, max(10, int(item.get("price_index", 50))))}
         for item in priced_items[:4]
     ]
 
     focus_items = [
-        {"title": f"Top recommendation: {item.get('crop', 'Crop')}", "badge": "Priority", "detail": item.get("reason", "High-performing option."), "metric": f"{round(item.get('score', 0) * 100, 0)}%", "timeline": "Live signal"}
+        {"title": f"Top recommendation: {item.get('crop', 'Commodity')}", "badge": "Priority", "detail": item.get("reason", "High-performing option."), "metric": f"{round(item.get('score', 0) * 100, 0)}%", "timeline": "Live signal"}
         for item in recommendations[:2]
     ]
 
     if not focus_items:
-        focus_items = [{"title": "No active crop recommendation", "badge": "Stable", "detail": "Inventory data is insufficient to rank crops yet.", "metric": "0%", "timeline": "Waiting for data"}]
+        focus_items = [{"title": "No active commodity recommendation", "badge": "Stable", "detail": "Inventory data is insufficient to rank commodities yet.", "metric": "0%", "timeline": "Waiting for data"}]
 
     insight_items = [
         {"title": alert.get("type", "Market alert").replace("_", " ").title(), "level": alert.get("severity", "Medium").title(), "desc": alert.get("message", "No supply warning.")}
@@ -475,7 +491,7 @@ def market_intelligence_price_monitoring():
     price_monitoring = analysis.get("price_monitoring", [])
     price_items = [
         {
-            "crop": item.get("crop", "Crop"),
+            "crop": item.get("crop", "Commodity"),
             "current_price": (
                 f"₱{float(item['current_price']):,.2f}/{item.get('price_unit', 'kg')}"
                 if item.get("current_price") is not None
@@ -501,9 +517,9 @@ def market_intelligence_price_monitoring():
     )
     detail_items = [
         {"label": "Live harvest", "value": f"{summary_total}", "note": "Current combined inventory volume, not currency value."},
-        {"label": "Active crops", "value": str(analysis.get("summary", {}).get("active_crops", 0)), "note": "Crops represented in the live data."},
+        {"label": "Active commodities", "value": str(analysis.get("summary", {}).get("active_crops", 0)), "note": "Commodities represented in the live data."},
         {"label": "Market pressure", "value": analysis.get("summary", {}).get("market_pressure", "balanced").title(), "note": "Current supply condition."},
-        {"label": "Price coverage", "value": f"{priced_count} crops", "note": "Active crops with an admin-configured catalog price."},
+        {"label": "Price coverage", "value": f"{priced_count} commodities", "note": "Active commodities with an admin-configured catalog price."},
     ]
 
     priced_monitoring = [
@@ -534,7 +550,7 @@ def market_intelligence_crop_recommendations():
     recommendations = analysis.get("recommendations", [])
     recommendation_items = [
         {
-            "crop": item.get("crop", "Crop"),
+            "crop": item.get("crop", "Commodity"),
             "score": round(item.get("score", 0) * 100, 0),
             "reason": item.get("reason", "No recommendation available."),
             "demand": "High" if item.get("score", 0) > 0.6 else "Balanced",
@@ -576,7 +592,7 @@ def market_intelligence_demand_forecasting():
     forecast_items = analysis.get("forecast", [])
     forecast_items = [
         {
-            "crop": item.get("crop", "Crop"),
+            "crop": item.get("crop", "Commodity"),
             "note": f"{item.get('method', 'trend')} forecast remains active for current trend.",
             "confidence": "High" if item.get("method") == "arima" else "Medium",
             "historical": str(round(float(item.get("latest_value", 0)), 1)),
@@ -607,7 +623,7 @@ def market_intelligence_supply_balance():
     risk_alerts = analysis.get("risk_alerts", [])
     supply_items = [
         {
-            "crop": alert.get("crop", "Crop"),
+            "crop": alert.get("crop", "Commodity"),
             "status": alert.get("type", "Balanced").replace("_", " ").title(),
             "note": alert.get("message", "Current supply is within the normal band."),
             "band": "Dynamic" if alert.get("severity") == "high" else "Live",
@@ -643,9 +659,9 @@ def dashboard():
     scope_params = () if is_admin else (session["user"],)
 
     cur.execute(
-        "SELECT i.farmer, c.crops_name AS crop_name, i.quantity, i.location, i.date_received "  # nosec B608
-        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
-        "WHERE (i.source IS NULL OR i.source = 'harvest')" + inventory_scope +
+        "SELECT i.farmer, c.commodity_name AS commodity_name, i.quantity, i.location, i.date_received "  # nosec B608
+        "FROM inventory i JOIN commodities c ON c.id=i.commodity_id "
+        "WHERE 1=1" + inventory_scope +
         " ORDER BY i.date_received DESC LIMIT 20",
         scope_params,
     )
@@ -654,18 +670,18 @@ def dashboard():
     update_analytics()
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
-        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
-        "WHERE (i.source IS NULL OR i.source = 'harvest')" + inventory_scope +
-        " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC",
+        "SELECT c.commodity_name AS commodity_name, SUM(i.quantity) AS total "  # nosec B608
+        "FROM inventory i JOIN commodities c ON c.id=i.commodity_id "
+        "WHERE 1=1" + inventory_scope +
+        " GROUP BY i.commodity_id, c.commodity_name ORDER BY total DESC",
         scope_params,
     )
-    crops = cur.fetchall()
+    commodities = cur.fetchall()
 
     location_scope = "" if is_admin else " AND farmer = ?"
     cur.execute(
         "SELECT location, SUM(quantity) AS total FROM inventory "  # nosec B608
-        "WHERE (source IS NULL OR source = 'harvest') AND location IS NOT NULL AND location != ''" +
+        "WHERE location IS NOT NULL AND location != ''" +
         location_scope + " GROUP BY location ORDER BY total DESC",
         scope_params,
     )
@@ -681,7 +697,7 @@ def dashboard():
             LIMIT 1
         """, ("Monthly",)).fetchone()
         analytics_history = cur.execute("""
-            SELECT period_value, total_harvest, top_crop, top_crop_volume, top_location, top_location_volume
+            SELECT period_value, total_harvest, top_commodity, top_commodity_volume, top_location, top_location_volume
             FROM analytics
             WHERE period_type = ?
             ORDER BY period_value DESC
@@ -692,13 +708,13 @@ def dashboard():
         analytics_history = []
         cur.execute(
             "SELECT COALESCE(SUM(quantity), 0) AS total FROM inventory "
-            "WHERE (source IS NULL OR source = 'harvest') AND farmer = ?",
+            "WHERE farmer = ?",
             (session["user"],),
         )
         personal_total = cur.fetchone()["total"] or 0
         cur.execute(
             "SELECT location, SUM(quantity) AS total FROM inventory "
-            "WHERE (source IS NULL OR source = 'harvest') AND location IS NOT NULL "
+            "WHERE location IS NOT NULL "
             "AND location != '' AND farmer = ? GROUP BY location ORDER BY total DESC LIMIT 1",
             (session["user"],),
         )
@@ -716,12 +732,12 @@ def dashboard():
     top_location_volume = latest_analytics["top_location_volume"] if latest_analytics else (
         personal_top_location["total"] if not is_admin and personal_top_location else 0
     )
-    crop_count = len(crops)
+    crop_count = len(commodities)
 
     return render_template("dashboard.html",
                        inventory=data,
                        total=total,
-                       crops=crops,
+                       commodities=commodities,
                        locations=locations,
                        location_count=location_count,
                        top_location_name=top_location_name,
@@ -731,7 +747,6 @@ def dashboard():
                        market_brief=market_brief)
 
 def dashboard_data():
-    """Return only the inventory table HTML for real-time updates"""
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
     current_role = _refresh_session_role()
@@ -746,9 +761,9 @@ def dashboard_data():
     scope = "" if is_admin else " AND i.farmer = ?"
     params = () if is_admin else (session["user"],)
     cur.execute(
-        "SELECT i.farmer, c.crops_name AS crop_name, i.quantity, i.location, i.date_received "  # nosec B608
-        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
-        "WHERE (i.source IS NULL OR i.source = 'harvest')" + scope +
+        "SELECT i.farmer, c.commodity_name AS commodity_name, i.quantity, i.location, i.date_received "  # nosec B608
+        "FROM inventory i JOIN commodities c ON c.id=i.commodity_id "
+        "WHERE 1=1" + scope +
         " ORDER BY i.date_received DESC LIMIT 20",
         params,
     )
@@ -815,7 +830,6 @@ def api_stats():
     cur = conn.cursor()
     is_admin = current_role == "admin"
     owner = session["user"]
-    # These role-selected SQL fragments are fixed; usernames remain bound.
     aliased_owner_filter = "" if is_admin else " AND i.farmer = ?"
     plain_owner_filter = "" if is_admin else " AND farmer = ?"
     owner_params = () if is_admin else (owner,)
@@ -823,23 +837,23 @@ def api_stats():
     # Total quantity
     cur.execute(
         "SELECT COALESCE(SUM(quantity), 0) AS total FROM inventory "  # nosec B608
-        "WHERE (source IS NULL OR source = 'harvest')" + plain_owner_filter,
+        "WHERE 1=1" + plain_owner_filter,
         owner_params,
     )
     total = cur.fetchone()["total"] or 0
 
     # Crop summary
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
-        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
-        "WHERE (i.source IS NULL OR i.source = 'harvest')" + aliased_owner_filter +
-        " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC",
+        "SELECT c.commodity_name AS commodity_name, SUM(i.quantity) AS total "  # nosec B608
+        "FROM inventory i JOIN commodities c ON c.id=i.commodity_id "
+        "WHERE 1=1" + aliased_owner_filter +
+        " GROUP BY i.commodity_id, c.commodity_name ORDER BY total DESC",
         owner_params,
     )
-    crops = cur.fetchall()
+    commodities = cur.fetchall()
 
     # Top crop
-    top_crop = crops[0]["crop_name"] if crops else "N/A"
+    top_commodity = commodities[0]["commodity_name"] if commodities else "N/A"
 
     # Number of entries
     cur.execute(
@@ -869,14 +883,14 @@ def api_stats():
     previous_year_end = datetime(selected_year - 1, 12, 31, 23, 59, 59)
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
-        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
+        "SELECT c.commodity_name AS commodity_name, SUM(i.quantity) AS total "  # nosec B608
+        "FROM inventory i JOIN commodities c ON c.id=i.commodity_id "
         "WHERE i.date_received >= ? AND i.date_received <= ?" + aliased_owner_filter +
-        " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC LIMIT 10",
+        " GROUP BY i.commodity_id, c.commodity_name ORDER BY total DESC LIMIT 10",
         (selected_month_start.strftime("%Y-%m-%d %H:%M:%S"),
          selected_month_end.strftime("%Y-%m-%d %H:%M:%S")) + owner_params,
     )
-    top_monthly = [{"name": row["crop_name"], "total": row["total"]} for row in cur.fetchall()]
+    top_monthly = [{"name": row["commodity_name"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
         "SELECT location, SUM(quantity) AS total FROM inventory "  # nosec B608
@@ -888,14 +902,14 @@ def api_stats():
     top_monthly_locations = [{"name": row["location"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
-        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
+        "SELECT c.commodity_name AS commodity_name, SUM(i.quantity) AS total "  # nosec B608
+        "FROM inventory i JOIN commodities c ON c.id=i.commodity_id "
         "WHERE i.date_received >= ? AND i.date_received <= ?" + aliased_owner_filter +
-        " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC LIMIT 10",
+        " GROUP BY i.commodity_id, c.commodity_name ORDER BY total DESC LIMIT 10",
         (selected_year_start.strftime("%Y-%m-%d %H:%M:%S"),
          selected_year_end.strftime("%Y-%m-%d %H:%M:%S")) + owner_params,
     )
-    top_yearly = [{"name": row["crop_name"], "total": row["total"]} for row in cur.fetchall()]
+    top_yearly = [{"name": row["commodity_name"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
         "SELECT location, SUM(quantity) AS total FROM inventory "  # nosec B608
@@ -907,24 +921,24 @@ def api_stats():
     top_yearly_locations = [{"name": row["location"], "total": row["total"]} for row in cur.fetchall()]
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
-        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
+        "SELECT c.commodity_name AS commodity_name, SUM(i.quantity) AS total "  # nosec B608
+        "FROM inventory i JOIN commodities c ON c.id=i.commodity_id "
         "WHERE i.date_received >= ? AND i.date_received <= ?" + aliased_owner_filter +
-        " GROUP BY i.crop_id, c.crops_name",
+        " GROUP BY i.commodity_id, c.commodity_name",
         (selected_month_start.strftime("%Y-%m-%d %H:%M:%S"),
          selected_month_end.strftime("%Y-%m-%d %H:%M:%S")) + owner_params,
     )
-    current_month = {row["crop_name"]: row["total"] for row in cur.fetchall()}
+    current_month = {row["commodity_name"]: row["total"] for row in cur.fetchall()}
 
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
-        "FROM inventory i JOIN crops c ON c.id=i.crop_id "
+        "SELECT c.commodity_name AS commodity_name, SUM(i.quantity) AS total "  # nosec B608
+        "FROM inventory i JOIN commodities c ON c.id=i.commodity_id "
         "WHERE i.date_received >= ? AND i.date_received <= ?" + aliased_owner_filter +
-        " GROUP BY i.crop_id, c.crops_name",
+        " GROUP BY i.commodity_id, c.commodity_name",
         (previous_month_start.strftime("%Y-%m-%d %H:%M:%S"),
          previous_month_end.strftime("%Y-%m-%d %H:%M:%S")) + owner_params,
     )
-    previous_month = {row["crop_name"]: row["total"] for row in cur.fetchall()}
+    previous_month = {row["commodity_name"]: row["total"] for row in cur.fetchall()}
 
     crop_names = sorted(set(current_month) | set(previous_month))
     monthly_comparison = [
@@ -945,11 +959,14 @@ def api_stats():
 
     return jsonify({
         "total_quantity": total,
-        "top_crop": top_crop,
-        "crops_count": len(crops),
+        "top_commodity": top_commodity,
+        "top_crop": top_commodity,
+        "crops_count": len(commodities),
+        "commodities_count": len(commodities),
         "entry_count": entry_count,
         "location_count": location_count,
-        "crops": [{"name": crop["crop_name"], "quantity": crop["total"]} for crop in crops],
+        "commodities": [{"name": crop["commodity_name"], "quantity": crop["total"]} for crop in commodities],
+        "crops": [{"name": crop["commodity_name"], "quantity": crop["total"]} for crop in commodities],
         "monthly_comparison": monthly_comparison,
         "top_monthly": top_monthly,
         "top_yearly": top_yearly,
@@ -1092,9 +1109,9 @@ def total_harvest():
 
     crop_owner_filter = "" if is_admin else " WHERE i.farmer = ?"
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total "  # nosec B608
-        "FROM inventory i JOIN crops c ON c.id=i.crop_id" + crop_owner_filter +
-        " GROUP BY i.crop_id, c.crops_name ORDER BY total DESC",
+        "SELECT c.commodity_name AS commodity_name, SUM(i.quantity) AS total "  # nosec B608
+        "FROM inventory i JOIN commodities c ON c.id=i.commodity_id" + crop_owner_filter +
+        " GROUP BY i.commodity_id, c.commodity_name ORDER BY total DESC",
         owner_params,
     )
     crop_totals = cur.fetchall()
@@ -1102,7 +1119,7 @@ def total_harvest():
     conn.close()
     return render_template("total_harvest.html", total=total, crop_totals=crop_totals)
 
-def top_crop():
+def top_commodity():
     if "user" not in session:
         return redirect(url_for("login"))
     current_role = _refresh_session_role()
@@ -1117,13 +1134,13 @@ def top_crop():
 
     # The optional filter is a fixed server-selected fragment; values remain bound.
     top_crops_query = (
-        "SELECT c.crops_name AS crop_name,\n"  # nosec B608
+        "SELECT c.commodity_name AS commodity_name,\n"  # nosec B608
         "       SUM(i.quantity) AS total\n"
         "FROM inventory i\n"
-        "JOIN crops c ON c.id=i.crop_id\n"
+        "JOIN commodities c ON c.id=i.commodity_id\n"
         "WHERE 1=1\n"
         + owner_filter
-        + "\nGROUP BY i.crop_id, c.crops_name\n"
+        + "\nGROUP BY i.commodity_id, c.commodity_name\n"
         "ORDER BY total DESC\n"
         "LIMIT 5"
     )
@@ -1140,6 +1157,10 @@ def top_crop():
         top=top,
         top_crops=top_crops
     )
+
+
+top_crop = top_commodity
+
 
 def locations():
     if "user" not in session:
@@ -1540,7 +1561,8 @@ def register(application):
     application.add_url_rule('/api/messages', endpoint='get_messagess', view_func=get_messagess, methods=['GET'])
     application.add_url_rule('/api/messages', endpoint='send_message', view_func=send_message, methods=['POST'])
     application.add_url_rule('/total-harvest', endpoint='total_harvest', view_func=total_harvest)
-    application.add_url_rule('/top-crop', endpoint='top_crop', view_func=top_crop)
+    application.add_url_rule('/top-crop', endpoint='top_commodity', view_func=top_commodity)
+    application.add_url_rule('/top-crop', endpoint='top_crop', view_func=top_commodity)
     application.add_url_rule('/locations', endpoint='locations', view_func=locations)
     application.add_url_rule('/messages', endpoint='messages_page', view_func=messages_page)
     application.add_url_rule('/messages/conversations', endpoint='get_conversations', view_func=get_conversations)
@@ -1557,4 +1579,4 @@ def register(application):
         setattr(core, _name, globals()[_name])
 
 
-__all__ = ['home', 'portal_home', 'about', 'terms_of_service', 'privacy_notice', 'cookie_notice', 'crop_types', 'market_intelligence', 'market_intelligence_price_monitoring', 'market_intelligence_crop_recommendations', 'market_intelligence_demand_forecasting', 'market_intelligence_supply_balance', 'dashboard', 'dashboard_data', 'api_market_insights', 'api_forecast', 'api_stats', 'get_users', 'bot_response', 'get_messagess', 'send_message', 'total_harvest', 'top_crop', 'locations', 'messages_page', 'get_conversations', 'users_search', 'get_messages', 'send_chat_message', 'message_attachment', 'api_current_user', 'notifications', 'notifications_unread_count', 'notification_center', 'notifications_mark_read', 'get_bot_reply', 'get_welcome_message']
+__all__ = ['home', 'portal_home', 'about', 'terms_of_service', 'privacy_notice', 'cookie_notice', 'crop_types', 'market_intelligence', 'market_intelligence_price_monitoring', 'market_intelligence_crop_recommendations', 'market_intelligence_demand_forecasting', 'market_intelligence_supply_balance', 'dashboard', 'dashboard_data', 'api_market_insights', 'api_forecast', 'api_stats', 'get_users', 'bot_response', 'get_messagess', 'send_message', 'total_harvest', 'top_commodity', 'top_crop', 'locations', 'messages_page', 'get_conversations', 'users_search', 'get_messages', 'send_chat_message', 'message_attachment', 'api_current_user', 'notifications', 'notifications_unread_count', 'notification_center', 'notifications_mark_read', 'get_bot_reply', 'get_welcome_message']

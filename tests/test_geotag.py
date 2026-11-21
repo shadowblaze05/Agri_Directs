@@ -1,9 +1,11 @@
 import importlib.util
+import json
 from io import BytesIO
 import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+import uuid
 
 import pytest
 from flask import session as flask_session
@@ -69,6 +71,7 @@ def test_profile_completion_requires_camera_photo_and_gps_location():
         "email": "farmer@example.com",
         "profile_picture": "/static/uploads/profiles/old-photo.jpg",
         "profile_photo_captured_at": None,
+        "profile_photo_scan_verified_at": None,
         "location": None,
         "geotag_location": None,
         "location_latitude": None,
@@ -78,11 +81,13 @@ def test_profile_completion_requires_camera_photo_and_gps_location():
 
     assert missing_harvest_profile_requirements(incomplete) == [
         "profile photo timestamp",
+        "verified profile photo scan",
         "GPS-derived place name",
         "profile GPS coordinates",
     ]
     incomplete.update({
         "profile_photo_captured_at": "2026-09-26T12:00:00+00:00",
+        "profile_photo_scan_verified_at": "2026-09-26T12:00:00+00:00",
         "location": "Example City, Province",
         "geotag_location": "GPS place, Example City, Province",
         "location_latitude": 14.6,
@@ -152,6 +157,7 @@ def test_psgc_resolver_matches_reverse_geocoded_city_and_province(monkeypatch):
 @pytest.fixture
 def client(monkeypatch):
     app_module.app.config.update(TESTING=True)
+    monkeypatch.setitem(app_module.app.config, "RATELIMIT_ENABLED", False)
     monkeypatch.setattr(auth_service, "get_active_user_auth_version", lambda *_args: 0)
     role_lookup = lambda username, _connection_factory=None: (
         flask_session.get("role", "user")
@@ -162,16 +168,45 @@ def client(monkeypatch):
     monkeypatch.setattr(inventory_routes, "get_active_user_role", role_lookup)
     monkeypatch.setattr(marketplace_routes, "get_active_user_role", role_lookup)
     with app_module.app.test_client() as test_client:
+        test_client.environ_base["REMOTE_ADDR"] = f"192.0.2.{uuid.uuid4().int % 250 + 1}"
         yield test_client
 
 
-def test_profile_location_rejects_invalid_coordinates_before_database_access(client):
+def test_profile_location_rejects_invalid_coordinates_before_database_access(client, monkeypatch):
+    class FakeCursor:
+        rowcount = 1
+
+        def execute(self, *_args):
+            return self
+
+        def fetchone(self):
+            return {
+                "movement_sequence": json.dumps(
+                    ["center", "screen_left", "center", "screen_right", "center"]
+                ),
+                "current_stage": 5,
+            }
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(profile_routes, "get_db", lambda: FakeConnection())
+    monkeypatch.setattr(profile_routes, "validate_face_frame", lambda *_args: None)
     with client.session_transaction() as session:
         session["user"] = "farmer"
 
     response = client.post(
         "/profile/location",
         data={
+            "challenge": "single-use-challenge",
+            "public_photo_consent": "yes",
             "profile_photo": (_png_bytes(), "profile.png", "image/png"),
             "latitude": "95",
             "longitude": "120",
@@ -211,6 +246,18 @@ def test_profile_location_saves_unverified_coordinates(client, tmp_path, monkeyp
             self.params = params
             return self
 
+        def fetchone(self):
+            if self.query.startswith("SELECT movement_sequence"):
+                return {
+                    "movement_sequence": json.dumps(
+                        ["center", "screen_left", "center", "screen_right", "center"]
+                    ),
+                    "current_stage": 5,
+                }
+            if self.query.startswith("SELECT profile_picture FROM users"):
+                return {"profile_picture": None}
+            return None
+
     class FakeConnection:
         def __init__(self):
             self.fake_cursor = FakeCursor()
@@ -228,13 +275,17 @@ def test_profile_location_saves_unverified_coordinates(client, tmp_path, monkeyp
     monkeypatch.setattr(profile_routes, "get_db", lambda: connection)
     monkeypatch.setattr(profile_routes, "reverse_geocode_coordinates", lambda _lat, _lon: "Example City, Province")
     monkeypatch.setattr(profile_routes, "resolve_psgc_location", lambda _place: "PSGC City, Province")
+    monkeypatch.setattr(profile_routes, "validate_face_frame", lambda *_args: None)
     monkeypatch.setattr(app_module.app, "static_folder", str(tmp_path))
+    monkeypatch.setitem(app_module.app.config, "UPLOAD_FOLDER", str(tmp_path / "uploads"))
     with client.session_transaction() as session:
         session["user"] = "farmer"
 
     response = client.post(
         "/profile/location",
         data={
+            "challenge": "single-use-challenge",
+            "public_photo_consent": "yes",
             "profile_photo": (
                 _png_bytes_with_location_metadata(),
                 "profile.png",
@@ -250,12 +301,12 @@ def test_profile_location_saves_unverified_coordinates(client, tmp_path, monkeyp
     )
 
     assert response.status_code == 200
-    assert connection.fake_cursor.params[2:5] == (
+    assert connection.fake_cursor.params[3:6] == (
         "PSGC City, Province",
         "PSGC City, Province",
         "Example City, Province",
     )
-    assert connection.fake_cursor.params[5:7] == (14.6, 120.98)
+    assert connection.fake_cursor.params[6:8] == (14.6, 120.98)
     assert "location_verified=FALSE" in connection.fake_cursor.query
     assert "location_verified_at=NULL" in connection.fake_cursor.query
     assert response.get_json()["geotag_location"] == "Example City, Province"
@@ -281,6 +332,7 @@ def test_api_harvest_uses_token_owner_and_manual_review_without_photo(client, mo
                     "email": "farmer@example.com",
                     "profile_picture": "/static/uploads/profiles/profile.jpg",
                     "profile_photo_captured_at": "2026-09-26T12:00:00+00:00",
+                    "profile_photo_scan_verified_at": "2026-09-26T12:00:00+00:00",
                     "location": "Farm",
                     "geotag_location": "GPS Farm Place",
                     "location_latitude": 0,
@@ -336,7 +388,7 @@ def test_api_harvest_uses_token_owner_and_manual_review_without_photo(client, mo
     assert connection.fake_cursor.inserted_values[1] == "farmer"
     assert connection.fake_cursor.inserted_values[7] == pytest.approx(1_000)
     assert connection.fake_cursor.inserted_values[8] == "manual_review"
-    assert "API submissions do not include crop photo evidence" in connection.fake_cursor.inserted_values[9]
+    assert "API submissions do not include commodity photo evidence" in connection.fake_cursor.inserted_values[9]
     assert "GPS coordinates and timestamp are self-reported" in connection.fake_cursor.inserted_values[9]
     assert response.get_json()["proximity_status"] == "within_range"
 
@@ -443,13 +495,14 @@ def _mock_inventory_database(monkeypatch, reference_location):
                     "email": "farmer@example.com",
                     "profile_picture": "/static/uploads/profiles/profile.jpg",
                     "profile_photo_captured_at": "2026-09-26T12:00:00+00:00",
+                    "profile_photo_scan_verified_at": "2026-09-26T12:00:00+00:00",
                     "location": "Farm",
                     "geotag_location": "GPS Farm Place",
                     "location_latitude": reference_location[0],
                     "location_longitude": reference_location[1],
                     "location_verified": reference_location[2],
                 }
-            elif "SELECT id, crops_name" in query:
+            elif "SELECT id, commodity_name" in query:
                 self.row = None
             elif "INSERT INTO inventory(" in query:
                 self.inserted_values = params
@@ -566,6 +619,7 @@ def test_incomplete_profile_cannot_upload_harvest(client, monkeypatch):
                 "email": "farmer@example.com",
                 "profile_picture": None,
                 "profile_photo_captured_at": None,
+                "profile_photo_scan_verified_at": None,
                 "location": None,
                 "geotag_location": None,
                 "location_latitude": None,
@@ -584,6 +638,7 @@ def test_incomplete_profile_cannot_upload_harvest(client, monkeypatch):
             return None
 
     monkeypatch.setattr(inventory_routes, "get_db", lambda: FakeConnection())
+    monkeypatch.setattr(profile_routes, "get_db", lambda: FakeConnection())
     with client.session_transaction() as session:
         session["user"] = "farmer"
 
@@ -609,6 +664,7 @@ def test_incomplete_profile_cannot_submit_jwt_harvest(client, monkeypatch):
                 "email": "farmer@example.com",
                 "profile_picture": None,
                 "profile_photo_captured_at": None,
+                "profile_photo_scan_verified_at": None,
                 "location": None,
                 "location_latitude": None,
                 "location_longitude": None,
@@ -698,6 +754,7 @@ def test_marketplace_seller_link_opens_contact_profile(client, monkeypatch):
                 "bio": "Local grower",
                 "location_verified": False,
                 "profile_photo_captured_at": None,
+                "profile_photo_scan_verified_at": None,
                 "is_verified": False,
             }
 
@@ -833,9 +890,9 @@ def test_listing_capture_stores_photo_and_proximity_without_verification(
         listing_update = None
 
         def execute(self, query, params=()):
-            if query.startswith("SELECT id, crops_name FROM crops"):
-                self.result = {"id": 1, "crops_name": "Rice"}
-            elif "FROM crop_pricing" in query:
+            if query.startswith("SELECT id, commodity_name FROM commodities"):
+                self.result = {"id": 1, "commodity_name": "Rice"}
+            elif "FROM commodity_pricing" in query:
                 self.result = None
             elif query.startswith("SELECT id, location, location_latitude"):
                 self.result = {
@@ -925,8 +982,8 @@ def test_listing_edit_keeps_replacement_thumbnail_unverified(client, monkeypatch
                 self.result = {
                     "id": 42,
                     "status": "available",
-                    "crop_name": "Rice",
-                    "crop_id": 1,
+                    "commodity_name": "Rice",
+                    "commodity_id": 1,
                     "amount": 1,
                     "price": 10,
                     "unit": "kg",
@@ -934,7 +991,7 @@ def test_listing_edit_keeps_replacement_thumbnail_unverified(client, monkeypatch
                     "listing_type": "standard",
                     "main_image": None,
                 }
-            elif "FROM crop_pricing" in query:
+            elif "FROM commodity_pricing" in query:
                 self.result = None
             elif query.startswith("UPDATE marketplace SET main_image"):
                 self.replacement_update = (query, params)
@@ -998,11 +1055,11 @@ def test_listing_edit_keeps_replacement_thumbnail_unverified(client, monkeypatch
 def test_listing_form_uses_camera_for_thumbnail_and_upload_for_gallery(client, monkeypatch):
     class FakeCursor:
         def execute(self, query, _params=()):
-            if "FROM inventory i JOIN crops c" in query:
+            if "FROM inventory i JOIN commodities c" in query:
                 self.result = []
-            elif "FROM crops c LEFT JOIN crop_pricing cp" in query:
+            elif "FROM commodities c LEFT JOIN commodity_pricing cp" in query:
                 self.result = []
-            elif query.startswith("SELECT id, crops_name FROM crops"):
+            elif query.startswith("SELECT id, commodity_name FROM commodities"):
                 self.result = []
             elif query.startswith("SELECT location_latitude, location_longitude FROM users"):
                 self.result = {
@@ -1060,8 +1117,8 @@ def test_admin_marketplace_lists_and_creates_listings(client, monkeypatch):
             elif "FROM marketplace m LEFT JOIN users" in query:
                 self.result = [{
                     "id": 8,
-                    "crop_id": 3,
-                    "crop_name": "Rice",
+                    "commodity_id": 3,
+                    "commodity_name": "Rice",
                     "seller_name": "seller",
                     "username": "seller",
                     "amount": 25,
@@ -1072,6 +1129,7 @@ def test_admin_marketplace_lists_and_creates_listings(client, monkeypatch):
                     "buyer_username": None,
                     "available_date": None,
                     "description": "Fresh rice",
+                    "main_image": "rice.jpg",
                 }]
             elif query.startswith("SELECT id, username, location FROM users ORDER BY"):
                 self.result = [{"id": 2, "username": "seller", "location": "Sample City"}]
@@ -1079,8 +1137,8 @@ def test_admin_marketplace_lists_and_creates_listings(client, monkeypatch):
                 "SELECT id, username, location FROM users WHERE COALESCE"
             ):
                 self.result = [{"id": 2, "username": "seller", "location": "Sample City"}]
-            elif query.startswith("SELECT id, crops_name FROM crops ORDER BY"):
-                self.result = [{"id": 3, "crops_name": "Rice"}]
+            elif query.startswith("SELECT id, commodity_name FROM commodities ORDER BY"):
+                self.result = [{"id": 3, "commodity_name": "Rice"}]
             elif query.startswith(
                 "SELECT id, username, location, role FROM users WHERE username="
             ):
@@ -1096,8 +1154,8 @@ def test_admin_marketplace_lists_and_creates_listings(client, monkeypatch):
                     "username": params[0],
                     "location": "Sample City",
                 }
-            elif query.startswith("SELECT id, crops_name FROM crops WHERE"):
-                self.result = {"id": 3, "crops_name": "Rice"}
+            elif query.startswith("SELECT id, commodity_name FROM commodities WHERE"):
+                self.result = {"id": 3, "commodity_name": "Rice"}
             elif query.startswith("SELECT pricing_mode, price_unit, reference_price"):
                 self.result = None
             elif query.startswith("INSERT INTO marketplace"):
@@ -1141,6 +1199,9 @@ def test_admin_marketplace_lists_and_creates_listings(client, monkeypatch):
     assert b"Marketplace listings" in response.data
     assert b"Fresh rice" in response.data
     assert b"/admin/marketplace/create" in response.data
+    assert b"/admin/marketplace/thumbnail/8" in response.data
+    assert b"rice.jpg" in response.data
+    assert b"Admin replacements do not require GPS or distance verification." in response.data
 
     response = client.post(
         "/admin/marketplace/create",
@@ -1198,6 +1259,83 @@ def test_admin_marketplace_lists_and_creates_listings(client, monkeypatch):
     assert "thumbnail_verified=0" in cursor.update_sql
 
 
+def test_admin_can_replace_thumbnail_without_gps_range_validation(
+    client, monkeypatch, tmp_path
+):
+    class FakeCursor:
+        def __init__(self):
+            self.result = None
+            self.calls = []
+
+        def execute(self, query, params=()):
+            self.calls.append((query, params))
+            if query.startswith("SELECT role, is_active FROM users"):
+                self.result = {"role": "admin", "is_active": True}
+            elif query.startswith("SELECT main_image FROM marketplace"):
+                self.result = {"main_image": "old.png"}
+            else:
+                self.result = None
+            return self
+
+        def fetchone(self):
+            return self.result
+
+    cursor = FakeCursor()
+
+    class FakeConnection:
+        def cursor(self):
+            return cursor
+
+        def commit(self):
+            return None
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(admin_routes, "get_db", FakeConnection)
+    monkeypatch.setattr(app_module.app, "static_folder", str(tmp_path))
+    marketplace_uploads = tmp_path / "uploads" / "marketplace"
+    marketplace_uploads.mkdir(parents=True)
+    old_image = marketplace_uploads / "old.png"
+    old_image.write_bytes(b"old thumbnail")
+
+    image = BytesIO()
+    Image.new("RGB", (4, 4), (32, 96, 16)).save(image, format="PNG")
+    image.seek(0)
+    with client.session_transaction() as session:
+        session["user"] = "admin"
+        session["role"] = "admin"
+
+    response = client.post(
+        "/admin/marketplace/thumbnail/8",
+        data={"thumbnail": (image, "replacement.png")},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/admin/marketplace")
+    assert not old_image.exists()
+
+    listing_update = next(
+        (query, params)
+        for query, params in cursor.calls
+        if query.startswith("UPDATE marketplace")
+    )
+    update_query, update_params = listing_update
+    assert "main_image=?" in update_query
+    assert "thumbnail_latitude=NULL" in update_query
+    assert "thumbnail_longitude=NULL" in update_query
+    assert update_params[1] == 8
+    new_image = marketplace_uploads / update_params[0]
+    assert new_image.is_file()
+    with Image.open(new_image) as saved_thumbnail:
+        assert saved_thumbnail.size == (4, 4)
+    assert any(
+        query.startswith("INSERT INTO marketplace_images")
+        for query, _params in cursor.calls
+    )
+
+
 def test_admin_marketplace_protects_ordered_listings_from_deletion(client, monkeypatch):
     class FakeCursor:
         deleted = False
@@ -1205,9 +1343,9 @@ def test_admin_marketplace_protects_ordered_listings_from_deletion(client, monke
         def execute(self, query, _params=()):
             if query.startswith("SELECT role, is_active FROM users"):
                 self.result = {"role": "admin", "is_active": True}
-            elif query.startswith("SELECT crop_name, buyer_username, status"):
+            elif query.startswith("SELECT commodity_name, buyer_username, status"):
                 self.result = {
-                    "crop_name": "Rice",
+                    "commodity_name": "Rice",
                     "buyer_username": "buyer",
                     "status": "sold",
                 }
@@ -1305,8 +1443,8 @@ def test_profile_location_panel_does_not_render_exact_coordinates(client, monkey
             return self
 
         def fetchone(self):
-            if "COUNT(DISTINCT crop_id)" in self.current_query:
-                return {"crop_count": 1, "total_quantity": 4}
+            if "COUNT(DISTINCT commodity_id)" in self.current_query:
+                return {"commodity_count": 1, "total_quantity": 4}
             return {
                 "username": "farmer",
                 "first_name": "Farm",
@@ -1314,6 +1452,7 @@ def test_profile_location_panel_does_not_render_exact_coordinates(client, monkey
                 "role": "user",
                 "profile_picture": "/static/uploads/profiles/profile.jpg",
                 "profile_photo_captured_at": "2026-09-26T12:00:00+00:00",
+                "profile_photo_scan_verified_at": "2026-09-26T12:00:00+00:00",
                 "location": "Farm",
                 "psgc_location": "Example City, Province",
                 "geotag_location": "GPS Farm Place",
@@ -1322,6 +1461,7 @@ def test_profile_location_panel_does_not_render_exact_coordinates(client, monkey
                 "location_verified": 1,
                 "location_verified_at": "2026-09-26T12:00:00+00:00",
                 "profile_photo_captured_at": "2026-09-26T12:00:00+00:00",
+                "profile_photo_scan_verified_at": "2026-09-26T12:00:00+00:00",
                 "email": "farmer@example.com",
                 "phone_number": None,
                 "bio": None,

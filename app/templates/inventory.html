@@ -49,29 +49,29 @@
         {% endwith %}
 
         <div class="row g-3 mb-4">
-            <div class="col-sm-6"><div class="metric p-4"><div class="text-muted small text-uppercase">Crop varieties</div><div class="number">{{ summary.crop_count or 0 }}</div></div></div>
-            <div class="col-sm-6"><div class="metric p-4"><div class="text-muted small text-uppercase">Total available units</div><div class="number">{{ summary.total_quantity or 0 }}</div></div></div>
+            <div class="col-sm-6"><div class="metric p-4"><div class="text-muted small text-uppercase">Commodity varieties</div><div class="number">{{ summary.crop_count or 0 }}</div></div></div>
+            <div class="col-sm-6"><div class="metric p-4"><div class="text-muted small text-uppercase">Total available quantity (kg)</div><div class="number">{{ summary.total_quantity or 0 }} kg</div></div></div>
         </div>
 
         <section class="table-card bg-white">
             <div class="p-4 border-bottom d-flex justify-content-between align-items-center">
-                <div><h2 class="h5 mb-1">Available harvest</h2><p class="small text-muted mb-0">Grouped by crop type</p></div>
+                <div><h2 class="h5 mb-1">Available harvest</h2><p class="small text-muted mb-0">Grouped by commodity type</p></div>
                 {% if session.get('role') != 'buyer' %}<a href="/upload" class="btn btn-sm btn-agri"><i class="fas fa-upload me-1"></i>Upload records</a>{% endif %}
             </div>
             {% if items %}
                 <div class="table-responsive">
                     <table class="table table-hover align-middle mb-0">
-                        <thead><tr><th class="ps-4">Crop</th><th>Available quantity</th><th>Latest record</th><th>Location</th><th class="text-end pe-4">Actions</th></tr></thead>
+                        <thead><tr><th class="ps-4">Commodity</th><th>Available quantity (kg)</th><th>Latest record</th><th>Location</th><th class="text-end pe-4">Actions</th></tr></thead>
                         <tbody>
                             {% for item in items %}
                                 <tr>
-                                    <td class="ps-4"><span class="crop-icon me-2"><i class="fas fa-seedling"></i></span><strong>{{ item.crop_name }}</strong></td>
-                                    <td><span class="badge rounded-pill text-bg-success px-3 py-2">{{ item.total_quantity }} units</span></td>
+                                    <td class="ps-4"><span class="crop-icon me-2"><i class="fas fa-seedling"></i></span><strong>{{ item.commodity_name }}</strong></td>
+                                    <td><span class="badge rounded-pill text-bg-success px-3 py-2">{{ item.total_quantity }} kg</span></td>
                                     <td>{{ item.last_received[:10] if item.last_received else '-' }}</td>
                                     <td>{{ item.location or '-' }}</td>
                                     <td class="text-end pe-4">
-                                        <button type="button" class="btn btn-sm btn-outline-success me-1" onclick="editCrop({{ item.crop_name|tojson }}, {{ item.total_quantity }})"><i class="fas fa-pen"></i><span class="visually-hidden">Edit {{ item.crop_name }}</span></button>
-                                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteCrop({{ item.crop_name|tojson }})"><i class="fas fa-trash"></i><span class="visually-hidden">Delete {{ item.crop_name }}</span></button>
+                                        <button type="button" class="btn btn-sm btn-outline-success me-1" onclick="editCrop({{ item.commodity_name|tojson }}, {{ item.total_quantity }})"><i class="fas fa-pen"></i><span class="visually-hidden">Edit {{ item.commodity_name }}</span></button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="deleteCrop({{ item.commodity_name|tojson }})"><i class="fas fa-trash"></i><span class="visually-hidden">Delete {{ item.commodity_name }}</span></button>
                                     </td>
                                 </tr>
                             {% endfor %}
@@ -86,18 +86,18 @@
 
     <script>
         async function editCrop(cropName, currentTotal) {
-            const value = prompt(`Set new total quantity for ${cropName}:`, currentTotal);
+            const value = prompt(`Set new total quantity in kg for ${cropName}:`, currentTotal);
             if (value === null) return;
             const quantity = parseInt(value, 10);
-            if (Number.isNaN(quantity) || quantity < 0) { alert('Enter a valid quantity (zero or greater).'); return; }
-            const response = await fetch('/inventory/edit_crop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ crop_name: cropName, quantity }) });
+            if (Number.isNaN(quantity) || quantity < 0) { alert('Enter a valid quantity in kg (zero or greater).'); return; }
+            const response = await fetch('/inventory/edit_crop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commodity_name: cropName, quantity }) });
             const data = await response.json();
             if (data.status === 'success') location.reload();
             else alert(data.error || 'Unable to update inventory.');
         }
         async function deleteCrop(cropName) {
             if (!confirm(`Delete all inventory for ${cropName}? This cannot be undone.`)) return;
-            const response = await fetch('/inventory/delete_crop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ crop_name: cropName }) });
+            const response = await fetch('/inventory/delete_crop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commodity_name: cropName }) });
             const data = await response.json();
             if (data.status === 'success') location.reload();
             else alert(data.error || 'Unable to delete inventory.');

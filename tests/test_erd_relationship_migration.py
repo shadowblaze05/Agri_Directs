@@ -121,7 +121,7 @@ def test_erd_reconciliation_is_the_single_alembic_head():
     config = Config()
     config.set_main_option("script_location", str(ROOT / "migrations"))
     heads = ScriptDirectory.from_config(config).get_heads()
-    assert heads == ["71a6d9c2e8f4"]
+    assert heads == ["f84c2a7d1e90"]
 
 
 def test_location_schema_upgrade_repairs_integer_flag_and_non_cascading_fk(monkeypatch):
@@ -301,11 +301,11 @@ def test_application_metadata_declares_expanded_clone_relationships():
     expected.add(
         (
             "analytics",
-            "top_crop_id",
-            "crops",
+            "top_commodity_id",
+            "commodities",
             "id",
             "SET NULL",
-            "fk_analytics_top_crop_id_crops",
+            "fk_analytics_top_commodity_id_commodities",
         )
     )
 
@@ -331,12 +331,12 @@ def test_application_metadata_declares_expanded_clone_relationships():
     analytics_fk = next(
         fk
         for fk in db.metadata.tables["analytics"].foreign_keys
-        if fk.parent.name == "top_crop_id"
+        if fk.parent.name == "top_commodity_id"
     )
     actual.add(
         (
             "analytics",
-            "top_crop_id",
+            "top_commodity_id",
             analytics_fk.column.table.name,
             analytics_fk.column.name,
             analytics_fk.ondelete,

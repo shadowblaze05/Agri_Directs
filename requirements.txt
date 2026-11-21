@@ -23,6 +23,8 @@ requests==2.33.0
 urllib3==2.8.0
 Pillow==13.0.0
 geopy==2.5.0
+mediapipe==0.10.33
+opencv-contrib-python==5.0.0.93
 
 gunicorn==23.0.0
 

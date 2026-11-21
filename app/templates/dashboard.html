@@ -243,6 +243,9 @@
             <a class="nav-link" href="/notifications-center">
                 <i class="fas fa-bell"></i> Notifications
             </a>
+            <a class="nav-link" href="/marketplace/my-purchases">
+                <i class="fas fa-shopping-bag"></i> My Purchases
+            </a>
             <a class="nav-link" href="/profile">
                 <i class="fas fa-user-circle"></i> Profile
             </a>
@@ -323,7 +326,7 @@
                         <div class="card-body">
                             <div class="row g-3">
                                 <div class="col-md-4">
-                                    <div class="small text-muted text-uppercase">Crop to watch</div>
+                                    <div class="small text-muted text-uppercase">Commodity to watch</div>
                                     <p class="mb-0">{{ market_brief.recommendation }}</p>
                                 </div>
                                 <div class="col-md-4">
@@ -336,7 +339,7 @@
                                 </div>
                             </div>
                             <p class="small text-muted mt-3 mb-0">
-                                Based on {{ market_brief.active_crops }} crop types in recent harvest records.
+                                Based on {{ market_brief.active_crops }} commodity types in recent harvest records.
                                 This is a supply-trend guide, not a guaranteed price or confirmed buyer demand.
                             </p>
                         </div>
@@ -350,9 +353,9 @@
                 <a href="/total-harvest" style="text-decoration: none; color: inherit;">
                 <div class="card stat-card">
                     <div class="card-body">
-                        <h6 class="card-title">Total Harvest</h6>
+                        <h6 class="card-title">Total Inventory</h6>
                         <h3 id="total-quantity">{{ total }}</h3>
-                        <small>Units Received</small>
+                        <small>Total quantity (kg)</small>
                     </div>
                 </div>
                 </a>
@@ -361,12 +364,12 @@
                 <a href="/top-crop" style="text-decoration: none; color: inherit;">
                 <div class="card stat-card">
                     <div class="card-body">
-                        <h6 class="card-title">Top Crop</h6>
+                        <h6 class="card-title">Top Commodity</h6>
                         <h3 id="top-crop">
-                            {% if crops %}{{ crops[0]['crop_name'] }}{% else %}N/A{% endif %}
+                            {% if commodities %}{{ commodities[0]['commodity_name'] }}{% else %}N/A{% endif %}
                         </h3>
                         <small id="top-crop-qty">
-                            {% if crops %}{{ crops[0]['total'] }} units{% else %}No data{% endif %}
+                            {% if commodities %}{{ commodities[0]['total'] }} kg{% else %}No data{% endif %}
                         </small>
                     </div>
                 </div>
@@ -376,9 +379,9 @@
                 <a href="/crop-types" style="text-decoration: none; color: inherit;">
                 <div class="card stat-card">
                     <div class="card-body">
-                        <h6 class="card-title">Crop Types</h6>
-                        <h3 id="crops-count">{{ crops|length }}</h3>
-                        <small>Different Crops</small>
+                        <h6 class="card-title">Commodity Types</h6>
+                        <h3 id="commodities-count">{{ commodities|length }}</h3>
+                        <small>Different Commodities</small>
                     </div>
                 </div>
                 </a>
@@ -389,7 +392,7 @@
                     <div class="card-body">
                         <h6 class="card-title">Location</h6>
                         <h3 id="location-count">{{ location_count }}</h3>
-                        <small>Crops Locations</small>
+                        <small>Inventory locations</small>
                     </div>
                 </div>
                 </a>
@@ -409,22 +412,22 @@
                                 <thead class="table-light">
                                     <tr>
                                         <th>Month</th>
-                                        <th>Total Harvest</th>
-                                        <th>Top Crop</th>
-                                        <th>Top Crop Volume</th>
+                                        <th>Total Inventory (kg)</th>
+                                        <th>Top Commodity</th>
+                                        <th>Top Commodity Volume (kg)</th>
                                         <th>Top Location</th>
-                                        <th>Top Location Volume</th>
+                                        <th>Top Location Volume (kg)</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {% for row in analytics_history %}
                                     <tr>
                                         <td>{{ row['period_value'] }}</td>
-                                        <td>{{ row['total_harvest'] }}</td>
-                                        <td>{{ row['top_crop'] or '-' }}</td>
-                                        <td>{{ row['top_crop_volume'] or 0 }}</td>
+                                        <td>{{ row['total_harvest'] }} kg</td>
+                                        <td>{{ row['top_commodity'] or '-' }}</td>
+                                        <td>{{ row['top_commodity_volume'] or 0 }} kg</td>
                                         <td>{{ row['top_location'] or '-' }}</td>
-                                        <td>{{ row['top_location_volume'] or 0 }}</td>
+                                        <td>{{ row['top_location_volume'] or 0 }} kg</td>
                                     </tr>
                                     {% endfor %}
                                 </tbody>
@@ -443,10 +446,10 @@
             <div class="col-12">
                 <div class="card">
                     <div class="card-header bg-light border-0">
-                        <h5 class="mb-0"><i class="fas fa-seedling"></i> Crop Summary</h5>
+                        <h5 class="mb-0"><i class="fas fa-seedling"></i> Commodity Summary</h5>
                     </div>
                     <div class="card-body summary-card-body">
-                        {% if crops %}
+                        {% if commodities %}
                         <div class="row gy-3 summary-row">
                             <div class="col-12 mb-3">
                                 <div class="row gx-2 gy-2">
@@ -465,7 +468,7 @@
                             <div class="col-lg-6">
                                 <div class="chart-container summary-chart-area">
                                     <div class="d-flex justify-content-between align-items-center mb-1">
-                                        <h6 class="mb-0" style="font-size: 0.95rem;">Monthly Harvest</h6>
+                                        <h6 class="mb-0" style="font-size: 0.95rem;">Monthly Inventory (kg)</h6>
                                         <small class="text-muted" id="monthly-date-range" style="font-size: 0.8rem;">This Month</small>
                                     </div>
                                     <canvas id="monthly-summary-chart" height="170"></canvas>
@@ -484,7 +487,7 @@
                             <div class="col-lg-6">
                                 <div class="chart-container summary-chart-area">
                                     <div class="d-flex justify-content-between align-items-center mb-1">
-                                        <h6 class="mb-0" style="font-size: 0.95rem;">Yearly Harvest</h6>
+                                        <h6 class="mb-0" style="font-size: 0.95rem;">Yearly Inventory (kg)</h6>
                                         <small class="text-muted" id="yearly-date-range" style="font-size: 0.8rem;">This Year</small>
                                     </div>
                                     <canvas id="yearly-summary-chart" height="170"></canvas>
@@ -501,9 +504,9 @@
                                 </div>
                             </div>
                         </div>
-                        <p class="text-muted" style="font-size: 0.8rem; margin-top: 0.75rem; margin-bottom: 0;">Top crops by monthly & yearly harvest volume.</p>
+                        <p class="text-muted" style="font-size: 0.8rem; margin-top: 0.75rem; margin-bottom: 0;">Top commodities by monthly & yearly inventory volume.</p>
                         {% else %}
-                        <p class="text-muted">No crop data available</p>
+                        <p class="text-muted">No commodity data available</p>
                         {% endif %}
                     </div>
                 </div>
@@ -521,7 +524,7 @@
                                 <h5 class="mb-0"><i class="fas fa-table"></i>   Inventory</h5>
                             </div>
                             <div class="col-md-6 text-md-end mt-3 mt-md-0">
-                                <input id="inventory-search" type="text" class="form-control" placeholder="Search by farmer, crop, or location..." oninput="filterInventory()">
+                                <input id="inventory-search" type="text" class="form-control" placeholder="Search by farmer, commodity, or location..." oninput="filterInventory()">
                             </div>
                         </div>
                     </div>
@@ -529,8 +532,8 @@
                         <thead class="table-light">
                             <tr>
                                 <th class="sortable" data-sort="farmer">Posted By <span class="sort-icon"></span></th>
-                                <th class="sortable" data-sort="crop_name">Crop Name <span class="sort-icon"></span></th>
-                                <th class="sortable" data-sort="quantity">Quantity <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="commodity_name">Commodity Name <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="quantity">Quantity (kg) <span class="sort-icon"></span></th>
                                 <th class="sortable" data-sort="location">Location <span class="sort-icon"></span></th>
                                 <th class="sortable" data-sort="date_received">Date Received <span class="sort-icon"></span></th>
                             </tr>
@@ -539,8 +542,8 @@
                             {% for row in inventory %}
                             <tr>
                                 <td>{{ row['farmer'] }}</td>
-                                <td><strong>{{ row['crop_name'] }}</strong></td>
-                                <td><span class="badge bg-success">{{ row['quantity'] }}</span></td>
+                                <td><strong>{{ row['commodity_name'] }}</strong></td>
+                                <td><span class="badge bg-success">{{ row['quantity'] }} kg</span></td>
                                 <td>{{ row['location'] or '-' }}</td>
                                 <td title="{{ row['date_received'] }}">{{ row['date_received'][:19] }}</td>
                             </tr>
@@ -606,14 +609,14 @@
         function updateMonthlySummaryChart(topMonthly) {
             const labels = topMonthly.map(item => item.name);
             const values = topMonthly.map(item => item.total);
-            createSummaryChart('monthly-summary-chart', labels, values, 'Monthly Harvest');
+            createSummaryChart('monthly-summary-chart', labels, values, 'Monthly Inventory');
             renderMostBoughtList('monthly-most-bought', topMonthly);
         }
 
         function updateYearlySummaryChart(topYearly) {
             const labels = topYearly.map(item => item.name);
             const values = topYearly.map(item => item.total);
-            createSummaryChart('yearly-summary-chart', labels, values, 'Yearly Harvest');
+            createSummaryChart('yearly-summary-chart', labels, values, 'Yearly Inventory');
             renderMostBoughtList('yearly-most-bought', topYearly);
         }
 
@@ -740,7 +743,7 @@
             // Map column names to indices
             const columnIndex = {
                 'farmer': 0,
-                'crop_name': 1,
+                'commodity_name': 1,
                 'quantity': 2,
                 'location': 3,
                 'date_received': 4
@@ -819,11 +822,11 @@
                     return response.json();
                 })
                 .then(data => {
-                    document.getElementById('total-quantity').textContent = data.total_quantity;
-                    document.getElementById('top-crop').textContent = data.top_crop;
-                    document.getElementById('top-crop-qty').textContent = data.crops.length > 0 ? 
-                        (data.crops[0].quantity + ' units') : 'No data';
-                    document.getElementById('crops-count').textContent = data.crops_count;
+                    document.getElementById('total-quantity').textContent = data.total_quantity + ' kg';
+                    document.getElementById('top-crop').textContent = data.top_commodity;
+                    document.getElementById('top-crop-qty').textContent = data.commodities.length > 0 ?
+                        (data.commodities[0].quantity + ' kg') : 'No data';
+                    document.getElementById('commodities-count').textContent = data.crops_count;
                     document.getElementById('location-count').textContent = data.location_count;
                     updateMonthlySummaryChart(data.top_monthly);
                     updateYearlySummaryChart(data.top_yearly);
@@ -837,7 +840,7 @@
                             list.innerHTML = '<li class="list-group-item text-danger">Unable to load statistics.</li>';
                         }
                     });
-                    ['total-quantity', 'top-crop', 'top-crop-qty', 'crops-count', 'location-count'].forEach(id => {
+                    ['total-quantity', 'top-crop', 'top-crop-qty', 'commodities-count', 'location-count'].forEach(id => {
                         const value = document.getElementById(id);
                         if (value) value.textContent = 'Unavailable';
                     });

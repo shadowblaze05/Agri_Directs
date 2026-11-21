@@ -12,6 +12,7 @@ def missing_harvest_profile_requirements(user):
         ("email", "email address"),
         ("profile_picture", "profile photo"),
         ("profile_photo_captured_at", "profile photo timestamp"),
+        ("profile_photo_scan_verified_at", "verified profile photo scan"),
         ("geotag_location", "GPS-derived place name"),
     ):
         if not user.get(field):

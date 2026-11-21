@@ -22,7 +22,7 @@
         {% endfor %}
       {% endwith %}
       <form class="input-group my-3">
-        <input name="q" value="{{ search }}" class="form-control" placeholder="Search crop, farmer, or location">
+        <input name="q" value="{{ search }}" class="form-control" placeholder="Search commodity, farmer, or location">
         <button class="btn btn-outline-secondary">Search</button>
         {% if search %}<a class="btn btn-outline-secondary" href="{{ url_for('admin_inventory') }}">Clear</a>{% endif %}
       </form>
@@ -31,7 +31,7 @@
           <table class="table table-hover align-middle mb-0">
             <thead>
               <tr>
-                <th>Crop</th>
+                <th>Commodity</th>
                 <th>Owner</th>
                 <th>Location</th>
                 <th>Source</th>
@@ -42,8 +42,8 @@
               {% for item in inventory %}
                 <tr>
                   <td>
-                    <strong>{{ item['crop_name'] or '-' }}</strong><br>
-                    <span class="text-muted">{{ item['quantity'] }} units | {{ item['date_received'] or 'date unavailable' }}</span>
+                    <strong>{{ item['commodity_name'] or '-' }}</strong><br>
+                    <span class="text-muted">{{ item['quantity'] }} kg | {{ item['date_received'] or 'date unavailable' }}</span>
                   </td>
                   <td>{{ item['farmer'] or '-' }}</td>
                   <td>{{ item['location'] or 'No location recorded' }}</td>

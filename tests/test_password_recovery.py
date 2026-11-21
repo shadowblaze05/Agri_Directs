@@ -44,9 +44,9 @@ def make_password_recovery_app(database_uri):
                 "VALUES (1, 'farmer', 'farmer@example.test', 'old-hash', 'user')"
             )
         )
-        db.session.execute(text("CREATE TABLE crops (id INTEGER PRIMARY KEY, crops_name TEXT)"))
+        db.session.execute(text("CREATE TABLE commodities (id INTEGER PRIMARY KEY, commodity_name TEXT)"))
         db.session.execute(
-            text("CREATE TABLE inventory (crop_id INTEGER, crop_name TEXT)")
+            text("CREATE TABLE inventory (commodity_id INTEGER, commodity_name TEXT)")
         )
         db.session.commit()
         db.metadata.create_all(bind=db.engine, tables=[AuditEvent.__table__])

@@ -2,6 +2,7 @@ import math
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from flask import current_app, flash, jsonify, redirect, render_template, request, session, url_for
 from PIL import Image, UnidentifiedImageError
@@ -16,6 +17,7 @@ from ..services.geotag_service import (
 from ..services.crop_pricing import price_bounds, seller_price_error
 from ..services.upload_service import save_sanitized_public_image
 from ..services.auth_service import get_active_user_role
+from ..services.xendit_service import XenditError, create_payment_session, verify_callback_token
 
 globals().update({key: value for key, value in core.__dict__.items() if not key.startswith("__")})
 
@@ -46,12 +48,12 @@ class ListingThumbnailOutOfRange(ValueError):
         self.captured_at = captured_at
 
 
-def _crop_price_rule(cur, crop_id):
+def _crop_price_rule(cur, commodity_id):
     return cur.execute(
         """SELECT pricing_mode, reference_price, price_range,
                   minimum_price, maximum_price, price_unit
-           FROM crop_pricing WHERE crop_id=?""",
-        (crop_id,),
+           FROM commodity_pricing WHERE commodity_id=?""",
+        (commodity_id,),
     ).fetchone()
 
 
@@ -226,17 +228,17 @@ def get_cart_count(username):
     return cart_count
 
 
-def _available_inventory_quantity(cur, username, crop_id):
+def _available_inventory_quantity(cur, username, commodity_id):
     cur.execute("""
         SELECT COALESCE(SUM(i.quantity), 0) - COALESCE((
             SELECT SUM(m.amount)
             FROM marketplace m
-            WHERE m.username = ? AND m.crop_id = ? AND m.status = 'available'
+            WHERE m.username = ? AND m.commodity_id = ? AND m.status = 'available'
               AND COALESCE(m.listing_type, 'standard') = 'standard'
         ), 0) AS total
         FROM inventory i
-        WHERE i.farmer = ? AND i.crop_id = ?
-    """, (username, crop_id, username, crop_id))
+        WHERE i.farmer = ? AND i.commodity_id = ?
+    """, (username, commodity_id, username, commodity_id))
     result = cur.fetchone()
     return max(0, result["total"] or 0)
 
@@ -250,9 +252,23 @@ def marketplace():
     conn = get_db()
     cur = conn.cursor()
 
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cur.execute(
+        """UPDATE marketplace
+           SET status = 'expired'
+           WHERE status = 'available'
+             AND expiry_date IS NOT NULL
+             AND expiry_date <= ?""",
+        (now,),
+    )
+    conn.commit()
+
     cur.execute("""
-        SELECT m.id, m.crop_name, m.amount, m.price, m.unit, m.listing_date,
+        SELECT m.id, m.commodity_name, m.amount, m.price, m.unit, m.listing_date,
+               m.expiry_date,
                m.main_image, m.thumbnail_verified, m.listing_type, m.available_date,
+               CASE WHEN m.listing_type IN ('looking_for', 'preorder')
+                    THEN c.default_image END AS commodity_default_image,
                u.username as seller_name,
                u.reliability_score, u.reliability_status,
                (SELECT COUNT(*) FROM marketplace ratings
@@ -260,25 +276,27 @@ def marketplace():
                    AS seller_rating_count
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
+        LEFT JOIN commodities c ON c.id = m.commodity_id
         WHERE m.status = 'available'
+          AND (m.expiry_date IS NULL OR m.expiry_date > ?)
         ORDER BY m.listing_date DESC
-    """)
+    """, (now,))
     listings = cur.fetchall()
 
     cur.execute("""
-        SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total_quantity
-        FROM inventory i JOIN crops c ON c.id=i.crop_id
+        SELECT c.commodity_name AS commodity_name, SUM(i.quantity) AS total_quantity
+        FROM inventory i JOIN commodities c ON c.id=i.commodity_id
         WHERE i.farmer = ?
-        GROUP BY i.crop_id, c.crops_name
+        GROUP BY i.commodity_id, c.commodity_name
         HAVING SUM(quantity) > 0
     """, (session["user"],))
     user_inventory = cur.fetchall()
 
-    cur.execute("SELECT id, crops_name FROM crops ORDER BY crops_name")
-    crops = cur.fetchall()
+    cur.execute("SELECT id, commodity_name FROM commodities ORDER BY commodity_name")
+    commodities = cur.fetchall()
 
     cur.execute("""
-        SELECT m.id, m.crop_name, m.delivery_date, u.username AS seller_name
+        SELECT m.id, m.commodity_name, m.delivery_date, u.username AS seller_name
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
         WHERE m.buyer_username = ?
@@ -312,15 +330,10 @@ def marketplace():
     return render_template("marketplace.html",
                          listings=listings,
                          user_inventory=user_inventory,
-                         crops=crops,
+                         commodities=commodities,
                          pending_ratings=pending_ratings,
                          cart_count=cart_count,
-                         image_counts=image_counts,
-                         default_listing_type=(
-                             "standard"
-                             if session.get("role") == "buyer"
-                             else "looking_for"
-                         ))
+                         image_counts=image_counts)
 
 
 def add_marketplace_listing():
@@ -331,16 +344,16 @@ def add_marketplace_listing():
         return access_denied
 
     if request.method == "POST":
-        crop_id = request.form.get("crop_id")
+        commodity_id = request.form.get("commodity_id") or request.form.get("crop_id")
         amount = request.form.get("amount")
         price = request.form.get("price")
-        unit = "kg"
+        unit = None
         description = request.form.get("description", "").strip()
         expiry_days = request.form.get("expiry_days", 1)
         listing_type = request.form.get("listing_type", "standard")
         available_date = request.form.get("available_date", "").strip()
 
-        if not crop_id or not amount or not price:
+        if not commodity_id or not amount or not price:
             flash("All fields are required")
             return redirect(request.url)
 
@@ -353,7 +366,7 @@ def add_marketplace_listing():
             return redirect(request.url)
 
         if amount <= 0 or price <= 0 or not math.isfinite(price):
-            flash("Amount and price must be positive")
+            flash("Quantity and price must be positive")
             return redirect(request.url)
         if expiry_days < 1:
             flash("Listing expiry must be at least 1 day.", "danger")
@@ -365,7 +378,7 @@ def add_marketplace_listing():
         # Pre-order date validation
         if listing_type == "preorder":
             if not available_date:
-                flash("Please set the date/time when the crop will be ready.")
+                flash("Please set the date/time when the commodity will be ready.")
                 return redirect(request.url)
             try:
                 from datetime import datetime as _dt
@@ -383,18 +396,26 @@ def add_marketplace_listing():
         conn = get_db()
         cur = conn.cursor()
 
-        cur.execute("SELECT id, crops_name FROM crops WHERE id = ?", (crop_id,))
+        cur.execute(
+            "SELECT id, commodity_name, COALESCE(default_price_unit, 'kg') AS default_price_unit "
+            "FROM commodities WHERE id = ?",
+            (commodity_id,),
+        )
         crop = cur.fetchone()
         if not crop:
-            flash("Invalid crop selected")
+            flash("Invalid commodity selected")
             conn.close()
             return redirect(request.url)
 
-        crop_name = crop["crops_name"]
+        commodity_name = crop["commodity_name"]
+        pricing_rule = _crop_price_rule(cur, commodity_id)
+        unit = (
+            pricing_rule["price_unit"]
+            if pricing_rule and pricing_rule["price_unit"]
+            else crop["default_price_unit"]
+        )
         if listing_type != "looking_for":
-            price_error = seller_price_error(
-                price, unit, _crop_price_rule(cur, crop_id)
-            )
+            price_error = seller_price_error(price, unit, pricing_rule)
             if price_error:
                 flash(price_error, "danger")
                 conn.close()
@@ -403,12 +424,12 @@ def add_marketplace_listing():
         # Inventory check: only for standard listings
         if listing_type == "standard":
             available_quantity = _available_inventory_quantity(
-                cur, session["user"], crop_id
+                cur, session["user"], commodity_id
             )
             if available_quantity < amount:
                 flash(
-                    f"You don't have enough {crop_name} in your inventory. "
-                    f"Available: {available_quantity} kg"
+                    f"You don't have enough {commodity_name} in your inventory. "
+                    f"Available: {available_quantity} {unit}"
                 )
                 conn.close()
                 return redirect(request.url)
@@ -458,13 +479,13 @@ def add_marketplace_listing():
 
         cur.execute("""
             INSERT INTO marketplace(
-                user_id, username, crop_id, crop_name, amount, price,
+                user_id, username, commodity_id, commodity_name, amount, price,
                 unit, status, listing_date, expiry_date, description, location,
                 listing_type, available_date
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING id
         """, (
-            user["id"], session["user"], crop_id, crop_name, amount, price,
+            user["id"], session["user"], commodity_id, commodity_name, amount, price,
             unit, "available", now, expiry_date, description, user["location"],
             listing_type, available_date
         ))
@@ -501,7 +522,7 @@ def add_marketplace_listing():
         conn.commit()
         conn.close()
 
-        flash(f"{listing_type.replace('_', ' ').title()} listing for {crop_name} created successfully!")
+        flash(f"{listing_type.replace('_', ' ').title()} listing for {commodity_name} created successfully!")
         return redirect("/marketplace")
 
     # GET request
@@ -509,30 +530,32 @@ def add_marketplace_listing():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT c.crops_name AS crop_name, i.crop_id, cp.pricing_mode,
+        SELECT c.commodity_name AS commodity_name, i.commodity_id, cp.pricing_mode,
                cp.reference_price, cp.price_range, cp.minimum_price,
-               cp.maximum_price, cp.price_unit
-        FROM inventory i JOIN crops c ON c.id=i.crop_id
-        LEFT JOIN crop_pricing cp ON cp.crop_id=c.id
+               cp.maximum_price,
+               COALESCE(cp.price_unit, c.default_price_unit, 'kg') AS price_unit
+        FROM inventory i JOIN commodities c ON c.id=i.commodity_id
+        LEFT JOIN commodity_pricing cp ON cp.commodity_id=c.id
         WHERE i.farmer = ?
-        GROUP BY i.crop_id, c.crops_name, cp.pricing_mode,
+        GROUP BY i.commodity_id, c.commodity_name, cp.pricing_mode,
                  cp.reference_price, cp.price_range,
-                 cp.minimum_price, cp.maximum_price, cp.price_unit
+                 cp.minimum_price, cp.maximum_price, cp.price_unit,
+                 c.default_price_unit
         HAVING SUM(quantity) > 0
-        ORDER BY c.crops_name
+        ORDER BY c.commodity_name
     """, (session["user"],))
     user_crops = cur.fetchall()
 
     user_crops_with_ids = []
     for crop in user_crops:
-        if crop["crop_id"]:
+        if crop["commodity_id"]:
             available_quantity = _available_inventory_quantity(
-                cur, session["user"], crop["crop_id"]
+                cur, session["user"], crop["commodity_id"]
             )
             if available_quantity > 0:
                 user_crops_with_ids.append({
-                    "id": crop["crop_id"],
-                    "crops_name": crop["crop_name"],
+                    "id": crop["commodity_id"],
+                    "commodity_name": crop["commodity_name"],
                     "total_quantity": available_quantity,
                     "pricing_mode": crop["pricing_mode"],
                     "reference_price": crop["reference_price"],
@@ -543,21 +566,21 @@ def add_marketplace_listing():
                 })
 
     cur.execute("""
-        SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total_quantity
-        FROM inventory i JOIN crops c ON c.id=i.crop_id
+        SELECT c.commodity_name AS commodity_name, SUM(i.quantity) AS total_quantity
+        FROM inventory i JOIN commodities c ON c.id=i.commodity_id
         WHERE i.farmer = ?
-        GROUP BY i.crop_id, c.crops_name
+        GROUP BY i.commodity_id, c.commodity_name
         HAVING SUM(quantity) > 0
-        ORDER BY c.crops_name
+        ORDER BY c.commodity_name
     """, (session["user"],))
     user_inventory = cur.fetchall()
 
     cur.execute("""
-        SELECT c.id, c.crops_name, cp.pricing_mode, cp.reference_price,
+        SELECT c.id, c.commodity_name, cp.pricing_mode, cp.reference_price,
                cp.price_range, cp.minimum_price, cp.maximum_price,
-               cp.price_unit
-        FROM crops c LEFT JOIN crop_pricing cp ON cp.crop_id=c.id
-        ORDER BY c.crops_name
+               COALESCE(cp.price_unit, c.default_price_unit, 'kg') AS price_unit
+        FROM commodities c LEFT JOIN commodity_pricing cp ON cp.commodity_id=c.id
+        ORDER BY c.commodity_name
     """)
     all_crops = cur.fetchall()
 
@@ -570,6 +593,7 @@ def add_marketplace_listing():
     conn.close()
 
     return render_template("add_listing.html",
+                         commodities=user_crops_with_ids,
                          crops=user_crops_with_ids,
                          all_crops=all_crops,
                          user_inventory=user_inventory,
@@ -584,7 +608,7 @@ def buy_marketplace_item(listing_id):
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     delivery_address, address_error = _delivery_address_from_payload(data)
     if address_error:
         return jsonify({"error": address_error}), 400
@@ -592,7 +616,7 @@ def buy_marketplace_item(listing_id):
 
     try:
         quantity = int(quantity)
-    except ValueError:
+    except (TypeError, ValueError):
         return jsonify({"error": "Invalid quantity"}), 400
 
     if quantity <= 0:
@@ -607,123 +631,23 @@ def buy_marketplace_item(listing_id):
         conn.close()
         return jsonify({"error": "User not found"}), 404
 
-    current_user_id = current_user["id"]
-
-    cur.execute("""
-        SELECT m.user_id, m.username, m.crop_id, m.crop_name, m.amount, m.price,
-               m.unit, m.listing_date, m.expiry_date, m.description, m.location,
-               u.username AS seller_name
-        FROM marketplace m
-        JOIN users u ON m.user_id = u.id
-        WHERE m.id = ? AND m.status = 'available'
-    """, (listing_id,))
-    listing = cur.fetchone()
-
-    if not listing:
-        conn.close()
-        return jsonify({"error": "Listing not found or no longer available"}), 404
-
-    if listing["user_id"] == current_user_id:
-        conn.close()
-        return jsonify({"error": "You cannot buy your own listing"}), 400
-
-    if quantity > listing["amount"]:
-        conn.close()
-        return jsonify({"error": f"Only {listing['amount']} units available"}), 400
-
-    seller_username = listing["seller_name"]
-
-    total_price = quantity * listing["price"]
-    order_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    if quantity == listing["amount"]:
-        cur.execute("""
-            UPDATE marketplace
-            SET status = 'sold', buyer_username = ?, order_status = 'to_pay',
-                order_date = ?, delivery_confirmed = 0,
-                delivery_province = ?, delivery_city = ?, delivery_barangay = ?,
-                delivery_street = ?, delivery_landmark = ?
-            WHERE id = ?
-        """, (
-            session["user"], order_timestamp,
-            delivery_address["delivery_province"], delivery_address["delivery_city"],
-            delivery_address["delivery_barangay"], delivery_address["delivery_street"],
-            delivery_address["delivery_landmark"], listing_id,
-        ))
-    else:
-        cur.execute("""
-            INSERT INTO marketplace (
-                user_id, username, buyer_username, crop_id, crop_name, amount, price, unit,
-                status, order_status, listing_date, order_date, expiry_date, description, location, delivery_confirmed,
-                delivery_province, delivery_city, delivery_barangay, delivery_street, delivery_landmark
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            listing["user_id"], listing["username"], session["user"],
-            listing["crop_id"], listing["crop_name"], quantity, listing["price"],
-            listing["unit"], "sold", "to_pay", listing["listing_date"],
-            order_timestamp, listing["expiry_date"], listing["description"],
-            listing["location"], 0,
-            delivery_address["delivery_province"], delivery_address["delivery_city"],
-            delivery_address["delivery_barangay"], delivery_address["delivery_street"],
-            delivery_address["delivery_landmark"],
-        ))
-        cur.execute("UPDATE marketplace SET amount = amount - ? WHERE id = ?", (quantity, listing_id))
-
-    cur.execute("""
-        INSERT INTO inventory(crop_id, quantity, farmer, date_received, location, source)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        listing["crop_id"], quantity, session["user"],
-        order_timestamp, listing["location"], "purchase"
-    ))
-
-    cur.execute("""
-        SELECT id, quantity FROM inventory 
-        WHERE farmer = ? AND crop_id = ? 
-        ORDER BY date_received ASC
-    """, (seller_username, listing["crop_id"]))
-    seller_inventory = cur.fetchall()
-
-    remaining = quantity
-    for item in seller_inventory:
-        if remaining <= 0:
-            break
-        if item["quantity"] <= remaining:
-            cur.execute("DELETE FROM inventory WHERE id = ?", (item["id"],))
-            remaining -= item["quantity"]
-        else:
-            cur.execute("UPDATE inventory SET quantity = ? WHERE id = ?",
-                       (item["quantity"] - remaining, item["id"]))
-            remaining = 0
-
-    try:
-        if seller_username:
-            cur.execute(
-                "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
-                (
-                    seller_username,
-                    "Item Sold",
-                    f"{session['user']} purchased {quantity} {listing['crop_name']} from your listing.",
-                    "marketplace",
-                    order_timestamp,
-                    0,
-                ),
-            )
-    except Exception:
-        logger.exception("Failed to create marketplace purchase notification")
-
-    conn.commit()
-
+    buyer_id = current_user["id"]
     conn.close()
-
-    return jsonify({
-        "status": "success",
-        "message": f"Purchased {quantity} {listing['crop_name']} for ₱{total_price:.2f}"
-    })
+    result, error = _start_xendit_checkout(
+        [{"listing_id": listing_id, "quantity": quantity}],
+        session["user"],
+        buyer_id,
+        delivery_address,
+    )
+    if error:
+        message, status_code = error
+        return jsonify({"error": message}), status_code
+    return jsonify(result)
 
 
 def _marketplace_order_label(order_status):
     labels = {
+        "awaiting_payment": "Awaiting Payment",
         "to_pay": "To Pay",
         "packing": "Packing",
         "to_ship": "To Ship",
@@ -766,6 +690,478 @@ def _delivery_address_from_payload(payload):
     return address, None
 
 
+class MarketplaceStockConflict(ValueError):
+    """Raised when a cart item becomes unavailable while checkout is starting."""
+
+
+_PHP_CENT = Decimal("0.01")
+
+
+def _marketplace_money(value):
+    try:
+        amount = Decimal(str(value)).quantize(_PHP_CENT, rounding=ROUND_HALF_UP)
+    except (InvalidOperation, TypeError, ValueError) as error:
+        raise MarketplaceStockConflict("A marketplace item has an invalid price.") from error
+    if not amount.is_finite() or amount <= 0:
+        raise MarketplaceStockConflict("Marketplace item prices must be greater than zero.")
+    return amount
+
+
+def _reserve_marketplace_items(
+    cur, items, buyer_username, buyer_id, address, payment_method, reference_id
+):
+    """Reserve stock and return the amount, session items, and created order IDs."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    total = Decimal("0.00")
+    xendit_items = []
+    order_ids = []
+    initial_order_status = "awaiting_payment" if payment_method == "xendit" else "to_pay"
+    xendit_reference_id = reference_id if payment_method == "xendit" else None
+
+    for requested_item in items:
+        try:
+            listing_id = int(requested_item["listing_id"])
+            quantity = int(requested_item["quantity"])
+        except (KeyError, TypeError, ValueError) as error:
+            raise MarketplaceStockConflict("A cart item has an invalid listing or quantity.") from error
+        if quantity <= 0:
+            raise MarketplaceStockConflict("Order quantities must be positive.")
+
+        cur.execute(
+            """SELECT id, user_id, username, commodity_id, commodity_name,
+                      amount, price, unit, listing_date, expiry_date, description,
+                      location, main_image, listing_type, available_date
+               FROM marketplace
+               WHERE id = ? AND status = 'available'""",
+            (listing_id,),
+        )
+        listing = cur.fetchone()
+        if not listing:
+            raise MarketplaceStockConflict(
+                "A cart item is no longer available. Review your cart and try again."
+            )
+        if listing["user_id"] == buyer_id:
+            raise MarketplaceStockConflict("You cannot buy your own listing.")
+        if listing["listing_type"] not in (None, "standard"):
+            raise MarketplaceStockConflict(
+                "Only standard marketplace listings can be paid for through checkout."
+            )
+        if quantity > listing["amount"]:
+            raise MarketplaceStockConflict(
+                f"Only {listing['amount']} units of {listing['commodity_name']} are available."
+            )
+
+        unit_price = _marketplace_money(listing["price"])
+        total += unit_price * quantity
+        if not total.is_finite():
+            raise MarketplaceStockConflict("The order total is invalid.")
+
+        if quantity == listing["amount"]:
+            cur.execute(
+                """UPDATE marketplace
+                   SET status = 'sold', buyer_username = ?, order_status = ?,
+                       order_date = ?, delivery_confirmed = 0, buyer_confirmed = 0,
+                       delivery_province = ?, delivery_city = ?, delivery_barangay = ?,
+                       delivery_street = ?, delivery_landmark = ?,
+                       xendit_reference_id = ?, xendit_session_id = NULL,
+                       xendit_checkout_url = NULL, payment_method = ?,
+                       reserved_from_listing_id = NULL
+                   WHERE id = ? AND status = 'available' AND amount = ?""",
+                (
+                    buyer_username,
+                    initial_order_status,
+                    timestamp,
+                    address["delivery_province"],
+                    address["delivery_city"],
+                    address["delivery_barangay"],
+                    address["delivery_street"],
+                    address["delivery_landmark"],
+                    xendit_reference_id,
+                    payment_method,
+                    listing_id,
+                    quantity,
+                ),
+            )
+            order_id = listing_id
+        else:
+            cur.execute(
+                """UPDATE marketplace
+                   SET amount = amount - ?
+                   WHERE id = ? AND status = 'available' AND amount >= ?""",
+                (quantity, listing_id, quantity),
+            )
+            if cur.rowcount != 1:
+                raise MarketplaceStockConflict(
+                    "A cart item was just purchased by someone else. Review your cart."
+                )
+
+            cur.execute(
+                """INSERT INTO marketplace (
+                       user_id, username, buyer_username, commodity_id, commodity_name,
+                       amount, price, unit, status, order_status, listing_date, order_date,
+                       expiry_date, description, location, delivery_confirmed,
+                       delivery_province, delivery_city, delivery_barangay, delivery_street,
+                       delivery_landmark, main_image, listing_type, available_date,
+                       xendit_reference_id, xendit_session_id, xendit_checkout_url,
+                       payment_method, reserved_from_listing_id
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   RETURNING id""",
+                (
+                    listing["user_id"],
+                    listing["username"],
+                    buyer_username,
+                    listing["commodity_id"],
+                    listing["commodity_name"],
+                    quantity,
+                    listing["price"],
+                    listing["unit"] or "kg",
+                    "sold",
+                    initial_order_status,
+                    timestamp,
+                    timestamp,
+                    listing["expiry_date"],
+                    listing["description"],
+                    listing["location"],
+                    0,
+                    address["delivery_province"],
+                    address["delivery_city"],
+                    address["delivery_barangay"],
+                    address["delivery_street"],
+                    address["delivery_landmark"],
+                    listing["main_image"],
+                    listing["listing_type"] or "standard",
+                    listing["available_date"],
+                    xendit_reference_id,
+                    None,
+                    None,
+                    payment_method,
+                    listing_id,
+                ),
+            )
+            inserted_order = cur.fetchone()
+            if not inserted_order:
+                raise MarketplaceStockConflict("Could not create the marketplace order.")
+            order_id = inserted_order["id"]
+
+        if cur.rowcount != 1:
+            raise MarketplaceStockConflict(
+                "A cart item was just purchased by someone else. Review your cart."
+            )
+        order_ids.append(order_id)
+
+        xendit_items.append({
+            "reference_id": f"listing_{listing_id}",
+            "name": listing["commodity_name"][:255],
+            "description": (listing["description"] or listing["commodity_name"])[:255],
+            "type": "PHYSICAL_PRODUCT",
+            "category": "Agricultural products",
+            "net_unit_amount": float(unit_price),
+            "quantity": quantity,
+            "currency": current_app.config["XENDIT_CURRENCY"],
+        })
+
+    return total.quantize(_PHP_CENT, rounding=ROUND_HALF_UP), xendit_items, order_ids
+
+
+def _fulfill_marketplace_order(cur, row, timestamp):
+    cur.execute(
+        """INSERT INTO inventory(
+               commodity_id, quantity, farmer, date_received, location, source
+           ) VALUES (?, ?, ?, ?, ?, ?)""",
+        (
+            row["commodity_id"],
+            row["amount"],
+            row["buyer_username"],
+            timestamp,
+            row["location"],
+            "purchase",
+        ),
+    )
+    cur.execute(
+        """SELECT id, quantity FROM inventory
+           WHERE farmer = ? AND commodity_id = ?
+           ORDER BY date_received ASC""",
+        (row["username"], row["commodity_id"]),
+    )
+    seller_inventory = cur.fetchall()
+    remaining = row["amount"]
+    for inventory_item in seller_inventory:
+        if remaining <= 0:
+            break
+        if inventory_item["quantity"] <= remaining:
+            cur.execute("DELETE FROM inventory WHERE id = ?", (inventory_item["id"],))
+            remaining -= inventory_item["quantity"]
+        else:
+            cur.execute(
+                "UPDATE inventory SET quantity = ? WHERE id = ?",
+                (inventory_item["quantity"] - remaining, inventory_item["id"]),
+            )
+            remaining = 0
+
+    cur.execute(
+        """INSERT INTO notifications(
+               username, title, message, type, created_at, is_read
+           ) VALUES (?, ?, ?, ?, ?, ?)""",
+        (
+            row["username"],
+            "Item Sold",
+            f"{row['buyer_username']} purchased {row['amount']} "
+            f"{row['commodity_name']} from your listing.",
+            "marketplace",
+            timestamp,
+            0,
+        ),
+    )
+
+
+def _fulfill_cod_orders(cur, order_ids):
+    placeholders = ", ".join("?" for _ in order_ids)
+    cur.execute(
+        f"""SELECT id, amount, commodity_id, commodity_name, buyer_username,
+                   username, location
+            FROM marketplace
+            WHERE id IN ({placeholders}) AND payment_method = 'cod'
+              AND order_status = 'to_pay'""",
+        tuple(order_ids),
+    )
+    rows = cur.fetchall()
+    if len(rows) != len(order_ids):
+        return False
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for row in rows:
+        _fulfill_marketplace_order(cur, row, timestamp)
+    return True
+
+
+def _release_xendit_reservation(reference_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT id, amount, reserved_from_listing_id
+           FROM marketplace
+           WHERE xendit_reference_id = ? AND order_status = 'awaiting_payment'""",
+        (reference_id,),
+    )
+    pending_orders = cur.fetchall()
+    for order in pending_orders:
+        source_listing_id = order["reserved_from_listing_id"]
+        if source_listing_id is not None:
+            cur.execute(
+                """UPDATE marketplace
+                   SET amount = amount + ?
+                   WHERE id = ? AND status = 'available'""",
+                (order["amount"], source_listing_id),
+            )
+            if cur.rowcount == 1:
+                cur.execute(
+                    """DELETE FROM marketplace
+                       WHERE id = ? AND xendit_reference_id = ?
+                         AND order_status = 'awaiting_payment'""",
+                    (order["id"], reference_id),
+                )
+                continue
+
+        cur.execute(
+            """UPDATE marketplace
+               SET status = 'available', order_status = 'available',
+                   buyer_username = NULL, order_date = NULL, delivery_date = NULL,
+                   delivery_confirmed = 0, buyer_confirmed = 0,
+                   buyer_confirm_date = NULL, buyer_rating = NULL,
+                   buyer_rating_date = NULL, delivery_province = NULL,
+                   delivery_city = NULL, delivery_barangay = NULL,
+                   delivery_street = NULL, delivery_landmark = NULL,
+                   xendit_reference_id = NULL, xendit_session_id = NULL,
+                   xendit_checkout_url = NULL, payment_method = NULL,
+                   reserved_from_listing_id = NULL
+               WHERE id = ? AND xendit_reference_id = ?
+                 AND order_status = 'awaiting_payment'""",
+            (order["id"], reference_id),
+        )
+    conn.commit()
+    conn.close()
+
+
+def _process_xendit_payment_event(event_name, reference_id, data):
+    capture_events = {"payment.capture", "capture.succeeded"}
+    if event_name in capture_events and data.get("status") != "SUCCEEDED":
+        return "not_succeeded"
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT id, order_status, xendit_session_id, amount, price,
+                  commodity_id, commodity_name, buyer_username, username, location
+           FROM marketplace WHERE xendit_reference_id = ?""",
+        (reference_id,),
+    )
+    matching_rows = cur.fetchall()
+    if not matching_rows:
+        conn.close()
+        return "unknown"
+
+    pending_rows = [
+        row for row in matching_rows
+        if row["order_status"] == "awaiting_payment"
+    ]
+    if not pending_rows:
+        conn.close()
+        return "already_processed"
+
+    session_id = data.get("payment_session_id")
+    saved_session_id = pending_rows[0]["xendit_session_id"]
+    if session_id and saved_session_id and session_id != saved_session_id:
+        conn.close()
+        return "session_mismatch"
+
+    expected_amount = sum(
+        (_marketplace_money(row["price"]) * int(row["amount"]) for row in pending_rows),
+        Decimal("0.00"),
+    ).quantize(_PHP_CENT, rounding=ROUND_HALF_UP)
+    event_amount = data.get("amount")
+    if event_amount is None:
+        event_amount = data.get("request_amount")
+    if event_amount is None:
+        event_amount = data.get("captured_amount")
+    if event_amount is not None:
+        try:
+            reported_amount = Decimal(str(event_amount)).quantize(
+                _PHP_CENT, rounding=ROUND_HALF_UP
+            )
+        except (InvalidOperation, TypeError, ValueError):
+            conn.close()
+            return "amount_mismatch"
+        if reported_amount != expected_amount:
+            conn.close()
+            return "amount_mismatch"
+
+    currency = data.get("currency")
+    if currency and str(currency).upper() != current_app.config["XENDIT_CURRENCY"]:
+        conn.close()
+        return "currency_mismatch"
+
+    if event_name == "payment_session.expired":
+        conn.close()
+        _release_xendit_reservation(reference_id)
+        return "expired"
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    for row in pending_rows:
+        cur.execute(
+            """UPDATE marketplace
+               SET order_status = 'to_pay', status = 'sold', xendit_checkout_url = NULL,
+                   payment_method = 'xendit'
+               WHERE id = ? AND xendit_reference_id = ?
+                 AND order_status = 'awaiting_payment'""",
+            (row["id"], reference_id),
+        )
+        if cur.rowcount != 1:
+            continue
+        _fulfill_marketplace_order(cur, row, timestamp)
+
+    conn.commit()
+    conn.close()
+    return "paid"
+
+
+def _start_xendit_checkout(items, buyer_username, buyer_id, address, cart_ids=None):
+    secret_key = current_app.config.get("XENDIT_SECRET_KEY")
+    if not secret_key:
+        return None, ("Xendit payments are not configured on the server.", 503)
+
+    reference_id = f"agri-{uuid.uuid4().hex}"
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        total, xendit_items, _order_ids = _reserve_marketplace_items(
+            cur, items, buyer_username, buyer_id, address, "xendit", reference_id
+        )
+    except MarketplaceStockConflict as error:
+        conn.close()
+        return None, (str(error), 409)
+
+    conn.commit()
+    conn.close()
+
+    base_url = current_app.config["APP_BASE_URL"].rstrip("/")
+    purchases_url = f"{base_url}{url_for('my_marketplace_purchases')}"
+    payload = {
+        "reference_id": reference_id,
+        "session_type": "PAY",
+        "mode": "PAYMENT_LINK",
+        "amount": float(total),
+        "currency": current_app.config["XENDIT_CURRENCY"],
+        "country": current_app.config["XENDIT_COUNTRY"],
+        "items": xendit_items,
+        "description": "Agri-Direct marketplace order",
+        "success_return_url": purchases_url,
+        "cancel_return_url": purchases_url,
+    }
+
+    try:
+        payment_session = create_payment_session(secret_key, payload)
+    except XenditError as error:
+        logger.error("Xendit checkout creation failed: %s", error)
+        _release_xendit_reservation(reference_id)
+        return None, ("Unable to start checkout with Xendit. Please try again.", 502)
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """UPDATE marketplace
+           SET xendit_session_id = ?, xendit_checkout_url = ?
+           WHERE xendit_reference_id = ? AND order_status = 'awaiting_payment'""",
+        (
+            payment_session["payment_session_id"],
+            payment_session["payment_link_url"],
+            reference_id,
+        ),
+    )
+    if cart_ids:
+        placeholders = ", ".join("?" for _ in cart_ids)
+        cur.execute(
+            f"DELETE FROM cart WHERE user_id = ? AND id IN ({placeholders})",
+            tuple([buyer_id] + list(cart_ids)),
+        )
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "redirect",
+        "checkout_url": payment_session["payment_link_url"],
+        "reference_id": reference_id,
+    }, None
+
+
+def _start_cod_checkout(items, buyer_username, buyer_id, address, cart_ids=None):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        _total, _items, order_ids = _reserve_marketplace_items(
+            cur, items, buyer_username, buyer_id, address, "cod", None
+        )
+    except MarketplaceStockConflict as error:
+        conn.close()
+        return None, (str(error), 409)
+    if not _fulfill_cod_orders(cur, order_ids):
+        conn.close()
+        return None, ("Could not confirm the COD order. Please try again.", 409)
+    if cart_ids:
+        placeholders = ", ".join("?" for _ in cart_ids)
+        cur.execute(
+            f"DELETE FROM cart WHERE user_id = ? AND id IN ({placeholders})",
+            tuple([buyer_id] + list(cart_ids)),
+        )
+    conn.commit()
+    conn.close()
+
+    return {
+        "status": "success",
+        "message": "COD order placed. Pay the seller when your order is delivered.",
+        "redirect_url": url_for("my_marketplace_purchases"),
+    }, None
+
+
 def update_marketplace_order_status(listing_id):
     if "user" not in session:
         return redirect("/login")
@@ -789,7 +1185,7 @@ def update_marketplace_order_status(listing_id):
         return redirect(url_for("my_marketplace_transactions"))
 
     cur.execute(
-        """SELECT order_status, crop_name, buyer_username
+        """SELECT order_status, commodity_name, buyer_username
            FROM marketplace WHERE id = ? AND user_id = ? AND status = 'sold'""",
         (listing_id, current_user["id"]),
     )
@@ -800,6 +1196,10 @@ def update_marketplace_order_status(listing_id):
         return redirect(url_for("my_marketplace_transactions"))
 
     current_status = (listing["order_status"] or "to_pay").strip()
+    if current_status == "awaiting_payment":
+        conn.close()
+        flash("This order cannot be processed until Xendit confirms payment.")
+        return redirect(url_for("my_marketplace_transactions"))
     if current_status == "to_pay" and requested_status != "packing":
         conn.close()
         flash("The seller must mark the order as packing before it can move to shipping.")
@@ -819,19 +1219,19 @@ def update_marketplace_order_status(listing_id):
             "UPDATE marketplace SET status = 'delivered', order_status = 'to_receive', delivery_date = ?, delivery_confirmed = 1 WHERE id = ?",
             (timestamp, listing_id),
         )
-        message = f"Your order for {listing['crop_name']} is now on the way and has been marked as delivered by {session['user']}. Please confirm receipt when it arrives."
+        message = f"Your order for {listing['commodity_name']} is now on the way and has been marked as delivered by {session['user']}. Please confirm receipt when it arrives."
     elif requested_status == "to_ship":
         cur.execute(
             "UPDATE marketplace SET status = 'sold', order_status = 'to_ship', delivery_confirmed = 0 WHERE id = ?",
             (listing_id,),
         )
-        message = f"Your order for {listing['crop_name']} is now being shipped by {session['user']}."
+        message = f"Your order for {listing['commodity_name']} is now being shipped by {session['user']}."
     else:
         cur.execute(
             "UPDATE marketplace SET status = 'sold', order_status = 'packing', delivery_confirmed = 0 WHERE id = ?",
             (listing_id,),
         )
-        message = f"Your order for {listing['crop_name']} is now being packed by {session['user']}."
+        message = f"Your order for {listing['commodity_name']} is now being packed by {session['user']}."
 
     if listing["buyer_username"]:
         try:
@@ -866,7 +1266,7 @@ def complete_marketplace_order(listing_id):
         return jsonify({"error": "User not found"}), 404
 
     cur.execute(
-        """SELECT buyer_username, crop_name
+        """SELECT buyer_username, commodity_name
            FROM marketplace WHERE id = ? AND user_id = ? AND status = 'sold'""",
         (listing_id, current_user["id"]),
     )
@@ -893,7 +1293,7 @@ def complete_marketplace_order(listing_id):
             cur.execute(
                 "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
                 (listing["buyer_username"], "Order Delivered",
-                 f"Your order for {listing['crop_name']} has been marked delivered by {session['user']}. Please confirm receipt and then rate the seller.",
+                 f"Your order for {listing['commodity_name']} has been marked delivered by {session['user']}. Please confirm receipt and then rate the seller.",
                  "marketplace", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 0)
             )
         except Exception:
@@ -913,7 +1313,7 @@ def confirm_marketplace_receipt(listing_id):
     cur = conn.cursor()
 
     cur.execute(
-        """SELECT delivery_confirmed, buyer_confirmed, username, crop_name
+        """SELECT delivery_confirmed, buyer_confirmed, username, commodity_name
            FROM marketplace WHERE id = ? AND buyer_username = ?""",
         (listing_id, session["user"]),
     )
@@ -959,7 +1359,7 @@ def confirm_marketplace_receipt(listing_id):
         cur.execute(
             "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
             (listing['username'], "Buyer Confirmed Receipt",
-             f"{session['user']} has confirmed receipt for {listing['crop_name']}.",
+             f"{session['user']} has confirmed receipt for {listing['commodity_name']}.",
              "marketplace", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 0)
         )
     except Exception:
@@ -979,13 +1379,20 @@ def my_marketplace_purchases():
     if "user" not in session:
         return redirect("/login")
 
+    payment_return = request.args.get("payment")
+    if payment_return == "processing":
+        flash("You returned from Xendit. Payment is confirmed only after the server receives its webhook.")
+    elif payment_return == "cancelled":
+        flash("The payment was not confirmed. You can continue it from this page while the Xendit session is active.")
+
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT m.id, m.crop_name, m.order_status, m.buyer_rating, m.buyer_confirmed,
+        SELECT m.id, m.commodity_name, m.order_status, m.buyer_rating, m.buyer_confirmed,
                m.delivery_confirmed, m.order_date, m.amount, m.unit,
                m.price, m.delivery_province, m.delivery_city, m.delivery_barangay,
                m.delivery_street, m.delivery_landmark,
+               m.xendit_checkout_url, m.payment_method,
                u.username AS seller_name
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
@@ -1020,7 +1427,33 @@ def my_marketplace_purchases():
         to_ship_purchases=to_ship_purchases,
         to_receive_purchases=to_receive_purchases,
         completed_purchases=completed_purchases,
+        cart_count=get_cart_count(session["user"]),
     )
+
+
+def cancel_pending_marketplace_payment(listing_id):
+    if "user" not in session:
+        return redirect("/login")
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """SELECT xendit_reference_id
+           FROM marketplace
+           WHERE id = ? AND buyer_username = ?
+             AND order_status = 'awaiting_payment'
+             AND payment_method = 'xendit'""",
+        (listing_id, session["user"]),
+    )
+    order = cur.fetchone()
+    conn.close()
+    if not order or not order["xendit_reference_id"]:
+        flash("This pending payment could not be cancelled.")
+        return redirect(url_for("my_marketplace_purchases"))
+
+    _release_xendit_reservation(order["xendit_reference_id"])
+    flash("The unpaid checkout was cancelled and its reserved produce was released.")
+    return redirect(url_for("my_marketplace_purchases"))
 
 
 def rate_marketplace_seller(listing_id):
@@ -1038,7 +1471,7 @@ def rate_marketplace_seller(listing_id):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT id, username, crop_name FROM marketplace
+        SELECT id, username, commodity_name FROM marketplace
         WHERE id = ? AND buyer_username = ? AND status IN ('sold', 'delivered', 'completed') AND buyer_rating IS NULL
           AND delivery_confirmed = 1 AND buyer_confirmed = 1
     """, (listing_id, session["user"]))
@@ -1065,7 +1498,7 @@ def rate_marketplace_seller(listing_id):
         (
             order["username"],
             "New Farmer Rating",
-            f"{session['user']} rated your {order['crop_name']} order {rating}/5 stars.",
+            f"{session['user']} rated your {order['commodity_name']} order {rating}/5 stars.",
             "marketplace",
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             0,
@@ -1099,11 +1532,13 @@ def my_marketplace_listings():
     current_user_id = current_user["id"]
 
     cur.execute("""
-        SELECT m.id, m.user_id, m.username, m.buyer_username, m.crop_id,
-               m.crop_name, m.amount, m.price, m.unit, m.status, m.listing_date,
+        SELECT m.id, m.user_id, m.username, m.buyer_username, m.commodity_id,
+               m.commodity_name, m.amount, m.price, m.unit, m.status, m.listing_date,
                m.description, m.main_image, m.thumbnail_verified, m.listing_type,
-               m.preorder_status, m.available_date, m.order_status, m.buyer_rating
+               m.preorder_status, m.available_date, m.order_status, m.buyer_rating,
+               c.default_image AS commodity_default_image
         FROM marketplace m
+        LEFT JOIN commodities c ON c.id = m.commodity_id
         WHERE m.user_id = ?
         ORDER BY m.listing_date DESC
     """, (current_user_id,))
@@ -1153,10 +1588,11 @@ def my_marketplace_transactions():
         return redirect("/marketplace")
 
     cur.execute("""
-        SELECT m.id, m.crop_name, m.buyer_username, m.order_status,
+        SELECT m.id, m.commodity_name, m.buyer_username, m.order_status,
                m.buyer_confirmed, m.delivery_confirmed, m.order_date,
                m.delivery_province, m.delivery_city, m.delivery_barangay,
                m.delivery_street, m.delivery_landmark, m.amount, m.unit, m.price,
+               m.payment_method,
                buyer.first_name AS buyer_first_name,
                buyer.last_name AS buyer_last_name,
                buyer.email AS buyer_email,
@@ -1234,7 +1670,7 @@ def trade_marketplace_item(listing_id):
     current_user_id = current_user["id"]
 
     cur.execute("""
-        SELECT m.id, m.user_id, m.username, m.crop_id, m.crop_name, m.amount,
+        SELECT m.id, m.user_id, m.username, m.commodity_id, m.commodity_name, m.amount,
                m.unit, m.location,                               u.username AS seller_name, u.reliability_score,
                u.reliability_status,
                (SELECT COUNT(*) FROM marketplace ratings
@@ -1261,26 +1697,26 @@ def trade_marketplace_item(listing_id):
         trade_amount = request.form.get("trade_amount")
 
         if not trade_crop or not trade_amount:
-            flash("Please select a crop and enter amount")
+            flash("Please select a commodity and enter quantity")
             conn.close()
             return redirect(request.url)
 
         try:
             trade_amount = int(trade_amount)
         except ValueError:
-            flash("Invalid trade amount")
+            flash("Invalid trade quantity")
             conn.close()
             return redirect(request.url)
 
         if trade_amount <= 0:
-            flash("Trade amount must be positive")
+            flash("Trade quantity must be positive")
             conn.close()
             return redirect(request.url)
 
         cur.execute("""
             SELECT SUM(quantity) as total
             FROM inventory
-            WHERE farmer = ? AND crop_id = (SELECT id FROM crops WHERE crops_name = ?)
+            WHERE farmer = ? AND commodity_id = (SELECT id FROM commodities WHERE commodity_name = ?)
         """, (session["user"], trade_crop))
         inventory = cur.fetchone()
 
@@ -1291,7 +1727,7 @@ def trade_marketplace_item(listing_id):
 
         cur.execute("""
             SELECT id, quantity FROM inventory
-            WHERE farmer = ? AND crop_id = (SELECT id FROM crops WHERE crops_name = ?)
+            WHERE farmer = ? AND commodity_id = (SELECT id FROM commodities WHERE commodity_name = ?)
             ORDER BY date_received ASC
         """, (session["user"], trade_crop))
         buyer_items = cur.fetchall()
@@ -1320,8 +1756,8 @@ def trade_marketplace_item(listing_id):
                 seller_username = rr["username"] if rr else None
 
         cur.execute("""
-            INSERT INTO inventory(crop_id, quantity, farmer, date_received, location, source)
-            SELECT id, ?, ?, ?, ?, ? FROM crops WHERE crops_name = ?
+            INSERT INTO inventory(commodity_id, quantity, farmer, date_received, location, source)
+            SELECT id, ?, ?, ?, ?, ? FROM commodities WHERE commodity_name = ?
         """, (
             trade_amount, seller_username,
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -1329,10 +1765,10 @@ def trade_marketplace_item(listing_id):
         ))
 
         cur.execute("""
-            INSERT INTO inventory(crop_id, quantity, farmer, date_received, location, source)
+            INSERT INTO inventory(commodity_id, quantity, farmer, date_received, location, source)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
-            listing["crop_id"], listing["amount"], session["user"],
+            listing["commodity_id"], listing["amount"], session["user"],
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             session.get("location", ""), "trade"
         ))
@@ -1346,7 +1782,7 @@ def trade_marketplace_item(listing_id):
                 cur.execute(
                     "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
                     (seller_username, "Item Traded",
-                     f"{session['user']} completed a trade: gave {trade_amount} {trade_crop} and received your {listing['amount']} {listing['crop_name']}.",
+                     f"{session['user']} completed a trade: gave {trade_amount} {trade_crop} and received your {listing['amount']} {listing['commodity_name']}.",
                      "marketplace", datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 0)
                 )
                 conn.commit()
@@ -1355,14 +1791,14 @@ def trade_marketplace_item(listing_id):
 
         conn.close()
 
-        flash(f"Trade successful! You received {listing['amount']} {listing['crop_name']} and gave {trade_amount} {trade_crop}")
+        flash(f"Trade successful! You received {listing['amount']} {listing['commodity_name']} and gave {trade_amount} {trade_crop}")
         return redirect("/marketplace")
 
     cur.execute("""
-        SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total_quantity
-        FROM inventory i JOIN crops c ON c.id=i.crop_id
+        SELECT c.commodity_name AS commodity_name, SUM(i.quantity) AS total_quantity
+        FROM inventory i JOIN commodities c ON c.id=i.commodity_id
         WHERE i.farmer = ?
-        GROUP BY i.crop_id, c.crops_name
+        GROUP BY i.commodity_id, c.commodity_name
         HAVING SUM(quantity) > 0
     """, (session["user"],))
     user_inventory = cur.fetchall()
@@ -1379,7 +1815,7 @@ def get_listing_api(listing_id):
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "SELECT crop_name, amount, unit FROM marketplace WHERE id = ?",
+        "SELECT commodity_name, amount, unit FROM marketplace WHERE id = ?",
         (listing_id,),
     )
     listing = cur.fetchone()
@@ -1389,7 +1825,7 @@ def get_listing_api(listing_id):
         return jsonify({"error": "Listing not found"}), 404
 
     return jsonify({
-        "crop_name": listing["crop_name"],
+        "commodity_name": listing["commodity_name"],
         "amount": listing["amount"],
         "unit": listing["unit"]
     })
@@ -1513,7 +1949,11 @@ def view_cart():
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute("SELECT id FROM users WHERE username = ?", (session["user"],))
+    cur.execute("""
+        SELECT id, saved_delivery_province, saved_delivery_city, saved_delivery_barangay,
+               saved_delivery_street, saved_delivery_landmark
+        FROM users WHERE username = ?
+    """, (session["user"],))
     user = cur.fetchone()
     if not user:
         conn.close()
@@ -1521,7 +1961,7 @@ def view_cart():
 
     cur.execute("""
         SELECT c.id, c.quantity, c.added_date,
-               m.crop_name, m.price, m.unit, m.main_image, m.thumbnail_verified,
+               m.commodity_name, m.price, m.unit, m.main_image, m.thumbnail_verified,
                m.username as seller_name,
                m.amount as available_amount, m.id as listing_id
         FROM cart c
@@ -1539,10 +1979,29 @@ def view_cart():
 
     conn.close()
 
+    saved_delivery_address = {
+        "delivery_province": user["saved_delivery_province"] or "",
+        "delivery_city": user["saved_delivery_city"] or "",
+        "delivery_barangay": user["saved_delivery_barangay"] or "",
+        "delivery_street": user["saved_delivery_street"] or "",
+        "delivery_landmark": user["saved_delivery_landmark"] or "",
+    }
+    has_saved_delivery_address = all(
+        saved_delivery_address[field]
+        for field in (
+            "delivery_province",
+            "delivery_city",
+            "delivery_barangay",
+            "delivery_street",
+        )
+    )
+
     return render_template("cart.html",
                          cart_items=cart_items,
                          total=total,
-                         cart_count=cart_count)
+                         cart_count=cart_count,
+                         saved_delivery_address=saved_delivery_address,
+                         has_saved_delivery_address=has_saved_delivery_address)
 
 
 def add_to_cart(listing_id):
@@ -1677,10 +2136,13 @@ def checkout_cart():
     if "user" not in session:
         return jsonify({"error": "Unauthorized"}), 401
 
-    payload = request.get_json() or {}
+    payload = request.get_json(silent=True) or {}
     delivery_address, address_error = _delivery_address_from_payload(payload)
     if address_error:
         return jsonify({"error": address_error}), 400
+    payment_method = payload.get("payment_method", "xendit")
+    if payment_method not in {"cod", "xendit"}:
+        return jsonify({"error": "Choose Cash on Delivery or Online Payment."}), 400
 
     conn = get_db()
     cur = conn.cursor()
@@ -1694,12 +2156,11 @@ def checkout_cart():
     user_id = user["id"]
 
     cur.execute("""
-        SELECT c.listing_id, c.quantity, m.user_id as seller_id, m.crop_name,
-               m.price, m.amount as available_amount,
-               m.username as seller_name, m.location, m.crop_id, m.unit
+        SELECT c.id AS cart_id, c.listing_id, c.quantity, m.status AS listing_status
         FROM cart c
-        JOIN marketplace m ON c.listing_id = m.id
-        WHERE c.user_id = ? AND m.status = 'available'
+        LEFT JOIN marketplace m ON c.listing_id = m.id
+        WHERE c.user_id = ?
+        ORDER BY c.added_date ASC
     """, (user_id,))
     cart_items = cur.fetchall()
 
@@ -1707,98 +2168,105 @@ def checkout_cart():
         conn.close()
         return jsonify({"error": "Cart is empty"}), 400
 
-    order_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    unavailable = [item for item in cart_items if item["listing_status"] != "available"]
+    if unavailable:
+        conn.close()
+        return jsonify({
+            "error": "One or more cart items are no longer available. Review your cart."
+        }), 409
 
-    for item in cart_items:
-        cur.execute("SELECT amount, status FROM marketplace WHERE id = ?", (item["listing_id"],))
-        listing = cur.fetchone()
-        if not listing or listing["status"] != "available":
-            continue
-
-        if item["quantity"] > listing["amount"]:
-            continue
-
-        if item["quantity"] == listing["amount"]:
-            cur.execute("""
-                UPDATE marketplace 
-                SET status = 'sold', buyer_username = ?, order_status = 'to_pay',
-                    order_date = ?, delivery_confirmed = 0,
-                    delivery_province = ?, delivery_city = ?, delivery_barangay = ?,
-                    delivery_street = ?, delivery_landmark = ?
-                WHERE id = ?
-            """, (
-                session["user"], order_timestamp,
-                delivery_address["delivery_province"], delivery_address["delivery_city"],
-                delivery_address["delivery_barangay"], delivery_address["delivery_street"],
-                delivery_address["delivery_landmark"], item["listing_id"],
-            ))
-        else:
-            cur.execute("""
-                INSERT INTO marketplace (
-                    user_id, username, buyer_username, crop_id, crop_name, amount, price, unit,
-                    status, order_status, listing_date, order_date, expiry_date, description, location, delivery_confirmed,
-                    delivery_province, delivery_city, delivery_barangay, delivery_street, delivery_landmark
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                item["seller_id"], item["seller_name"], session["user"],
-                item["crop_id"], item["crop_name"], item["quantity"], item["price"],
-                item["unit"] or "kg", "sold", "to_pay",
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"), order_timestamp,
-                None, None, item["location"], 0,
-                delivery_address["delivery_province"], delivery_address["delivery_city"],
-                delivery_address["delivery_barangay"], delivery_address["delivery_street"],
-                delivery_address["delivery_landmark"],
-            ))
-            cur.execute("UPDATE marketplace SET amount = amount - ? WHERE id = ?",
-                       (item["quantity"], item["listing_id"]))
-
-        try:
-            cur.execute(
-                "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
-                (
-                    item["seller_name"],
-                    "Item Sold",
-                    f"{session['user']} purchased {item['quantity']} {item['crop_name']} from your listing.",
-                    "marketplace",
-                    order_timestamp,
-                    0,
-                ),
-            )
-        except Exception:
-            logger.exception("Failed to create marketplace purchase notification")
-
+    if payload.get("remember_delivery_address") is True:
         cur.execute("""
-            INSERT INTO inventory(crop_id, quantity, farmer, date_received, location, source)
-            VALUES (?, ?, ?, ?, ?, ?)
+            UPDATE users
+            SET saved_delivery_province = ?, saved_delivery_city = ?,
+                saved_delivery_barangay = ?, saved_delivery_street = ?,
+                saved_delivery_landmark = ?
+            WHERE id = ?
         """, (
-            item["crop_id"], item["quantity"], session["user"],
-            order_timestamp, item["location"], "purchase"
+            delivery_address["delivery_province"],
+            delivery_address["delivery_city"],
+            delivery_address["delivery_barangay"],
+            delivery_address["delivery_street"],
+            delivery_address["delivery_landmark"],
+            user_id,
         ))
 
-        cur.execute("""
-            SELECT id, quantity FROM inventory 
-            WHERE farmer = ? AND crop_id = ? 
-            ORDER BY date_received ASC
-        """, (item["seller_name"], item["crop_id"]))
-        seller_inventory = cur.fetchall()
-
-        remaining = item["quantity"]
-        for inv_item in seller_inventory:
-            if remaining <= 0:
-                break
-            if inv_item["quantity"] <= remaining:
-                cur.execute("DELETE FROM inventory WHERE id = ?", (inv_item["id"],))
-                remaining -= inv_item["quantity"]
-            else:
-                cur.execute("UPDATE inventory SET quantity = ? WHERE id = ?",
-                           (inv_item["quantity"] - remaining, inv_item["id"]))
-                remaining = 0
-
-    cur.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
     conn.commit()
     conn.close()
 
-    return jsonify({"status": "success", "message": "Order placed successfully!"})
+    order_items = [
+        {"listing_id": item["listing_id"], "quantity": item["quantity"]}
+        for item in cart_items
+    ]
+    cart_ids = [item["cart_id"] for item in cart_items]
+    if payment_method == "cod":
+        result, error = _start_cod_checkout(
+            order_items,
+            session["user"],
+            user_id,
+            delivery_address,
+            cart_ids=cart_ids,
+        )
+    else:
+        result, error = _start_xendit_checkout(
+            order_items,
+            session["user"],
+            user_id,
+            delivery_address,
+            cart_ids=cart_ids,
+        )
+    if error:
+        message, status_code = error
+        return jsonify({"error": message}), status_code
+    return jsonify(result)
+
+
+def xendit_payment_webhook():
+    expected_token = current_app.config.get("XENDIT_WEBHOOK_TOKEN")
+    if not expected_token:
+        current_app.logger.error("Xendit webhook received without XENDIT_WEBHOOK_TOKEN configured")
+        return jsonify({"error": "Webhook is not configured"}), 503
+    if not verify_callback_token(
+        request.headers.get("x-callback-token"),
+        expected_token,
+    ):
+        return jsonify({"error": "Invalid callback token"}), 401
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Invalid webhook payload"}), 400
+
+    event_name = payload.get("event")
+    if event_name not in {
+        "payment_session.completed",
+        "payment_session.expired",
+        "payment.capture",
+        "capture.succeeded",
+    }:
+        return jsonify({"status": "ignored"}), 200
+
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid webhook event data"}), 400
+    reference_id = data.get("reference_id") or payload.get("reference_id")
+    if not isinstance(reference_id, str) or not reference_id:
+        return jsonify({"error": "Webhook is missing its reference ID"}), 400
+
+    result = _process_xendit_payment_event(event_name, reference_id, data)
+    if result in {"session_mismatch", "amount_mismatch", "currency_mismatch"}:
+        current_app.logger.error(
+            "Rejected Xendit payment event due to %s for reference %s",
+            result,
+            reference_id,
+        )
+        return jsonify({"error": "Payment event did not match the pending order"}), 400
+    if result == "unknown":
+        current_app.logger.warning(
+            "Received Xendit payment event for unknown reference %s",
+            reference_id,
+        )
+        return jsonify({"status": "ignored"}), 200
+    return jsonify({"status": result}), 200
 
 
 def product_detail(listing_id):
@@ -1811,13 +2279,15 @@ def product_detail(listing_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT m.id, m.user_id, m.username, m.crop_id, m.crop_name, m.amount,
+        SELECT m.id, m.user_id, m.username, m.commodity_id, m.commodity_name, m.amount,
                m.price, m.unit, m.listing_type, m.available_date, m.listing_date,
                m.description, m.location, m.main_image,
+               c.default_image AS commodity_default_image,
                u.username AS seller_name,
                u.username AS seller_profile_username, u.location as seller_location
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
+        LEFT JOIN commodities c ON c.id = m.commodity_id
         WHERE m.id = ? AND m.status = 'available'
     """, (listing_id,))
     listing = cur.fetchone()
@@ -1837,9 +2307,19 @@ def product_detail(listing_id):
 
     if not images and listing["main_image"]:
         images = [{"image_filename": listing["main_image"], "display_order": 0}]
+    elif (
+        not images
+        and "commodity_default_image" in listing.keys()
+        and listing["commodity_default_image"]
+    ):
+        images = [{
+            "image_filename": listing["commodity_default_image"],
+            "display_order": 0,
+            "is_commodity_default": True,
+        }]
 
     cur.execute("""
-        SELECT id, crop_name, price, unit, amount, main_image, thumbnail_verified,
+        SELECT id, commodity_name, price, unit, amount, main_image, thumbnail_verified,
                listing_type, listing_date, available_date
         FROM marketplace
         WHERE user_id = ? AND status = 'available' AND id != ?
@@ -1882,7 +2362,7 @@ def edit_marketplace_listing(listing_id):
     user_id = user["id"]
 
     cur.execute(
-        """SELECT id, status, crop_name, crop_id, amount, price, unit, description,
+        """SELECT id, status, commodity_name, commodity_id, amount, price, unit, description,
                   listing_type, main_image
            FROM marketplace WHERE id = ? AND user_id = ?""",
         (listing_id, user_id),
@@ -1902,25 +2382,35 @@ def edit_marketplace_listing(listing_id):
     if request.method == "POST":
         amount = request.form.get("amount")
         price = request.form.get("price")
-        unit = "kg"
+        unit = None
         description = request.form.get("description", "").strip()
 
         try:
             amount = int(amount)
             price = float(price)
         except (TypeError, ValueError):
-            flash("Invalid amount or price")
+            flash("Invalid quantity or price")
             conn.close()
             return redirect(request.url)
 
         if amount <= 0 or price <= 0 or not math.isfinite(price):
-            flash("Amount and price must be positive")
+            flash("Quantity and price must be positive")
             conn.close()
             return redirect(request.url)
 
+        cur.execute(
+            """SELECT COALESCE(cp.price_unit, c.default_price_unit, 'kg') AS price_unit
+               FROM commodities c
+               LEFT JOIN commodity_pricing cp ON cp.commodity_id=c.id
+               WHERE c.id=?""",
+            (listing["commodity_id"],),
+        )
+        commodity_unit = cur.fetchone()
+        unit = commodity_unit["price_unit"] if commodity_unit else "kg"
+
         if listing["listing_type"] != "looking_for":
             price_error = seller_price_error(
-                price, unit, _crop_price_rule(cur, listing["crop_id"])
+                price, unit, _crop_price_rule(cur, listing["commodity_id"])
             )
             if price_error:
                 flash(price_error, "danger")
@@ -2029,7 +2519,15 @@ def edit_marketplace_listing(listing_id):
         ORDER BY display_order ASC
     """, (listing_id,))
     images = cur.fetchall()
-    crop_pricing = _crop_price_rule(cur, listing["crop_id"])
+    commodity_pricing = _crop_price_rule(cur, listing["commodity_id"])
+    cur.execute(
+        """SELECT COALESCE(cp.price_unit, c.default_price_unit, ?, 'kg') AS price_unit
+           FROM commodities c
+           LEFT JOIN commodity_pricing cp ON cp.commodity_id=c.id
+           WHERE c.id=?""",
+        (listing["unit"], listing["commodity_id"]),
+    )
+    listing_price_unit = cur.fetchone()["price_unit"]
 
     cart_count = get_cart_count(session["user"])
 
@@ -2038,8 +2536,9 @@ def edit_marketplace_listing(listing_id):
     return render_template("add_listing.html",
                          listing=listing,
                          images=images,
-                         crop_pricing=crop_pricing,
-                         seller_price_bounds=price_bounds(crop_pricing),
+                         commodity_pricing=commodity_pricing,
+                         seller_price_bounds=price_bounds(commodity_pricing),
+                         listing_price_unit=listing_price_unit,
                          cart_count=cart_count,
                          profile_location_available=(
                              user["location_latitude"] is not None
@@ -2072,7 +2571,7 @@ def create_preorder(listing_id):
         return jsonify({"error": "User not found"}), 404
 
     cur.execute("""
-        SELECT user_id, amount, username, crop_id, crop_name, price, unit,
+        SELECT user_id, amount, username, commodity_id, commodity_name, price, unit,
                listing_date, expiry_date, description, location, available_date,
                main_image, thumbnail_verified, thumbnail_latitude, thumbnail_longitude,
                thumbnail_distance_meters, thumbnail_captured_at
@@ -2108,7 +2607,7 @@ def create_preorder(listing_id):
 
         cur.execute("""
             INSERT INTO marketplace (
-                user_id, username, buyer_username, crop_id, crop_name,
+                user_id, username, buyer_username, commodity_id, commodity_name,
                 amount, price, unit, status, order_status,
                 listing_date, order_date, expiry_date, description, location,
                 listing_type, available_date, preorder_status, preorder_quantity,
@@ -2117,7 +2616,7 @@ def create_preorder(listing_id):
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             listing["user_id"], listing["username"], session["user"],
-            listing["crop_id"], listing["crop_name"], quantity, listing["price"],
+            listing["commodity_id"], listing["commodity_name"], quantity, listing["price"],
             listing["unit"], "sold", "preorder_pending",
             listing["listing_date"], now, listing["expiry_date"],
             listing["description"], listing["location"],
@@ -2131,7 +2630,7 @@ def create_preorder(listing_id):
         cur.execute(
             "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
             (listing["username"], "New Pre-order Request",
-             f"{session['user']} wants to pre-order {quantity} {listing['unit']} of {listing['crop_name']}.",
+             f"{session['user']} wants to pre-order {quantity} {listing['unit']} of {listing['commodity_name']}.",
              "preorder", now, 0)
         )
     except Exception:
@@ -2154,7 +2653,7 @@ def accept_preorder(order_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT buyer_username, amount, unit, crop_name
+        SELECT buyer_username, amount, unit, commodity_name
         FROM marketplace
         WHERE id = ? AND username = ? AND listing_type = 'preorder'
           AND preorder_status = 'pending'
@@ -2177,7 +2676,7 @@ def accept_preorder(order_id):
         cur.execute(
             "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
             (order["buyer_username"], "Pre-order Confirmed",
-             f"{session['user']} confirmed your pre-order for {order['amount']} {order['unit']} of {order['crop_name']}.",
+             f"{session['user']} confirmed your pre-order for {order['amount']} {order['unit']} of {order['commodity_name']}.",
              "preorder", now, 0)
         )
     except Exception:
@@ -2203,7 +2702,7 @@ def reject_preorder(order_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT buyer_username, crop_name
+        SELECT buyer_username, commodity_name
         FROM marketplace
         WHERE id = ? AND username = ? AND listing_type = 'preorder'
           AND preorder_status = 'pending'
@@ -2226,7 +2725,7 @@ def reject_preorder(order_id):
         WHERE id = ?
     """, (reason or None, session["user"], now, order_id))
 
-    msg = f"{session['user']} declined your pre-order for {order['crop_name']}."
+    msg = f"{session['user']} declined your pre-order for {order['commodity_name']}."
     if reason:
         msg += f" Reason: {reason}"
 
@@ -2258,7 +2757,7 @@ def request_preorder_cancel(order_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT username, buyer_username, crop_name
+        SELECT username, buyer_username, commodity_name
         FROM marketplace
         WHERE id = ? AND listing_type = 'preorder'
           AND preorder_status IN ('pending', 'confirmed')
@@ -2286,7 +2785,7 @@ def request_preorder_cancel(order_id):
         cur.execute(
             "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
             (other_party, "Cancellation Requested",
-             f"{session['user']} requested to cancel the pre-order for {order['crop_name']}. Reason: {reason}",
+             f"{session['user']} requested to cancel the pre-order for {order['commodity_name']}. Reason: {reason}",
              "preorder", now, 0)
         )
     except Exception:
@@ -2306,7 +2805,7 @@ def approve_preorder_cancel(order_id):
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT cancel_requested_by, crop_name
+        SELECT cancel_requested_by, commodity_name
         FROM marketplace
         WHERE id = ? AND listing_type = 'preorder'
           AND preorder_status = 'cancel_requested'
@@ -2331,7 +2830,7 @@ def approve_preorder_cancel(order_id):
         cur.execute(
             "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
             (order["cancel_requested_by"], "Cancellation Approved",
-             f"{session['user']} approved your cancellation request for {order['crop_name']}.",
+             f"{session['user']} approved your cancellation request for {order['commodity_name']}.",
              "preorder", now, 0)
         )
     except Exception:
@@ -2353,12 +2852,14 @@ def my_preorders():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT m.id, m.crop_name, m.preorder_status, m.main_image, m.amount,
+        SELECT m.id, m.commodity_name, m.preorder_status, m.main_image,
+               c.default_image AS commodity_default_image, m.amount,
                m.unit, m.price, m.available_date, m.cancel_requested_by,
                m.cancel_reason, u.username AS seller_name,
                u.location AS seller_location
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
+        LEFT JOIN commodities c ON c.id = m.commodity_id
         WHERE m.buyer_username = ? AND m.listing_type = 'preorder'
         ORDER BY COALESCE(m.available_date, m.order_date) ASC
     """, (session["user"],))
@@ -2385,10 +2886,12 @@ def my_preorder_requests():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT id, main_image, crop_name, preorder_status, buyer_username, amount,
+        SELECT m.id, m.main_image, m.commodity_name, m.preorder_status, m.buyer_username, m.amount,
+               c.default_image AS commodity_default_image,
                unit, price, available_date, cancel_requested_by, cancel_reason
-        FROM marketplace
-        WHERE username = ? AND listing_type = 'preorder'
+        FROM marketplace m
+        LEFT JOIN commodities c ON c.id = m.commodity_id
+        WHERE m.username = ? AND m.listing_type = 'preorder'
         ORDER BY CASE preorder_status
             WHEN 'pending' THEN 1
             WHEN 'confirmed' THEN 2
@@ -2417,7 +2920,7 @@ def promote_due_preorders():
     
     # Find all available pre-order listings whose ready date has arrived
     cur.execute("""
-        SELECT id, username, crop_name, available_date
+        SELECT id, username, commodity_name, available_date
         FROM marketplace
         WHERE listing_type = 'preorder'
           AND status = 'available'
@@ -2445,7 +2948,7 @@ def promote_due_preorders():
             cur.execute(
                 "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
                 (listing["username"], "Pre-order Now Available",
-                 f"Your pre-order listing for {listing['crop_name']} is now live for standard purchase.",
+                 f"Your pre-order listing for {listing['commodity_name']} is now live for standard purchase.",
                  "marketplace", now_str, 0)
             )
         except Exception:
@@ -2457,11 +2960,11 @@ def promote_due_preorders():
             FROM marketplace
             WHERE id != ?
               AND username = ?
-              AND crop_name = ?
+              AND commodity_name = ?
               AND listing_type = 'preorder'
               AND buyer_username IS NOT NULL
               AND preorder_status IN ('pending', 'confirmed')
-        """, (listing_id, listing["username"], listing["crop_name"]))
+        """, (listing_id, listing["username"], listing["commodity_name"]))
         buyers = cur.fetchall()
         
         for buyer in buyers:
@@ -2469,7 +2972,7 @@ def promote_due_preorders():
                 cur.execute(
                     "INSERT INTO notifications(username,title,message,type,created_at,is_read) VALUES (?,?,?,?,?,?)",
                     (buyer["buyer_username"], "Pre-order Ready",
-                     f"The {listing['crop_name']} you pre-ordered from {listing['username']} is now ready.",
+                     f"The {listing['commodity_name']} you pre-ordered from {listing['username']} is now ready.",
                      "preorder", now_str, 0)
                 )
             except Exception:
@@ -2487,12 +2990,14 @@ def looking_for_listings():
     cur = conn.cursor()
 
     cur.execute("""
-        SELECT m.id, m.user_id, m.username, m.crop_name, m.amount, m.price,
+        SELECT m.id, m.user_id, m.username, m.commodity_name, m.amount, m.price,
                m.unit, m.listing_date, m.location, m.main_image,
+               c.default_image AS commodity_default_image,
                m.thumbnail_verified, m.listing_type, m.available_date,
                u.username as seller_name, u.location as seller_location
         FROM marketplace m
         JOIN users u ON m.user_id = u.id
+        LEFT JOIN commodities c ON c.id = m.commodity_id
         WHERE m.listing_type = 'looking_for'
           AND m.status = 'available'
         ORDER BY m.listing_date DESC
@@ -2520,6 +3025,12 @@ def register(application):
     application.add_url_rule('/marketplace/order-status/<int:listing_id>', endpoint='update_marketplace_order_status', view_func=update_marketplace_order_status, methods=['POST'])
     application.add_url_rule('/marketplace/confirm-receipt/<int:listing_id>', endpoint='confirm_marketplace_receipt', view_func=confirm_marketplace_receipt, methods=['POST'])
     application.add_url_rule('/marketplace/my-purchases', endpoint='my_marketplace_purchases', view_func=my_marketplace_purchases)
+    application.add_url_rule(
+        '/marketplace/cancel-pending-payment/<int:listing_id>',
+        endpoint='cancel_pending_marketplace_payment',
+        view_func=cancel_pending_marketplace_payment,
+        methods=['POST'],
+    )
     application.add_url_rule('/marketplace/rate/<int:listing_id>', endpoint='rate_marketplace_seller', view_func=rate_marketplace_seller, methods=['POST'])
     application.add_url_rule('/marketplace/my-listings', endpoint='my_marketplace_listings', view_func=my_marketplace_listings)
     application.add_url_rule('/marketplace/transactions', endpoint='my_marketplace_transactions', view_func=my_marketplace_transactions)
@@ -2534,6 +3045,12 @@ def register(application):
     application.add_url_rule('/marketplace/cart/update/<int:cart_id>', endpoint='update_cart_item', view_func=update_cart_item, methods=['POST'])
     application.add_url_rule('/marketplace/cart/remove/<int:cart_id>', endpoint='remove_from_cart', view_func=remove_from_cart, methods=['POST'])
     application.add_url_rule('/marketplace/cart/checkout', endpoint='checkout_cart', view_func=checkout_cart, methods=['POST'])
+    application.add_url_rule(
+        '/xendit/webhook',
+        endpoint='xendit_payment_webhook',
+        view_func=xendit_payment_webhook,
+        methods=['POST'],
+    )
 
     # Backwards-compatible aliases for older templates and scripts that still use /cart.
     application.add_url_rule('/cart', endpoint='view_cart_legacy', view_func=view_cart)

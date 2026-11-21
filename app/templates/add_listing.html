@@ -206,6 +206,7 @@
             <a class="nav-link" href="/knowledge"><i class="fas fa-book-open"></i> Knowledge Hub</a>
             <a class="nav-link" href="/messages"><i class="fas fa-comments"></i> Messages</a>
             <a class="nav-link" href="/notifications-center"><i class="fas fa-bell"></i> Notifications</a>
+            <a class="nav-link" href="/marketplace/my-purchases"><i class="fas fa-shopping-bag"></i> My Purchases</a>
             <a class="nav-link" href="/profile"><i class="fas fa-user-circle"></i> Profile</a>
             <a class="nav-link" href="/marketplace/cart">
                 <i class="fas fa-shopping-cart"></i> Cart
@@ -279,57 +280,59 @@
                             {% if listing %}
                                 Update your listing details below.
                             {% else %}
-                                Post a listing to sell, pre-order, or look for crops.
+                                Post a listing to sell, pre-order, or look for commodities.
                             {% endif %}
                         </p>
 
                         <form id="listingForm" method="POST" enctype="multipart/form-data"
                               data-requires-thumbnail="{{ 'false' if listing else 'true' }}">
-                            <!-- Crop Selection -->
+                            <!-- Commodity selection -->
                             <div class="row">
                                 <div class="col-md-6 mb-3">
-                                    <label for="crop_id" class="form-label">Crop *</label>
+                                    <label for="commodity_id" class="form-label">Commodity *</label>
                                     {% if listing %}
-                                    <input type="text" class="form-control" value="{{ listing.crop_name }}" disabled>
-                                    <input type="hidden" name="crop_id" value="{{ listing.crop_id }}">
-                                    <small class="text-muted">Crop cannot be changed after listing</small>
+                                    <input type="text" class="form-control" value="{{ listing.commodity_name }}" disabled>
+                                    <input type="hidden" name="commodity_id" value="{{ listing.commodity_id }}">
+                                    <small class="text-muted">Commodity cannot be changed after listing</small>
                                     {% else %}
-                                    <select class="form-select" id="crop_id_standard" name="crop_id">
-                                        <option value="">Choose a crop from your inventory...</option>
-                                        {% for crop in crops %}
+                                    <select class="form-select" id="crop_id_standard" name="commodity_id">
+                                        <option value="">Choose a commodity from your inventory...</option>
+                                        {% for crop in commodities %}
                                         <option value="{{ crop['id'] }}" data-available="{{ crop['total_quantity'] }}"
+                                                data-price-unit="{{ crop['price_unit'] or 'kg' }}"
                                                 data-pricing-mode="{{ crop['pricing_mode'] or '' }}"
                                                 data-reference="{{ crop['reference_price'] or '' }}"
                                                 data-range="{{ crop['price_range'] or '' }}"
                                                 data-minimum="{{ crop['minimum_price'] or '' }}"
                                                 data-maximum="{{ crop['maximum_price'] or '' }}"
-                                                >{{ crop['crops_name'] }} ({{ crop['total_quantity'] }} kg available)
+                                                >{{ crop['commodity_name'] }} ({{ crop['total_quantity'] }} {{ crop['price_unit'] or 'kg' }} available)
                                         </option>
                                         {% endfor %}
                                     </select>
 
-                                    <select class="form-select" id="crop_id_preorder" name="crop_id" disabled style="display:none;">
-                                        <option value="">Choose any crop...</option>
+                                    <select class="form-select" id="crop_id_preorder" name="commodity_id" disabled style="display:none;">
+                                        <option value="">Choose any commodity...</option>
                                         {% for crop in all_crops %}
                                         <option value="{{ crop['id'] }}"
+                                                data-price-unit="{{ crop['price_unit'] or 'kg' }}"
                                                 data-pricing-mode="{{ crop['pricing_mode'] or '' }}"
                                                 data-reference="{{ crop['reference_price'] or '' }}"
                                                 data-range="{{ crop['price_range'] or '' }}"
                                                 data-minimum="{{ crop['minimum_price'] or '' }}"
                                                 data-maximum="{{ crop['maximum_price'] or '' }}"
-                                                >{{ crop['crops_name'] }}</option>
+                                                >{{ crop['commodity_name'] }}</option>
                                         {% endfor %}
                                     </select>
 
-                                    <small class="text-muted" id="cropHint">Only crops you have in your inventory are shown</small>
+                                    <small class="text-muted" id="cropHint">Only commodities you have in your inventory are shown</small>
                                     {% endif %}
                                 </div>
                                 <div class="col-md-6 mb-3">
-                                    <label for="amount" id="amountLabel" class="form-label">Amount (kg) *</label>
+                                    <label for="amount" id="amountLabel" class="form-label">Quantity (kg) *</label>
                                     <input type="number" class="form-control" id="amount" name="amount"
                                            value="{{ listing.amount if listing else '' }}"
                                            min="1" required>
-                                    <small class="text-muted" id="availableInfo">Available: <span id="availableDisplay">{{ listing.amount if listing else 0 }}</span> kg</small>
+                                    <small class="text-muted" id="availableInfo">Available: <span id="availableDisplay">{{ listing.amount if listing else 0 }}</span> <span id="availableUnit">{{ listing_price_unit if listing else 'kg' }}</span></small>
                                 </div>
                             </div>
 
@@ -340,21 +343,22 @@
                                            value="{{ listing.price if listing else '' }}"
                                            min="0.01" step="0.01" required>
                                     <small id="priceGuidance" class="form-text text-muted"
-                                           data-pricing-mode="{{ crop_pricing['pricing_mode'] if listing and crop_pricing else '' }}"
-                                           data-reference="{{ crop_pricing['reference_price'] if listing and crop_pricing and crop_pricing['reference_price'] is not none else '' }}"
-                                           data-range="{{ crop_pricing['price_range'] if listing and crop_pricing and crop_pricing['price_range'] is not none else '' }}"
-                                           data-minimum="{{ crop_pricing['minimum_price'] if listing and crop_pricing and crop_pricing['minimum_price'] is not none else '' }}"
-                                           data-maximum="{{ crop_pricing['maximum_price'] if listing and crop_pricing and crop_pricing['maximum_price'] is not none else '' }}">
+                                           data-pricing-mode="{{ commodity_pricing['pricing_mode'] if listing and commodity_pricing else '' }}"
+                                           data-price-unit="{{ seller_price_bounds['unit'] if listing and seller_price_bounds else (listing_price_unit if listing else 'kg') }}"
+                                           data-reference="{{ commodity_pricing['reference_price'] if listing and commodity_pricing and commodity_pricing['reference_price'] is not none else '' }}"
+                                           data-range="{{ commodity_pricing['price_range'] if listing and commodity_pricing and commodity_pricing['price_range'] is not none else '' }}"
+                                           data-minimum="{{ commodity_pricing['minimum_price'] if listing and commodity_pricing and commodity_pricing['minimum_price'] is not none else '' }}"
+                                           data-maximum="{{ commodity_pricing['maximum_price'] if listing and commodity_pricing and commodity_pricing['maximum_price'] is not none else '' }}">
                                         {% if listing and seller_price_bounds %}
                                         Admin allows ₱{{ "%.2f"|format(seller_price_bounds['minimum']) }}–₱{{ "%.2f"|format(seller_price_bounds['maximum']) }} per {{ seller_price_bounds['unit'] }}.
                                         {% elif listing %}
-                                        No admin price limit is set for this crop.
+                                        No admin price limit is set for this commodity.
                                         {% else %}
-                                        Select a crop to see its admin price limit.
+                                        Select a commodity to see its admin price limit.
                                         {% endif %}
                                     </small>
                                 </div>
-                                <input type="hidden" id="unit" name="unit" value="kg">
+                                <input type="hidden" id="unit" name="unit" value="{{ listing_price_unit if listing else 'kg' }}">
                             </div>
 
                             <!-- Listing Type -->
@@ -364,21 +368,21 @@
                                     <input class="form-check-input" type="radio" name="listing_type" id="type_standard" value="standard"
                                         {% if not listing or listing.listing_type == 'standard' %}checked{% endif %}>
                                     <label class="form-check-label" for="type_standard">
-                                        <strong>Standard</strong> — Sell a crop you have in inventory
+                                        <strong>Standard</strong> — Sell a commodity you have in inventory
                                     </label>
                                 </div>
                                 <div class="form-check">
                                     <input class="form-check-input" type="radio" name="listing_type" id="type_preorder" value="preorder"
                                         {% if listing and listing.listing_type == 'preorder' %}checked{% endif %}>
                                     <label class="form-check-label" for="type_preorder">
-                                        <strong>Pre-order</strong> — Sell a crop that isn't ready yet
+                                        <strong>Pre-order</strong> — Sell a commodity that isn't ready yet
                                     </label>
                                 </div>
                                 <div class="form-check">
                                     <input class="form-check-input" type="radio" name="listing_type" id="type_looking_for" value="looking_for"
                                         {% if listing and listing.listing_type == 'looking_for' %}checked{% endif %}>
                                     <label class="form-check-label" for="type_looking_for">
-                                        <strong>Looking For</strong> — Post that you're looking to buy a crop
+                                        <strong>Looking For</strong> — Post that you're looking to buy a commodity
                                     </label>
                                 </div>
                             </div>
@@ -386,7 +390,7 @@
                             <!-- Pre-order date/time -->
                             <div class="mb-3" id="availableDateGroup" style="display: none;">
                                 <label for="available_date" class="form-label">
-                                    Crop Will Be Ready On * <span class="text-muted">(date and time)</span>
+                                    Commodity Will Be Ready On * <span class="text-muted">(date and time)</span>
                                 </label>
                                 <input type="datetime-local" class="form-control" id="available_date" name="available_date" step="60">
                                 <small class="text-muted">Buyers will see this date as the expected delivery time.</small>
@@ -449,7 +453,7 @@
                             <div class="mb-3">
                                 <label for="description" class="form-label">Description (Optional)</label>
                                 <textarea class="form-control" id="description" name="description" rows="3"
-                                          placeholder="Describe your crop quality, variety, or anything else.">{{ listing.description if listing else '' }}</textarea>
+                                          placeholder="Describe your commodity quality, variety, or anything else.">{{ listing.description if listing else '' }}</textarea>
                             </div>
 
                             {% if not listing %}
@@ -719,6 +723,14 @@
             if (countDisplay) countDisplay.textContent = `${selectedFiles.length} of 5 new images selected`;
         }
 
+        function selectedCommodityOption() {
+            const standardCrop = document.getElementById('crop_id_standard');
+            const preorderCrop = document.getElementById('crop_id_preorder');
+            if (standardCrop && !standardCrop.disabled) return standardCrop.selectedOptions[0];
+            if (preorderCrop && !preorderCrop.disabled) return preorderCrop.selectedOptions[0];
+            return null;
+        }
+
         // ============ LISTING TYPE TOGGLE ============
         function updateListingTypeUI() {
             const isPreorder = document.getElementById('type_preorder')?.checked || false;
@@ -734,7 +746,7 @@
             const imgGroup = document.getElementById('imageUploadGroup');
             if (imgGroup) imgGroup.style.display = isLookingFor ? 'none' : 'block';
 
-            // Crop dropdown: standard uses inventory, preorder/looking_for use all crops
+            // Crop dropdown: standard uses inventory, preorder/looking_for use all commodities
             const stdSel = document.getElementById('crop_id_standard');
             const preSel = document.getElementById('crop_id_preorder');
             const hint = document.getElementById('cropHint');
@@ -748,23 +760,33 @@
             }
             if (hint) {
                 hint.textContent = isPreorder
-                    ? 'You can pre-order any crop — no inventory required.'
+                    ? 'You can pre-order any commodity — no inventory required.'
                     : isLookingFor
-                        ? 'Choose any crop you want to buy.'
-                        : 'Only crops you have in your inventory are shown';
+                        ? 'Choose any commodity you want to buy.'
+                        : 'Only commodities you have in your inventory are shown';
             }
 
             // Labels change based on mode
             const amountLabel = document.getElementById('amountLabel');
             const priceLabel = document.getElementById('priceLabel');
+            const unitInput = document.getElementById('unit');
+            const availableUnit = document.getElementById('availableUnit');
+            const selectedCrop = selectedCommodityOption();
+            const unit = selectedCrop && selectedCrop.value
+                ? (selectedCrop.dataset.priceUnit || 'kg')
+                : (unitInput ? unitInput.value : 'kg');
+            if (unitInput) unitInput.value = unit;
+            if (availableUnit) availableUnit.textContent = unit;
 
             if (amountLabel) {
                 amountLabel.textContent = isLookingFor
-                    ? 'Quantity Wanted (kg) *'
-                    : 'Amount (kg) *';
+                    ? `Quantity Wanted (${unit}) *`
+                    : `Quantity (${unit}) *`;
             }
             if (priceLabel) {
-                priceLabel.textContent = isLookingFor ? 'Price Range per kg (₱) *' : 'Price per kg (₱) *';
+                priceLabel.textContent = isLookingFor
+                    ? `Price Range per ${unit} (₱) *`
+                    : `Price per ${unit} (₱) *`;
             }
             updateCropPriceGuidance();
 
@@ -793,21 +815,18 @@
 
             const selectedType = document.querySelector('input[name="listing_type"]:checked');
             const lookingFor = selectedType && selectedType.value === 'looking_for';
-            const standardCrop = document.getElementById('crop_id_standard');
-            const preorderCrop = document.getElementById('crop_id_preorder');
-            const selectedCrop = standardCrop && !standardCrop.disabled
-                ? standardCrop.selectedOptions[0]
-                : preorderCrop && !preorderCrop.disabled
-                    ? preorderCrop.selectedOptions[0]
-                    : null;
+            const selectedCrop = selectedCommodityOption();
             const rule = selectedCrop && selectedCrop.value
                 ? selectedCrop.dataset
                 : guidance.dataset;
+            const unitInput = document.getElementById('unit');
+            const unit = rule.priceUnit || (unitInput ? unitInput.value : 'kg') || 'kg';
+            if (unitInput && selectedCrop && selectedCrop.value) unitInput.value = unit;
 
             priceInput.removeAttribute('max');
             priceInput.min = '0.01';
             if (lookingFor) {
-                guidance.textContent = 'Buyer offers are not restricted by seller crop pricing.';
+                guidance.textContent = 'Buyer offers are not restricted by seller commodity pricing.';
                 return;
             }
 
@@ -826,11 +845,11 @@
             if (Number.isFinite(minimum) && Number.isFinite(maximum)) {
                 priceInput.min = minimum.toFixed(2);
                 priceInput.max = maximum.toFixed(2);
-                guidance.textContent = `Admin allows ₱${minimum.toFixed(2)}–₱${maximum.toFixed(2)} per kg.`;
+                guidance.textContent = `Admin allows ₱${minimum.toFixed(2)}–₱${maximum.toFixed(2)} per ${unit}.`;
             } else {
                 guidance.textContent = selectedCrop && selectedCrop.value
-                    ? 'No admin price limit is set for this crop.'
-                    : 'Select a crop to see its admin price limit.';
+                    ? 'No admin price limit is set for this commodity.'
+                    : 'Select a commodity to see its admin price limit.';
             }
         }
 

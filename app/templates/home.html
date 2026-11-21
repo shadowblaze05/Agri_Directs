@@ -295,6 +295,9 @@
         <a class="nav-link" href="{{ url_for('notification_center') }}"
           ><i class="fas fa-bell"></i> Notifications</a
         >
+        <a class="nav-link" href="/marketplace/my-purchases"
+          ><i class="fas fa-shopping-bag"></i> My Purchases</a
+        >
         <a class="nav-link" href="{{ url_for('profile') }}"
           ><i class="fas fa-user-circle"></i> Profile</a
         >
@@ -414,7 +417,7 @@
                 </div>
               </div>
               <p class="small text-muted mt-3 mb-0">
-                Based on harvest records across {{ market_brief.active_crops }} crop types.
+                Based on harvest records across {{ market_brief.active_crops }} commodity types.
                 Guidance only; this is not a guaranteed price or confirmed buyer demand.
               </p>
             </div>
@@ -509,21 +512,28 @@
                         {% if listing['main_image'] %}
                         <img
                           src="{{ url_for('static', filename='uploads/marketplace/' + listing['main_image']) }}"
-                          alt="{{ listing['crop_name'] }} listed by {{ listing['seller_name'] }}"
+                          alt="{{ listing['commodity_name'] }} listed by {{ listing['seller_name'] }}"
+                          loading="lazy"
+                          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"
+                        />
+                        {% elif listing['commodity_default_image'] %}
+                        <img
+                          src="{{ url_for('static', filename='uploads/commodity_details/' + listing['commodity_default_image']) }}"
+                          alt="{{ listing['commodity_name'] }} listed by {{ listing['seller_name'] }}"
                           loading="lazy"
                           onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"
                         />
                         {% endif %}
                         <div
                           class="market-card-image-fallback"
-                          {% if listing['main_image'] %}style="display:none"{% endif %}
+                          {% if listing['main_image'] or listing['commodity_default_image'] %}style="display:none"{% endif %}
                           aria-hidden="true"
                         >
                           <i class="fas fa-shopping-basket"></i>
                         </div>
                       </div>
                       <div class="market-card-content">
-                        <h5 class="mb-1">{{ listing['crop_name'] }}</h5>
+                        <h5 class="mb-1">{{ listing['commodity_name'] }}</h5>
                         <div class="price-tag">
                           PHP {{ '%.2f'|format(listing['price'] or 0) }}/{{
                           listing['unit'] or 'kg' }}
@@ -564,7 +574,7 @@
                   <span class="fs-6 fw-normal">active listings</span>
                 </div>
                 <small class="text-white-50"
-                  >Across {{ marketplace_summary['crop_count'] }} crop
+                  >Across {{ marketplace_summary['crop_count'] }} commodity
                   types</small
                 >
               </div>
@@ -573,7 +583,7 @@
                   href="{{ url_for('marketplace') }}"
                   ><div class="list-group-item">
                     <div class="d-flex justify-content-between">
-                      <strong>{{ listing['crop_name'] }}</strong
+                      <strong>{{ listing['commodity_name'] }}</strong
                       ><span class="overview-price"
                         >PHP {{ '%.2f'|format(listing['price'] or 0) }}</span
                       >

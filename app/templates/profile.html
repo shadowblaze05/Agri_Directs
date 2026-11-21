@@ -180,6 +180,8 @@
           ><i class="fas fa-comments"></i> Messages</a
         ><a class="nav-link" href="/notifications-center"
           ><i class="fas fa-bell"></i> Notifications</a
+        ><a class="nav-link" href="/marketplace/my-purchases"
+          ><i class="fas fa-shopping-bag"></i> My Purchases</a
         ><a class="nav-link active" href="/profile"
           ><i class="fas fa-user-circle"></i> Profile</a
         ><a class="nav-link" href="/logout"
@@ -265,9 +267,9 @@
           <div
             class="d-flex flex-column flex-md-row align-items-md-center gap-4"
           >
-            {% if user.profile_picture %}<img
+            {% if profile_photo_url %}<img
               class="avatar"
-              src="{{ user.profile_picture }}"
+              src="{{ profile_photo_url }}"
               alt="{{ user.username }} profile photo"
             />{% else %}
             <div class="avatar"><i class="fas fa-user"></i></div>
@@ -340,14 +342,14 @@
                 class="inventory-row py-3 d-flex justify-content-between align-items-center"
               >
                 <div>
-                  <div class="fw-semibold">{{ item.crop_name }}</div>
+                  <div class="fw-semibold">{{ item.commodity_name }}</div>
                   <small class="text-muted"
                     >Last updated {{ item.last_received[:10] if
                     item.last_received else '-' }}</small
                   >
                 </div>
                 <span class="badge rounded-pill text-bg-success px-3 py-2"
-                  >{{ item.total_quantity }} units</span
+                  >{{ item.total_quantity }} kg</span
                 >
               </div>
               {% else %}
@@ -429,7 +431,7 @@
                 <i class="fas fa-location-dot me-2"></i>Self-reported profile location
               </h2>
               <p class="mb-2">
-                {% if user.location_latitude is not none and user.location_longitude is not none and user.profile_photo_captured_at and user.profile_picture %}
+                {% if user.location_latitude is not none and user.location_longitude is not none and user.profile_photo_captured_at and user.profile_photo_scan_verified_at and user.profile_picture %}
                   <span class="badge text-bg-secondary">Photo and GPS submitted - not independently verified</span>
                   <span class="small text-muted">Last captured {{ user.profile_photo_captured_at|datetime_format }}</span>
                 {% else %}
@@ -449,13 +451,13 @@
                   <div class="stat-value">
                     {{ inventory_summary.crop_count or 0 }}
                   </div>
-                  <small class="text-muted">Crop types</small>
+                  <small class="text-muted">Commodity types</small>
                 </div>
                 <div class="col-6">
                   <div class="stat-value">
                     {{ inventory_summary.total_quantity or 0 }}
                   </div>
-                  <small class="text-muted">Total units</small>
+                  <small class="text-muted">Total quantity (kg)</small>
                 </div>
               </div>
             </section>

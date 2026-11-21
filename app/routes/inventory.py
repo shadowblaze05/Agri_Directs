@@ -40,16 +40,16 @@ def _save_crop_photo(uploaded_file):
     )
     expected_format = ALLOWED_CROP_PHOTO_FORMATS.get(extension)
     if not expected_format:
-        raise ValueError("Choose a PNG, JPG, JPEG, or WEBP crop photo.")
+        raise ValueError("Choose a PNG, JPG, JPEG, or WEBP commodity photo.")
 
     uploaded_file.stream.seek(0, os.SEEK_END)
     file_size = uploaded_file.stream.tell()
     uploaded_file.stream.seek(0)
     if file_size > current_app.config["MAX_CROP_PHOTO_SIZE_BYTES"]:
         maximum_size_mb = current_app.config["MAX_CROP_PHOTO_SIZE_BYTES"] / (1024 * 1024)
-        raise ValueError(f"Crop photos must be {maximum_size_mb:g} MB or smaller.")
+        raise ValueError(f"Commodity photos must be {maximum_size_mb:g} MB or smaller.")
     if file_size == 0:
-        raise ValueError("The selected crop photo is empty.")
+        raise ValueError("The selected commodity photo is empty.")
 
     try:
         with Image.open(uploaded_file.stream) as image:
@@ -122,13 +122,13 @@ def inventory():
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "SELECT c.crops_name AS crop_name, SUM(i.quantity) AS total_quantity, MAX(i.date_received) AS last_received, MAX(i.location) AS location "
-        "FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.farmer=? GROUP BY i.crop_id, c.crops_name ORDER BY last_received DESC",
+        "SELECT c.commodity_name AS commodity_name, SUM(i.quantity) AS total_quantity, MAX(i.date_received) AS last_received, MAX(i.location) AS location "
+        "FROM inventory i JOIN commodities c ON c.id=i.commodity_id WHERE i.farmer=? GROUP BY i.commodity_id, c.commodity_name ORDER BY last_received DESC",
         (session["user"],),
     )
     items = cur.fetchall()
     cur.execute(
-        "SELECT COUNT(DISTINCT crop_id) AS crop_count, COALESCE(SUM(quantity), 0) AS total_quantity "
+        "SELECT COUNT(DISTINCT commodity_id) AS crop_count, COALESCE(SUM(quantity), 0) AS total_quantity "
         "FROM inventory WHERE farmer=?", (session["user"],)
     )
     summary = cur.fetchone()
@@ -144,7 +144,7 @@ def inventory_buy():
     # Allow any logged-in user to manage their own posted inventory
 
     data = request.get_json() or {}
-    crop_name = str(data.get("crop_name", "")).strip()
+    commodity_name = str(data.get("commodity_name", data.get("crop_name", ""))).strip()
     quantity = data.get("quantity")
 
     try:
@@ -152,14 +152,14 @@ def inventory_buy():
     except (TypeError, ValueError):
         return jsonify({"error": "Quantity must be a valid number"}), 400
 
-    if not crop_name:
-        return jsonify({"error": "Crop name is required"}), 400
+    if not commodity_name:
+        return jsonify({"error": "Commodity name is required"}), 400
     if quantity <= 0:
         return jsonify({"error": "Quantity must be greater than zero"}), 400
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.farmer=? AND c.crops_name=?", (session["user"], crop_name))
+    cur.execute("SELECT SUM(i.quantity) AS total FROM inventory i JOIN commodities c ON c.id=i.commodity_id WHERE i.farmer=? AND c.commodity_name=?", (session["user"], commodity_name))
     row = cur.fetchone()
     total = row["total"] or 0
 
@@ -169,8 +169,8 @@ def inventory_buy():
 
     needed = quantity
     cur.execute(
-        "SELECT i.id, i.quantity FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.farmer=? AND c.crops_name=? ORDER BY i.date_received DESC",
-        (session["user"], crop_name)
+        "SELECT i.id, i.quantity FROM inventory i JOIN commodities c ON c.id=i.commodity_id WHERE i.farmer=? AND c.commodity_name=? ORDER BY i.date_received DESC",
+        (session["user"], commodity_name)
     )
     rows = cur.fetchall()
 
@@ -198,7 +198,7 @@ def inventory_edit_crop():
     # Allow any logged-in user to edit their own posted inventory
 
     data = request.get_json() or {}
-    crop_name = str(data.get("crop_name", "")).strip()
+    commodity_name = str(data.get("commodity_name", data.get("crop_name", ""))).strip()
     quantity = data.get("quantity")
 
     try:
@@ -206,14 +206,14 @@ def inventory_edit_crop():
     except (TypeError, ValueError):
         return jsonify({"error": "Quantity must be a valid number"}), 400
 
-    if not crop_name:
-        return jsonify({"error": "Crop name is required"}), 400
+    if not commodity_name:
+        return jsonify({"error": "Commodity name is required"}), 400
     if quantity < 0:
         return jsonify({"error": "Quantity cannot be negative"}), 400
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT SUM(i.quantity) AS total FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.farmer=? AND c.crops_name=?", (session["user"], crop_name))
+    cur.execute("SELECT SUM(i.quantity) AS total FROM inventory i JOIN commodities c ON c.id=i.commodity_id WHERE i.farmer=? AND c.commodity_name=?", (session["user"], commodity_name))
     row = cur.fetchone()
     current_total = row["total"] or 0
 
@@ -226,14 +226,14 @@ def inventory_edit_crop():
         cur.execute("SELECT location FROM users WHERE username=?", (session["user"],))
         user_loc = cur.fetchone()["location"]
         cur.execute(
-            "INSERT INTO inventory(crop_id,quantity,farmer,date_received,location) SELECT id, ?, ?, ?, ? FROM crops WHERE crops_name=?",
-            (add_amount, session["user"], datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_loc, crop_name)
+            "INSERT INTO inventory(commodity_id,quantity,farmer,date_received,location) SELECT id, ?, ?, ?, ? FROM commodities WHERE commodity_name=?",
+            (add_amount, session["user"], datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_loc, commodity_name)
         )
     else:
         remove_amount = current_total - quantity
         cur.execute(
-            "SELECT i.id, i.quantity FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.farmer=? AND c.crops_name=? ORDER BY i.date_received DESC",
-            (session["user"], crop_name)
+            "SELECT i.id, i.quantity FROM inventory i JOIN commodities c ON c.id=i.commodity_id WHERE i.farmer=? AND c.commodity_name=? ORDER BY i.date_received DESC",
+            (session["user"], commodity_name)
         )
         rows = cur.fetchall()
         needed = remove_amount
@@ -261,18 +261,18 @@ def inventory_delete_crop():
     # Allow any logged-in user to delete their own posted inventory
 
     data = request.get_json() or {}
-    crop_name = str(data.get("crop_name", "")).strip()
+    commodity_name = str(data.get("commodity_name", data.get("crop_name", ""))).strip()
 
-    if not crop_name:
-        return jsonify({"error": "Crop name is required"}), 400
+    if not commodity_name:
+        return jsonify({"error": "Commodity name is required"}), 400
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("DELETE FROM inventory WHERE farmer=? AND crop_id=(SELECT id FROM crops WHERE crops_name=?)", (session["user"], crop_name))
+    cur.execute("DELETE FROM inventory WHERE farmer=? AND commodity_id=(SELECT id FROM commodities WHERE commodity_name=?)", (session["user"], commodity_name))
     conn.commit()
     conn.close()
 
-    return jsonify({"status": "success", "message": "Crop inventory deleted"})
+    return jsonify({"status": "success", "message": "Commodity inventory deleted"})
 
 def edit_inventory(item_id):
     if "user" not in session:
@@ -287,7 +287,7 @@ def edit_inventory(item_id):
 
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT i.id, i.farmer, i.quantity, c.crops_name AS crop_name FROM inventory i JOIN crops c ON c.id=i.crop_id WHERE i.id=?", (item_id,))
+    cur.execute("SELECT i.id, i.farmer, i.quantity, c.commodity_name AS commodity_name FROM inventory i JOIN commodities c ON c.id=i.commodity_id WHERE i.id=?", (item_id,))
     item = cur.fetchone()
 
     if not item:
@@ -302,7 +302,10 @@ def edit_inventory(item_id):
         return redirect(url_for("admin_inventory")) if role == "admin" else redirect("/dashboard")
 
     if request.method == "POST":
-        cropped_name = request.form.get("crop_name", item["crop_name"]).strip()
+        cropped_name = request.form.get(
+            "commodity_name",
+            request.form.get("crop_name", item["commodity_name"]),
+        ).strip()
         quantity = request.form.get("quantity", item["quantity"])
 
         try:
@@ -314,7 +317,7 @@ def edit_inventory(item_id):
             conn.close()
             return redirect(request.url)
 
-        cur.execute("UPDATE inventory SET crop_id=(SELECT id FROM crops WHERE crops_name=?), quantity=? WHERE id=?",
+        cur.execute("UPDATE inventory SET commodity_id=(SELECT id FROM commodities WHERE commodity_name=?), quantity=? WHERE id=?",
                     (cropped_name, quantity, item_id))
         conn.commit()
         conn.close()
@@ -372,6 +375,7 @@ def upload():
     cur = conn.cursor()
     cur.execute(
         "SELECT first_name, last_name, email, profile_picture, profile_photo_captured_at, "
+        "profile_photo_scan_verified_at, "
         "location, psgc_location, geotag_location, location_latitude, location_longitude "
         "FROM users WHERE username=?",
         (session["user"],),
@@ -391,7 +395,7 @@ def upload():
 
     if request.method == "POST":
         file = request.files.get("file")
-        crop_id = request.form.get("crop_id")
+        commodity_id = request.form.get("commodity_id") or request.form.get("crop_id")
         manual_quantity = request.form.get("manual_quantity", "").strip()
         manual_date = request.form.get("manual_date", "").strip()
 
@@ -415,27 +419,30 @@ def upload():
                     for row_number, row in enumerate(reader, start=2):
                         try:
                             cleaned_row = {k.strip(): (v.strip() if v else '') for k, v in row.items()}
-                            crop = cleaned_row.get("crop_name", "").strip()
+                            crop = cleaned_row.get(
+                                "commodity_name",
+                                cleaned_row.get("crop_name", ""),
+                            ).strip()
                             
                             cur.execute(
-                                "SELECT id FROM crops WHERE crops_name=?",
+                                "SELECT id FROM commodities WHERE commodity_name=?",
                                 (crop,)
                             )
 
                             crop_record = cur.fetchone()
 
                             if not crop_record:
-                                flash(f"Crop '{crop}' not found.")
+                                flash(f"Commodity '{crop}' not found.")
                                 continue
 
-                            crop_id = crop_record[0]
+                            commodity_id = crop_record[0]
                             
                             quantity_str = cleaned_row.get(
                                 "quantity(kg)", cleaned_row.get("quantity", "")
                             ).strip()
 
                             if not crop:
-                                logger.warning(f"Skipped row with empty crop_name")
+                                logger.warning(f"Skipped row with empty commodity_name")
                                 continue
 
                             try:
@@ -460,7 +467,7 @@ def upload():
 
                             cur.execute("""
                             INSERT INTO inventory(
-                                crop_id,
+                                commodity_id,
                                 quantity,
                                 farmer,
                                 date_received,
@@ -470,13 +477,13 @@ def upload():
                             )
                             VALUES(?,?,?,?,?,?,?)
                             """, (
-                                crop_id,
+                                commodity_id,
                                 quantity,
                                 session["user"],
                                 date_received,
                                 location,
                                 "manual_review",
-                                "CSV import does not include browser GPS capture or crop photo evidence.",
+                                "CSV import does not include browser GPS capture or commodity photo evidence.",
                             ))
                             processed_any = True
 
@@ -512,9 +519,9 @@ def upload():
                 except OSError:
                     logger.warning("Temporary CSV cleanup failed")
 
-        elif crop_id:
+        elif commodity_id:
             if not manual_quantity:
-                flash("Quantity is required for manual crop entry")
+                flash("Quantity is required for manual commodity entry")
                 conn.close()
                 return redirect(request.url)
 
@@ -575,7 +582,7 @@ def upload():
 
             cur.execute("""
             INSERT INTO inventory(
-                crop_id,
+                commodity_id,
                 quantity,
                 farmer,
                 date_received,
@@ -590,7 +597,7 @@ def upload():
             )
             VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
             """, (
-                crop_id,
+                commodity_id,
                 quantity,
                 session["user"],
                 date_received,
@@ -611,7 +618,7 @@ def upload():
                 if distance is not None else ""
             )
             flash("Harvest added", "success")
-            logger.info(f"User {session['user']} manually posted crop {crop_id} x{quantity}")
+            logger.info(f"User {session['user']} manually posted crop {commodity_id} x{quantity}")
 
         else:
             flash("Please upload a CSV file or enter harvest details manually.")
@@ -621,13 +628,17 @@ def upload():
         if processed_any:
             return redirect("/upload")
     
-    cur.execute("SELECT id, crops_name FROM crops ORDER BY crops_name")
-    crops = cur.fetchall()
+    cur.execute(
+        """SELECT id, commodity_name,
+                  COALESCE(default_price_unit, 'kg') AS default_price_unit
+           FROM commodities ORDER BY commodity_name"""
+    )
+    commodities = cur.fetchall()
 
     conn.close()
     return render_template(
         "upload.html",
-        crops=crops,
+        commodities=commodities,
         max_distance_km=current_app.config["MAX_CROP_DISTANCE_KM"],
     )
 
@@ -642,7 +653,7 @@ def download_harvest_template():
 
     output = io.StringIO(newline="")
     writer = csv.writer(output)
-    writer.writerow(("crop_name", "quantity(kg)", "date_received"))
+    writer.writerow(("commodity_name", "quantity", "date_received"))
     writer.writerow(("Rice", "5", datetime.now().strftime("%Y-%m-%d")))
     return Response(
         output.getvalue(),
