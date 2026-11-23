@@ -80,6 +80,10 @@ def payment_database():
             received_at TEXT NOT NULL
         );
         CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT);
+        CREATE TABLE app_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT NOT NULL
+        );
         CREATE TABLE cart (
             id INTEGER PRIMARY KEY,
             user_id INTEGER,
@@ -465,6 +469,48 @@ def test_cod_checkout_places_order_without_calling_xendit(monkeypatch):
     ).fetchone()["quantity"] == 3
     assert connection.execute("SELECT COUNT(*) FROM cart").fetchone()[0] == 0
     assert connection.execute("SELECT COUNT(*) FROM notifications").fetchone()[0] == 1
+
+
+def test_checkout_rejects_online_payment_when_admin_has_disabled_it(monkeypatch):
+    connection = payment_database()
+    connection.execute(
+        "INSERT INTO app_settings(setting_key, setting_value) "
+        "VALUES ('online_payments_enabled', '0')"
+    )
+    connection.commit()
+    monkeypatch.setattr(
+        marketplace_routes,
+        "get_db",
+        lambda: SharedSQLiteConnection(connection),
+    )
+    monkeypatch.setattr(
+        marketplace_routes,
+        "create_payment_session",
+        lambda *_args, **_kwargs: pytest.fail("disabled online payment must not start Xendit"),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "get_active_user_role",
+        lambda username: "buyer" if username == "buyer" else None,
+    )
+    app_module.app.config.update(TESTING=True)
+
+    with app_module.app.test_client() as client:
+        with client.session_transaction() as browser_session:
+            browser_session["user"] = "buyer"
+        response = client.post(
+            "/marketplace/cart/checkout",
+            json={
+                "delivery_province": "Leyte",
+                "delivery_city": "Palo",
+                "delivery_barangay": "Pawing",
+                "delivery_street": "12 Farm Road",
+                "payment_method": "xendit",
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "This feature is currently not available."
 
 
 def test_webhook_rejects_invalid_callback_token_without_database_access(monkeypatch):

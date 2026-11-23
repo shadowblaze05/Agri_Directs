@@ -155,11 +155,27 @@
           margin-left: 0 !important;
         }
         .profile-hero {
-          padding: 20px;
+          padding: 18px;
+        }
+        .page-header,
+        .profile-card {
+          padding: 16px;
+        }
+        .avatar {
+          width: 88px;
+          height: 88px;
+          font-size: 2.1rem;
+        }
+        .profile-hero h1,
+        .profile-hero h2 {
+          font-size: 1.5rem;
+          line-height: 1.25;
+          overflow-wrap: anywhere;
         }
       }
     </style>
-  </head>
+      <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
+</head>
   <body>
     <div class="sidebar">
       <nav class="nav flex-column">
@@ -195,7 +211,7 @@
           ><i class="fas fa-leaf"></i> Agri-Direct</span
         >
         <div class="d-flex align-items-center gap-2">
-          <a href="/notifications-center" class="btn btn-outline-light" title="Notifications"><i class="fas fa-bell"></i></a>
+          <a href="/notifications-center" class="btn btn-outline-light notification-bell" title="Notifications"><i class="fas fa-bell"></i></a>
           <div class="dropdown">
           <button
             class="btn btn-outline-light dropdown-toggle"

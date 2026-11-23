@@ -270,6 +270,7 @@
             color: #dee2e6;
         }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
 </head>
 <body>
     <!-- Sidebar -->
@@ -476,11 +477,11 @@
                             <fieldset class="mb-3">
                                 <legend class="form-label fw-semibold">Payment method</legend>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="payment_method" id="paymentOnline" value="xendit" checked>
-                                    <label class="form-check-label" for="paymentOnline">Online payment <small class="text-muted">(Xendit)</small></label>
+                                    <input class="form-check-input" type="radio" name="payment_method" id="paymentOnline" value="xendit" {% if online_payment_enabled %}checked{% endif %}>
+                                    <label class="form-check-label" for="paymentOnline">Online payment <small class="text-muted">(Xendit{% if not online_payment_enabled %} - currently unavailable{% endif %})</small></label>
                                 </div>
                                 <div class="form-check">
-                                    <input class="form-check-input" type="radio" name="payment_method" id="paymentCod" value="cod">
+                                    <input class="form-check-input" type="radio" name="payment_method" id="paymentCod" value="cod" {% if not online_payment_enabled %}checked{% endif %}>
                                     <label class="form-check-label" for="paymentCod">Cash on delivery <small class="text-muted">(pay the seller when delivered)</small></label>
                                 </div>
                             </fieldset>
@@ -605,6 +606,15 @@
                 alert('Error: ' + error);
             });
         }
+
+        const onlinePaymentEnabled = {{ online_payment_enabled|tojson }};
+        document.getElementById('paymentOnline').addEventListener('change', function () {
+            if (!onlinePaymentEnabled && this.checked) {
+                window.alert('This feature is currently not available.');
+                this.checked = false;
+                document.getElementById('paymentCod').checked = true;
+            }
+        });
     </script>
 </body>
 </html>

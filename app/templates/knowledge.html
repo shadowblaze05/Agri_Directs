@@ -58,6 +58,7 @@
             .hub-post-image { height: 190px; }
         }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
 </head>
 <body>
     <div class="sidebar">
@@ -95,19 +96,6 @@
 
     <main class="main-content">
         <div class="container-fluid p-0">
-            <header class="hub-hero mb-4">
-                <div class="hub-eyebrow mb-2"><i class="fas fa-seedling me-1"></i> Agri-Direct community</div>
-                <div class="row align-items-end g-3">
-                    <div class="col-lg-8">
-                        <h1 class="mb-2"><i class="fas fa-book-open me-2"></i>Knowledge Hub</h1>
-                        <p class="mb-0 opacity-75">Agricultural updates, practical guides, and advisories to help your farm grow.</p>
-                    </div>
-                    <div class="col-lg-4 text-lg-end">
-                        <a href="/home" class="btn btn-light text-success fw-semibold"><i class="fas fa-house me-1"></i>Back to Home</a>
-                    </div>
-                </div>
-            </header>
-
             <div class="hub-toolbar" role="navigation" aria-label="Knowledge Hub sections">
                 <a class="btn {{ 'btn-success' if request.args.get('view') != 'articles' else 'btn-outline-success' }}" href="/knowledge"><i class="fas fa-bullhorn me-1"></i>Updates Feed</a>
                 <a class="btn {{ 'btn-success' if request.args.get('view') == 'articles' else 'btn-outline-success' }}" href="/knowledge?view=articles"><i class="fas fa-newspaper me-1"></i>Articles and Topics</a>

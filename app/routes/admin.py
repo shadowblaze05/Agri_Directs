@@ -25,7 +25,7 @@ from ..models.audit import AuditEvent
 from ..models.listing_photo_location_alert import ListingPhotoLocationAlert
 from ..models.profile_report import ProfileReport
 from ..models.slow_query import SlowQueryStat
-from ..models.database import _save_upload_file, get_db
+from ..models.database import _save_upload_file, get_db, is_online_payment_enabled
 from ..services.notification_service import notify_published_announcement
 from ..services.auth_service import (
     PHILIPPINE_TIMEZONE,
@@ -49,6 +49,12 @@ ADMIN_MARKETPLACE_IMAGE_FORMATS = {
     "jpeg": "JPEG",
     "png": "PNG",
     "gif": "GIF",
+    "webp": "WEBP",
+}
+ADMIN_PROFILE_IMAGE_FORMATS = {
+    "jpg": "JPEG",
+    "jpeg": "JPEG",
+    "png": "PNG",
     "webp": "WEBP",
 }
 MARKETPLACE_TRANSACTION_FILTER = """(
@@ -1234,6 +1240,125 @@ def admin():
     )
 
 
+def _save_admin_profile_photo(uploaded_file):
+    extension = os.path.splitext(uploaded_file.filename)[1].lower().lstrip(".")
+    expected_format = ADMIN_PROFILE_IMAGE_FORMATS.get(extension)
+    if not expected_format:
+        raise ValueError("Choose a PNG, JPG, JPEG, or WEBP profile photo.")
+
+    profile_directory = os.path.join(
+        current_app.config["UPLOAD_FOLDER"], "profile_photos"
+    )
+    os.makedirs(profile_directory, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}.{extension}"
+    image_path = os.path.join(profile_directory, filename)
+    temporary_path = os.path.join(profile_directory, f".{uuid.uuid4().hex}.tmp")
+    try:
+        save_sanitized_public_image(
+            uploaded_file,
+            temporary_path,
+            expected_format,
+            current_app.config["MAX_PROFILE_PHOTO_SIZE_BYTES"],
+        )
+        os.replace(temporary_path, image_path)
+    except (OSError, ValueError):
+        for path in (temporary_path, image_path):
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+            except OSError:
+                current_app.logger.exception(
+                    "Unable to remove an uncommitted admin profile photo"
+                )
+        raise
+    return filename, image_path
+
+
+def _managed_admin_profile_photo_path(profile_picture):
+    if not isinstance(profile_picture, str) or not profile_picture:
+        return None
+
+    legacy_prefix = "/static/uploads/profiles/"
+    if profile_picture.startswith(legacy_prefix):
+        filename = profile_picture[len(legacy_prefix):]
+        directory = os.path.join(current_app.static_folder, "uploads", "profiles")
+    else:
+        filename = profile_picture
+        directory = os.path.join(current_app.config["UPLOAD_FOLDER"], "profile_photos")
+    if (
+        not filename
+        or os.path.basename(filename) != filename
+        or os.path.splitext(filename)[1].lower().lstrip(".")
+        not in ADMIN_PROFILE_IMAGE_FORMATS
+    ):
+        return None
+    return os.path.join(directory, filename)
+
+
+@_admin_required
+def update_admin_user_profile_photo(user_id):
+    uploaded_photo = request.files.get("profile_photo")
+    if not uploaded_photo or not uploaded_photo.filename:
+        flash("Choose a profile photo to upload.", "danger")
+        return _redirect_admin("admin_users")
+
+    conn = get_db()
+    cur = conn.cursor()
+    user = cur.execute(
+        "SELECT username, profile_picture FROM users WHERE id=?", (user_id,)
+    ).fetchone()
+    if not user:
+        conn.close()
+        flash("User not found.", "danger")
+        return _redirect_admin("admin_users")
+
+    try:
+        filename, image_path = _save_admin_profile_photo(uploaded_photo)
+    except ValueError as error:
+        conn.close()
+        flash(str(error), "danger")
+        return _redirect_admin("admin_users")
+
+    try:
+        # Admin replacement changes the photo and invalidates only its old
+        # capture/scan claims. The user's location and geotag stay untouched.
+        cur.execute(
+            "UPDATE users SET profile_picture=?, profile_photo_captured_at=NULL, "
+            "profile_photo_scan_verified_at=NULL WHERE id=?",
+            (filename, user_id),
+        )
+        if cur.rowcount != 1:
+            raise RuntimeError("The user profile could not be updated.")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        current_app.logger.exception("Unable to update an admin-managed profile photo")
+        try:
+            if os.path.isfile(image_path):
+                os.remove(image_path)
+        except OSError:
+            current_app.logger.exception(
+                "Unable to remove an uncommitted admin profile photo"
+            )
+        flash("The profile photo could not be updated.", "danger")
+        return _redirect_admin("admin_users")
+    finally:
+        conn.close()
+
+    old_path = _managed_admin_profile_photo_path(user["profile_picture"])
+    if old_path and old_path != image_path and os.path.isfile(old_path):
+        try:
+            os.remove(old_path)
+        except OSError:
+            current_app.logger.exception("Unable to remove the replaced profile photo")
+
+    flash(
+        f"Profile photo updated for {user['username']}. Location and geotag were not changed.",
+        "success",
+    )
+    return _redirect_admin("admin_users")
+
+
 @_admin_required
 def admin_users():
     # The verification table is also used by password recovery. Ensure its
@@ -1246,6 +1371,7 @@ def admin_users():
     conn = get_db()
     cur = conn.cursor()
     query = """SELECT id, username, first_name, last_name, email, role, location,
+               profile_picture,
                is_active, reactivate_on,
                CASE WHEN COALESCE(users.is_verified, FALSE)=FALSE AND EXISTS (
                    SELECT 1 FROM password_reset_tokens t WHERE t.user_id=users.id
@@ -2063,11 +2189,6 @@ def admin_face_scan_monitor():
         status_filter = ""
 
     now = datetime.now(timezone.utc).isoformat()
-    status_sql = (
-        "CASE WHEN c.failed_attempts >= ? THEN 'failed' "
-        "WHEN c.consumed_at IS NOT NULL THEN 'consumed' "
-        "WHEN c.expires_at <= ? THEN 'expired' ELSE 'in_progress' END"
-    )
     conn = get_db()
     cur = conn.cursor()
     try:
@@ -2099,13 +2220,22 @@ def admin_face_scan_monitor():
             ).fetchone()["count"],
         }
         challenges = cur.execute(
-            f"""SELECT c.username, u.role, c.created_at, c.last_stage_at,
+            """SELECT c.username, u.role, c.created_at, c.last_stage_at,
                        c.expires_at, c.consumed_at, c.current_stage,
-                       c.failed_attempts, {status_sql} AS scan_status
+                       c.failed_attempts,
+                       CASE WHEN c.failed_attempts >= ? THEN 'failed'
+                            WHEN c.consumed_at IS NOT NULL THEN 'consumed'
+                            WHEN c.expires_at <= ? THEN 'expired'
+                            ELSE 'in_progress' END AS scan_status
                 FROM profile_photo_challenges c
                 LEFT JOIN users u ON u.username = c.username
                 WHERE (? = '' OR LOWER(COALESCE(c.username, '')) LIKE LOWER(?))
-                  AND (? = '' OR ({status_sql}) = ?)
+                  AND (? = '' OR (
+                       CASE WHEN c.failed_attempts >= ? THEN 'failed'
+                            WHEN c.consumed_at IS NOT NULL THEN 'consumed'
+                            WHEN c.expires_at <= ? THEN 'expired'
+                            ELSE 'in_progress' END
+                  ) = ?)
                 ORDER BY c.created_at DESC
                 LIMIT 100""",
             (
@@ -2147,35 +2277,34 @@ def admin_online_payments():
     if status_filter not in allowed_statuses:
         status_filter = ""
 
-    online_payment_filter = (
-        "(m.payment_method = 'xendit' OR m.xendit_reference_id IS NOT NULL)"
-    )
-    confirmed_filter = (
-        "m.payment_method = 'xendit' AND m.order_status <> 'awaiting_payment'"
-    )
     conn = get_db()
     cur = conn.cursor()
     try:
+        online_payment_enabled = is_online_payment_enabled(cur)
         totals = cur.execute(
-            f"""SELECT COUNT(*) AS total,
+            """SELECT COUNT(*) AS total,
                        SUM(CASE WHEN m.order_status = 'awaiting_payment'
                                 THEN 1 ELSE 0 END) AS pending,
-                       SUM(CASE WHEN {confirmed_filter}
+                       SUM(CASE WHEN m.payment_method = 'xendit'
+                                      AND m.order_status <> 'awaiting_payment'
                                 THEN 1 ELSE 0 END) AS confirmed,
-                       SUM(CASE WHEN {confirmed_filter}
+                       SUM(CASE WHEN m.payment_method = 'xendit'
+                                      AND m.order_status <> 'awaiting_payment'
                                 THEN COALESCE(m.price, 0) * COALESCE(m.amount, 0)
                                 ELSE 0 END) AS confirmed_value
                 FROM marketplace m
-                WHERE {online_payment_filter}"""
+                WHERE m.payment_method = 'xendit'
+                   OR m.xendit_reference_id IS NOT NULL"""
         ).fetchone()
         payments = cur.execute(
-            f"""SELECT m.id, m.username AS seller, m.buyer_username,
+            """SELECT m.id, m.username AS seller, m.buyer_username,
                        m.commodity_name, m.amount, m.unit, m.price,
                        COALESCE(m.price, 0) * COALESCE(m.amount, 0) AS payment_amount,
                        m.order_status, m.status AS listing_status, m.order_date,
                        m.payment_method, m.xendit_reference_id, m.xendit_session_id
                 FROM marketplace m
-                WHERE {online_payment_filter}
+                WHERE (m.payment_method = 'xendit'
+                       OR m.xendit_reference_id IS NOT NULL)
                   AND (? = '' OR CAST(m.id AS TEXT) LIKE ?
                        OR COALESCE(m.xendit_reference_id, '') LIKE ?
                        OR COALESCE(m.xendit_session_id, '') LIKE ?
@@ -2227,7 +2356,35 @@ def admin_online_payments():
         confirmed_count=totals["confirmed"] or 0,
         confirmed_value=totals["confirmed_value"] or 0,
         failed_event_count=failed_event_count,
+        online_payment_enabled=online_payment_enabled,
     )
+
+
+@_admin_required
+def toggle_online_payments():
+    enabled = request.form.get("enabled")
+    if enabled not in {"0", "1"}:
+        flash("Choose whether online payments should be enabled or disabled.", "danger")
+        return redirect(url_for("admin_online_payments"))
+
+    conn = get_db()
+    try:
+        conn.cursor().execute(
+            "INSERT INTO app_settings(setting_key, setting_value) "
+            "VALUES ('online_payments_enabled', ?) "
+            "ON CONFLICT(setting_key) DO UPDATE "
+            "SET setting_value = excluded.setting_value",
+            (enabled,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    flash(
+        "Online payments enabled." if enabled == "1" else "Online payments disabled.",
+        "success",
+    )
+    return redirect(url_for("admin_online_payments"))
 
 
 def _admin_marketplace_values():
@@ -2783,6 +2940,12 @@ def register(application):
     application.add_url_rule('/admin/marketplace/transactions', endpoint='admin_marketplace_transactions', view_func=admin_marketplace_transactions)
     application.add_url_rule('/admin/face-scan-monitor', endpoint='admin_face_scan_monitor', view_func=admin_face_scan_monitor)
     application.add_url_rule('/admin/online-payments', endpoint='admin_online_payments', view_func=admin_online_payments)
+    application.add_url_rule(
+        '/admin/online-payments/availability',
+        endpoint='toggle_online_payments',
+        view_func=toggle_online_payments,
+        methods=['POST'],
+    )
     application.add_url_rule('/admin/marketplace/create', endpoint='create_admin_marketplace_listing', view_func=create_admin_marketplace_listing, methods=['POST'])
     application.add_url_rule('/admin/marketplace/edit/<int:listing_id>', endpoint='edit_admin_marketplace_listing', view_func=edit_admin_marketplace_listing, methods=['POST'])
     application.add_url_rule('/admin/marketplace/thumbnail/<int:listing_id>', endpoint='update_admin_marketplace_thumbnail', view_func=update_admin_marketplace_thumbnail, methods=['POST'])
@@ -2791,6 +2954,7 @@ def register(application):
     application.add_url_rule('/admin/knowledge-categories', endpoint='admin_knowledge_categories', view_func=admin_knowledge_categories)
     application.add_url_rule('/admin/users/create', endpoint='create_admin_user', view_func=create_admin_user, methods=['POST'])
     application.add_url_rule('/admin/users/edit/<int:user_id>', endpoint='edit_admin_user', view_func=edit_admin_user, methods=['POST'])
+    application.add_url_rule('/admin/users/<int:user_id>/profile-photo', endpoint='update_admin_user_profile_photo', view_func=update_admin_user_profile_photo, methods=['POST'])
     application.add_url_rule('/admin/users/delete/<int:user_id>', endpoint='delete_admin_user', view_func=delete_admin_user, methods=['POST'])
     application.add_url_rule('/admin/crop-categories/create', endpoint='create_crop_category', view_func=create_crop_category, methods=['POST'])
     application.add_url_rule('/admin/crop-categories/edit/<int:category_id>', endpoint='edit_crop_category', view_func=edit_crop_category, methods=['POST'])
@@ -2817,7 +2981,7 @@ def register(application):
 __all__ = [
     'admin_knowledge', 'create_knowledge_post', 'edit_knowledge_post', 'delete_knowledge_post',
     'admin', 'admin_users', 'admin_catalog', 'admin_inventory', 'admin_marketplace', 'admin_marketplace_transactions',
-    'admin_face_scan_monitor', 'admin_online_payments',
+    'admin_face_scan_monitor', 'admin_online_payments', 'toggle_online_payments',
     'admin_audit_logs',
     'admin_profile_reports', 'review_profile_report',
     'admin_listing_photo_alerts', 'review_listing_photo_alert',
@@ -2825,6 +2989,7 @@ __all__ = [
     'update_admin_marketplace_thumbnail',
     'admin_review_geotag', 'admin_knowledge_categories',
     'create_admin_user', 'edit_admin_user', 'delete_admin_user',
+    'update_admin_user_profile_photo',
     'create_crop_category', 'edit_crop_category', 'delete_crop_category',
     'create_crop', 'edit_crop', 'save_crop_pricing', 'save_crop_pricing_batch', 'import_crop_pricing',
     'download_crop_pricing_template', 'delete_crop',

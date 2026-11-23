@@ -9,7 +9,7 @@ from PIL import Image, UnidentifiedImageError
 from .. import legacy as core
 from ..legacy import logger
 from ..algorithms.reliability_score import seller_reliability_status
-from ..models.database import get_db
+from ..models.database import get_db, is_online_payment_enabled
 from ..services.geotag_service import (
     validate_coordinates,
     verify_crop_location,
@@ -916,12 +916,14 @@ def _fulfill_marketplace_order(cur, row, timestamp):
 
 def _fulfill_cod_orders(cur, order_ids):
     placeholders = ", ".join("?" for _ in order_ids)
+    query = (
+        "SELECT id, amount, commodity_id, commodity_name, buyer_username, "  # nosec B608: only bound-parameter markers are generated
+        "username, location FROM marketplace WHERE id IN ("
+        + placeholders
+        + ") AND payment_method = 'cod' AND order_status = 'to_pay'"
+    )
     cur.execute(
-        f"""SELECT id, amount, commodity_id, commodity_name, buyer_username,
-                   username, location
-            FROM marketplace
-            WHERE id IN ({placeholders}) AND payment_method = 'cod'
-              AND order_status = 'to_pay'""",
+        query,
         tuple(order_ids),
     )
     rows = cur.fetchall()
@@ -1180,8 +1182,13 @@ def _start_xendit_checkout(items, buyer_username, buyer_id, address, cart_ids=No
     )
     if cart_ids:
         placeholders = ", ".join("?" for _ in cart_ids)
+        query = (
+            "DELETE FROM cart WHERE user_id = ? AND id IN ("  # nosec B608: only bound-parameter markers are generated
+            + placeholders
+            + ")"
+        )
         cur.execute(
-            f"DELETE FROM cart WHERE user_id = ? AND id IN ({placeholders})",
+            query,
             tuple([buyer_id] + list(cart_ids)),
         )
     conn.commit()
@@ -1220,8 +1227,13 @@ def _start_cod_checkout(items, buyer_username, buyer_id, address, cart_ids=None)
         return None, ("Could not confirm the COD order. Please try again.", 409)
     if cart_ids:
         placeholders = ", ".join("?" for _ in cart_ids)
+        query = (
+            "DELETE FROM cart WHERE user_id = ? AND id IN ("  # nosec B608: only bound-parameter markers are generated
+            + placeholders
+            + ")"
+        )
         cur.execute(
-            f"DELETE FROM cart WHERE user_id = ? AND id IN ({placeholders})",
+            query,
             tuple([buyer_id] + list(cart_ids)),
         )
     conn.commit()
@@ -2068,6 +2080,7 @@ def view_cart():
         total += item["quantity"] * item["price"]
 
     cart_count = get_cart_count(session["user"])
+    online_payment_enabled = is_online_payment_enabled(cur)
 
     conn.close()
 
@@ -2093,7 +2106,8 @@ def view_cart():
                          total=total,
                          cart_count=cart_count,
                          saved_delivery_address=saved_delivery_address,
-                         has_saved_delivery_address=has_saved_delivery_address)
+                         has_saved_delivery_address=has_saved_delivery_address,
+                         online_payment_enabled=online_payment_enabled)
 
 
 def add_to_cart(listing_id):
@@ -2238,6 +2252,9 @@ def checkout_cart():
 
     conn = get_db()
     cur = conn.cursor()
+    if payment_method == "xendit" and not is_online_payment_enabled(cur):
+        conn.close()
+        return jsonify({"error": "This feature is currently not available."}), 503
 
     cur.execute("SELECT id FROM users WHERE username = ?", (session["user"],))
     user = cur.fetchone()

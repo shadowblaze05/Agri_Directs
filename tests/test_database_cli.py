@@ -28,8 +28,13 @@ def test_init_db_cli_bootstraps_the_configured_initial_admin(tmp_path):
             "SELECT username, password, role FROM users WHERE username=?",
             ("launch-admin",),
         ).fetchone()
+        online_payment_setting = connection.cursor().execute(
+            "SELECT setting_value FROM app_settings "
+            "WHERE setting_key = 'online_payments_enabled'"
+        ).fetchone()
         connection.close()
 
     assert user["username"] == "launch-admin"
     assert user["role"] == "admin"
     assert check_password_hash(user["password"], "StrongGarden9")
+    assert online_payment_setting["setting_value"] == "1"

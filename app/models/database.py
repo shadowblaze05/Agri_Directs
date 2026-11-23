@@ -44,6 +44,14 @@ def get_db():
     return SQLAlchemyConnection()
 
 
+def is_online_payment_enabled(cur):
+    setting = cur.execute(
+        "SELECT setting_value FROM app_settings "
+        "WHERE setting_key = 'online_payments_enabled'"
+    ).fetchone()
+    return setting is None or dict(setting).get("setting_value", "1") == "1"
+
+
 class PostgreSQLCursor:
     """Compatibility cursor backed entirely by Flask-SQLAlchemy."""
 
@@ -618,6 +626,16 @@ def init_db():
         received_at TEXT NOT NULL
     )
     """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS app_settings(
+        setting_key TEXT PRIMARY KEY,
+        setting_value TEXT NOT NULL
+    )
+    """)
+    cur.execute(
+        "INSERT OR IGNORE INTO app_settings(setting_key, setting_value) "
+        "VALUES ('online_payments_enabled', '1')"
+    )
     cur.execute(
         "CREATE INDEX IF NOT EXISTS ix_xendit_payment_events_reference_received "
         "ON xendit_payment_events(reference_id, received_at)"

@@ -167,21 +167,6 @@
         min-height: 44px;
       }
       @media (max-width: 575.98px) {
-        .app-sidebar {
-          position: relative;
-          width: 100%;
-          min-height: 0;
-          padding: 70px 0 6px;
-        }
-        .app-sidebar .nav {
-          flex-direction: row !important;
-          overflow-x: auto;
-        }
-        .app-sidebar .nav-link {
-          flex: 0 0 auto;
-          margin: 3px;
-          padding: 9px 12px;
-        }
         .main-content {
           margin: 0;
           padding: 12px;
@@ -205,7 +190,8 @@
         }
       }
     </style>
-  </head>
+      <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
+</head>
   <body>
     <nav class="navbar navbar-dark app-topbar">
       <div class="container-fluid">

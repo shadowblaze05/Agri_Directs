@@ -175,6 +175,8 @@ def test_cart_page_renders_marketplace_listing_thumbnail(monkeypatch):
             return self
 
         def fetchone(self):
+            if "SELECT setting_value FROM app_settings" in self.query:
+                return {"setting_value": "0"}
             if "saved_delivery_province" in self.query:
                 return {
                     "id": 5,
@@ -221,6 +223,9 @@ def test_cart_page_renders_marketplace_listing_thumbnail(monkeypatch):
     assert b'value="Leyte"' in response.data
     assert b'value="Near the public market"' in response.data
     assert b'id="rememberDeliveryAddress" checked' in response.data
+    assert b"currently unavailable" in response.data
+    assert b'This feature is currently not available.' in response.data
+    assert b'id="paymentCod" value="cod" checked' in response.data
 
 
 def test_buyer_purchases_show_a_continue_payment_link_for_pending_xendit_order(monkeypatch):

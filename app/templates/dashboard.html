@@ -209,7 +209,40 @@
             content: '\25BC';
             opacity: 1;
         }
+        @media (max-width: 575.98px) {
+            .main-content > .container-fluid {
+                padding-top: 1rem !important;
+            }
+
+            .dashboard-header {
+                padding: 16px;
+                margin-bottom: 14px;
+            }
+
+            .dashboard-header .btn {
+                padding: 0.55rem 0.75rem;
+                font-size: 0.95rem;
+            }
+
+            .summary-card-body {
+                min-height: 0;
+            }
+
+            .summary-chart-area {
+                min-height: 170px;
+                max-height: 190px;
+            }
+
+            .chart-container {
+                min-height: 220px;
+            }
+
+            .table-container {
+                max-width: 100%;
+            }
+        }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
 </head>
 <body>
     <!-- Sidebar -->
@@ -268,7 +301,7 @@
                             id="notificationDropdown"
                             data-bs-toggle="dropdown">
                         <i class="fas fa-bell"></i>
-                        <span id="notification-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">0</span>
+                        <span id="notification-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none" aria-live="polite"></span>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end" style="width:350px;" id="notification-list">
                         <li class="dropdown-header">Notifications</li>
@@ -314,7 +347,7 @@
                 </div>
             </div>
 
-            <div class="row mb-4">
+            <div class="row mb-4 dashboard-market-brief">
                 <div class="col-12">
                     <div class="card border-0 shadow-sm">
                         <div class="card-header bg-light border-0 d-flex justify-content-between align-items-center">
@@ -348,7 +381,7 @@
             </div>
 
             <!-- Statistics Cards -->
-        <div class="row mb-4">
+        <div class="row mb-4 dashboard-stat-grid">
             <div class="col-md-3">
                 <a href="/total-harvest" style="text-decoration: none; color: inherit;">
                 <div class="card stat-card">
@@ -1107,7 +1140,9 @@
                 const notifications = await response.json();
 
                 hasRenderedNotifications = true;
-                badge.innerText = notifications.filter(n => !n.is_read).length;
+                const unreadCount = notifications.filter(n => !n.is_read).length;
+                badge.innerText = unreadCount;
+                badge.classList.toggle('d-none', unreadCount === 0);
                 list.innerHTML = '<li class="dropdown-header">Notifications</li>';
 
                 if (!notifications || notifications.length === 0) {

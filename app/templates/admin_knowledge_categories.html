@@ -12,7 +12,8 @@
       rel="stylesheet"
       href="{{ url_for('static', filename='admin.css') }}"
     />
-  </head>
+      <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
+</head>
   <body class="admin-page">
     <nav class="navbar navbar-dark admin-navbar px-4 py-3">
       <a class="navbar-brand fw-bold" href="{{ url_for('admin') }}"

@@ -6,6 +6,7 @@
   <title>Users &amp; Roles | Admin</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
 </head>
 <body class="admin-page">
   <nav class="navbar navbar-dark admin-navbar px-4 py-3">
@@ -54,11 +55,26 @@
     <div class="card shadow-sm border-0">
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
-          <thead><tr><th>Account</th><th>Email</th><th>Role</th><th>Status</th><th>Location</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Account</th><th>Profile photo</th><th>Email</th><th>Role</th><th>Status</th><th>Location</th><th>Actions</th></tr></thead>
           <tbody>
             {% for user in users %}
               <tr>
                 <td><strong>{{ user['first_name'] or user['username'] }}</strong><div class="small text-muted">@{{ user['username'] }}</div></td>
+                <td class="user-profile-photo-cell">
+                  {% if user['profile_picture'] and user['is_active'] %}
+                    <img src="{{ url_for('profile_photo', username=user['username']) }}" alt="{{ user['username'] }} profile photo" class="img-thumbnail mb-2" style="width: 64px; height: 64px; object-fit: cover;">
+                  {% elif user['profile_picture'] %}
+                    <div class="small text-muted mb-2">Photo hidden for inactive account</div>
+                  {% else %}
+                    <div class="small text-muted mb-2">No profile photo</div>
+                  {% endif %}
+                  <form method="post" enctype="multipart/form-data" action="{{ url_for('update_admin_user_profile_photo', user_id=user['id']) }}">
+                    <label class="form-label small mb-1" for="profile-photo-{{ user['id'] }}">Replace photo</label>
+                    <input class="form-control form-control-sm mb-2" id="profile-photo-{{ user['id'] }}" type="file" name="profile_photo" accept=".png,.jpg,.jpeg,.webp" required>
+                    <button class="btn btn-sm btn-outline-primary" type="submit">Upload</button>
+                    <div class="form-text">Does not change location or geotag. The user must rescan before harvest uploads.</div>
+                  </form>
+                </td>
                 <td>{{ user['email'] or '-' }}</td>
                 <td><span class="badge text-bg-{{ 'success' if user['role']=='admin' else 'secondary' }}">{{ 'Super admin' if user['role'] == 'admin' and user['username'] == superadmin_username else 'Administrator' if user['role'] == 'admin' else 'Seller' if user['role'] in (None, '', 'user', 'seller') else 'Buyer' if user['role'] == 'buyer' else user['role'] }}</span></td>
                 <td>
@@ -115,7 +131,7 @@
                 </td>
               </tr>
             {% else %}
-              <tr><td colspan="6" class="text-center py-4 text-muted">No matching users.</td></tr>
+              <tr><td colspan="7" class="text-center py-4 text-muted">No matching users.</td></tr>
             {% endfor %}
           </tbody>
         </table>

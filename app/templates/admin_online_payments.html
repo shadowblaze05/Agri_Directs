@@ -7,6 +7,7 @@
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
 </head>
 <body class="admin-page">
   <nav class="navbar navbar-dark admin-navbar px-4 py-3">
@@ -20,9 +21,40 @@
       <p class="text-muted mb-0">Monitor Xendit checkout sessions and their current marketplace order state.</p>
     </div>
 
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+      <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+      {% endfor %}
+    {% endwith %}
+
     <div class="alert alert-info" role="note">
       Statuses reflect the latest state saved by Agri-Direct. Provider callback payloads, checkout links, and credentials are not exposed in this workspace.
     </div>
+
+    <section class="card shadow-sm border-0 mb-4">
+      <div class="card-body d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+        <div>
+          <h2 class="h5 mb-1">Online payment availability</h2>
+          <p class="small text-muted mb-2">Control whether buyers can start Xendit online checkout. Cash on delivery remains available.</p>
+          {% if online_payment_enabled %}
+          <span class="badge text-bg-success">Enabled</span>
+          {% else %}
+          <span class="badge text-bg-secondary">Disabled</span>
+          {% endif %}
+        </div>
+        <form method="post" action="{{ url_for('toggle_online_payments') }}">
+          <input type="hidden" name="enabled" value="{{ '0' if online_payment_enabled else '1' }}">
+          {% if online_payment_enabled %}
+          <button class="btn btn-outline-danger" type="submit"><i class="fas fa-toggle-off me-1"></i>Turn off online payments</button>
+          {% else %}
+          <button class="btn btn-success" type="submit"><i class="fas fa-toggle-on me-1"></i>Turn on online payments</button>
+          {% endif %}
+        </form>
+      </div>
+    </section>
 
     <div class="row g-3 mb-4">
       <div class="col-sm-6 col-xl"><div class="card h-100"><div class="card-body">

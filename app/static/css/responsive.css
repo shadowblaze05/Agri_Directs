@@ -1,0 +1,1173 @@
+/* Shared compact layout layer, loaded after each page's existing styles. */
+@media (max-width: 767.98px) {
+    html {
+        font-size: 15px;
+    }
+
+    body {
+        max-width: 100%;
+        overflow-x: clip;
+        line-height: 1.5;
+    }
+
+    img,
+    video,
+    canvas,
+    svg {
+        max-width: 100%;
+    }
+
+    .container,
+    .container-fluid {
+        --bs-gutter-x: 1.25rem;
+    }
+
+    /* Normalize header alignment across the older page-specific navbars and
+       the newer purchase/transaction topbars. */
+    .navbar-custom,
+    .app-topbar {
+        display: flex;
+        align-items: center !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }
+
+    .navbar-custom > .container-fluid,
+    .app-topbar > .container-fluid {
+        display: flex;
+        align-items: center !important;
+        min-height: 100%;
+    }
+
+    .navbar-custom .navbar-brand,
+    .app-topbar .navbar-brand {
+        display: inline-flex;
+        align-items: center;
+        align-self: center;
+        flex: 0 1 auto;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        line-height: 1.2;
+    }
+
+    .navbar-custom .container-fluid > .d-flex,
+    .app-topbar .container-fluid > .d-flex {
+        display: flex !important;
+        align-items: center !important;
+        align-self: center;
+        height: auto !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+    }
+
+    .navbar-custom .container-fluid > .d-flex > *,
+    .app-topbar .container-fluid > .d-flex > * {
+        align-self: center;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+    }
+
+    .navbar-custom .container-fluid > .d-flex > .btn {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        height: 38px;
+        min-height: 38px;
+        padding: .3rem .55rem !important;
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+    .app-topbar .container-fluid > .d-flex > .btn {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        height: 38px;
+        min-height: 38px;
+        padding: .3rem .55rem !important;
+        line-height: 1;
+        white-space: nowrap;
+    }
+
+    .navbar-custom .notification-bell,
+    .navbar-custom #notificationDropdown,
+    .app-topbar .notification-bell {
+        position: relative;
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 38px;
+        width: 38px;
+        height: 38px;
+        min-height: 38px;
+        padding: 0 !important;
+        line-height: 1;
+    }
+
+    .navbar-custom .notification-bell .fa-bell,
+    .navbar-custom #notificationDropdown .fa-bell,
+    .app-topbar .notification-bell .fa-bell {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        display: block;
+        margin: 0;
+        padding: 0;
+        line-height: 1;
+        transform: translate(-50%, -50%);
+    }
+
+    .navbar-custom .container-fluid > .d-flex > .dropdown,
+    .app-topbar .container-fluid > .d-flex > .dropdown {
+        display: flex;
+        align-items: center;
+        align-self: center;
+        height: auto !important;
+    }
+
+    h1,
+    .h1,
+    .display-1,
+    .display-2,
+    .display-3,
+    .display-4,
+    .display-5,
+    .display-6 {
+        font-size: clamp(1.55rem, 6.2vw, 1.95rem) !important;
+        line-height: 1.2;
+    }
+
+    h2,
+    .h2 {
+        font-size: clamp(1.35rem, 5.4vw, 1.65rem) !important;
+        line-height: 1.25;
+    }
+
+    h3,
+    .h3 {
+        font-size: clamp(1.15rem, 4.8vw, 1.4rem) !important;
+        line-height: 1.3;
+    }
+
+    h4,
+    .h4 {
+        font-size: 1.1rem !important;
+    }
+
+    p {
+        overflow-wrap: anywhere;
+    }
+
+    .row > [class*="col-"] {
+        min-width: 0;
+    }
+
+    .row.g-4 {
+        --bs-gutter-x: 1rem;
+        --bs-gutter-y: 1rem;
+    }
+
+    .card {
+        border-radius: 12px;
+    }
+
+    .card-body {
+        padding: 1rem !important;
+    }
+
+    .card-header {
+        padding: .75rem 1rem !important;
+    }
+
+    .btn {
+        min-height: 40px;
+        padding: .45rem .7rem;
+        font-size: .93rem;
+        line-height: 1.25;
+        white-space: normal;
+    }
+
+    .form-control,
+    .form-select,
+    .input-group-text {
+        min-height: 42px;
+        font-size: .95rem;
+    }
+
+    .table-responsive {
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .modal-dialog {
+        margin: .65rem;
+    }
+
+    .modal-content {
+        max-height: calc(100dvh - 1.3rem);
+        overflow-y: auto;
+    }
+
+    .empty-state,
+    .transaction-empty {
+        padding: 1.5rem 1rem !important;
+    }
+
+    .auth-container {
+        width: calc(100% - 1.5rem) !important;
+        max-width: 450px;
+        margin: .75rem auto !important;
+    }
+
+    .auth-header {
+        padding: 1.25rem !important;
+    }
+
+    .auth-header h1 {
+        font-size: 1.55rem !important;
+    }
+
+    .auth-body {
+        padding: 1.25rem !important;
+    }
+
+    .page-wrap {
+        width: 100%;
+        margin: 1rem auto !important;
+        padding-right: .75rem;
+        padding-left: .75rem;
+    }
+
+    .hero,
+    .transaction-hero {
+        padding: 1.25rem !important;
+        border-radius: 14px;
+    }
+}
+
+@media (max-width: 575.98px) {
+    html {
+        font-size: 14px;
+    }
+
+    body {
+        font-size: .95rem;
+    }
+
+    .container,
+    .container-fluid {
+        --bs-gutter-x: 1rem;
+    }
+
+    .row.g-4 {
+        --bs-gutter-x: .75rem;
+        --bs-gutter-y: .75rem;
+    }
+
+    .card-body {
+        padding: .75rem !important;
+    }
+
+    .card-header {
+        padding: .65rem .75rem !important;
+    }
+
+    .btn {
+        min-height: 38px;
+        padding: .35rem .55rem;
+        font-size: .9rem;
+    }
+
+    .form-control,
+    .form-select,
+    .input-group-text {
+        min-height: 38px;
+        padding-top: .35rem;
+        padding-bottom: .35rem;
+        font-size: .9rem;
+    }
+
+    .main-content .mb-4 {
+        margin-bottom: .75rem !important;
+    }
+
+    .main-content > .container-fluid,
+    .main-content > .container {
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+        padding-top: .75rem !important;
+        padding-bottom: .75rem !important;
+    }
+
+    .navbar-custom {
+        display: flex;
+        align-items: center !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }
+
+    .navbar-custom > .container-fluid {
+        height: 100%;
+        align-items: center !important;
+    }
+
+    .navbar-custom .container-fluid > .d-flex {
+        align-items: center !important;
+        align-self: center;
+        height: 100%;
+    }
+
+    .navbar-custom .container-fluid > .d-flex > .dropdown {
+        display: flex;
+        align-items: center;
+        height: 100%;
+    }
+
+    .navbar-custom .notification-bell,
+    .navbar-custom #notificationDropdown {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 38px;
+        height: 38px;
+        min-height: 38px;
+        padding: 0 !important;
+        line-height: 1;
+        vertical-align: middle;
+    }
+
+    .navbar-custom .notification-bell .fa-bell,
+    .navbar-custom #notificationDropdown .fa-bell {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        margin: 0;
+        padding: 0;
+        transform: translate(-50%, -50%);
+    }
+
+    .navbar-custom .notification-bell i,
+    .navbar-custom #notificationDropdown i {
+        display: block;
+        line-height: 1;
+    }
+
+    /* Keep Bootstrap's fluid title/action columns from squeezing titles to
+       min-content width beside a wide action button. */
+    .main-content .page-header > .row {
+        flex-direction: column;
+        align-items: stretch !important;
+        gap: .75rem;
+    }
+
+    .main-content .page-header > .row > .col,
+    .main-content .page-header > .row > .col-auto {
+        flex: 0 0 100%;
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .main-content .page-header > .row > .col-auto .btn {
+        width: 100%;
+    }
+
+    .main-content > .container-fluid,
+    .main-content > .container {
+        padding-top: 1rem !important;
+        padding-bottom: 1rem !important;
+    }
+
+    .main-content .dashboard-header,
+    .main-content .page-header,
+    .main-content .filter-panel,
+    .main-content .marketplace-header {
+        padding: .8rem !important;
+        margin-bottom: .75rem !important;
+    }
+
+    .main-content .section-title,
+    .main-content .feed-card h3 {
+        font-size: 1rem !important;
+        line-height: 1.3;
+    }
+
+    .main-content .feed-card-body,
+    .main-content .market-card-content {
+        padding: .7rem;
+    }
+
+    .main-content .feed-image {
+        height: 120px;
+    }
+
+    .main-content .market-card-image {
+        height: 110px;
+    }
+
+    /* The analytics summary is a full-width dashboard section. Keep every
+       nested column at the available phone width instead of letting the
+       long advisory text collapse into a narrow strip. */
+    .main-content > .container-fluid > .dashboard-market-brief,
+    .main-content > .container-fluid > .dashboard-market-brief > .col-12,
+    .main-content > .container-fluid > .dashboard-market-brief .card {
+        box-sizing: border-box;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0;
+    }
+
+    .main-content > .container-fluid > .dashboard-market-brief .card-header {
+        flex-wrap: wrap;
+        gap: .5rem;
+    }
+
+    .main-content > .container-fluid > .dashboard-market-brief .card-header h5 {
+        min-width: 0;
+        font-size: 1rem;
+        line-height: 1.3;
+    }
+
+    .main-content > .container-fluid > .dashboard-market-brief .card-body > .row > [class*="col-"] {
+        flex: 0 0 100%;
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .main-content .empty-state i,
+    .main-content .empty-state .fa-3x {
+        font-size: 2.25rem;
+    }
+
+    .legal-content {
+        margin: .75rem auto !important;
+        padding-right: .5rem;
+        padding-left: .5rem;
+    }
+
+    /* Marketplace toolbar and catalog: keep the controls visible without
+       pushing the first products below the initial mobile viewport. */
+    .main-content .marketplace-header {
+        padding: .85rem !important;
+        border-radius: 11px;
+    }
+
+    .main-content > .container-fluid > .market-card {
+        display: block !important;
+        box-sizing: border-box;
+        width: 100% !important;
+        max-width: 100%;
+        min-width: 0;
+        margin-right: 0 !important;
+        margin-left: 0 !important;
+    }
+
+    .main-content > .container-fluid > .market-card > .d-flex {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        width: 100%;
+        min-width: 0;
+        gap: .65rem !important;
+    }
+
+    .main-content > .container-fluid > .market-card > .d-flex > :first-child {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .main-content > .container-fluid > .market-card .flex-shrink-0 {
+        align-self: flex-start;
+    }
+
+    .main-content .marketplace-header h2 {
+        gap: .4rem;
+        margin-bottom: .25rem;
+        font-size: 1.35rem !important;
+    }
+
+    .main-content .marketplace-header p {
+        font-size: .88rem;
+        line-height: 1.35;
+    }
+
+    .main-content .marketplace-header .row {
+        flex-direction: column;
+        align-items: stretch;
+        row-gap: .55rem;
+    }
+
+    .main-content .marketplace-header .col-auto {
+        display: flex;
+        flex: 0 0 auto;
+        width: 100%;
+        gap: .45rem;
+    }
+
+    .main-content .marketplace-header .col-auto .btn {
+        flex: 1 1 0;
+        margin: 0 !important;
+    }
+
+    .main-content .marketplace-header .col-auto .btn {
+        min-height: 36px;
+        padding: .3rem .45rem;
+        font-size: .82rem;
+    }
+
+    .main-content > .container-fluid > .marketplace-filter-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .45rem;
+        margin-inline: 0;
+        margin: 0 0 .75rem !important;
+    }
+
+    .main-content > .container-fluid > .marketplace-filter-row > [class*="col-"] {
+        width: auto;
+        max-width: none;
+        padding: 0;
+    }
+
+    .main-content > .container-fluid > .marketplace-filter-row input,
+    .main-content > .container-fluid > .marketplace-filter-row select {
+        min-height: 37px;
+        padding: .35rem .55rem;
+        font-size: .82rem;
+    }
+
+    .main-content > .container-fluid > .dashboard-stat-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .45rem;
+        margin: 0 0 .75rem !important;
+    }
+
+    .main-content > .container-fluid > .dashboard-stat-grid > [class*="col-"] {
+        width: auto;
+        max-width: none;
+        padding: 0;
+    }
+
+    .main-content #listingsContainer {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .6rem;
+    }
+
+    .main-content #listingsContainer > .col-12 {
+        grid-column: 1 / -1;
+        padding: 1rem .5rem !important;
+    }
+
+    .main-content #listingsContainer > .col-12 > .fa-store {
+        font-size: 1.8rem;
+        margin-bottom: .4rem !important;
+    }
+
+    .main-content #listingsContainer > .col-12 h4 {
+        margin-bottom: .35rem;
+        font-size: 1.1rem !important;
+    }
+
+    .main-content #listingsContainer > .col-12 p {
+        margin-bottom: .65rem;
+        font-size: .85rem;
+    }
+
+    .main-content #listingsContainer .listing-card .card-img-top,
+    .main-content #listingsContainer .listing-card .card-img-top-placeholder {
+        height: 104px;
+    }
+
+    .main-content #listingsContainer .listing-card .card-body {
+        padding: .55rem !important;
+    }
+
+    .main-content #listingsContainer .listing-card .card-title {
+        min-width: 0;
+        font-size: .88rem;
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+    }
+
+    .main-content #listingsContainer .status-badge {
+        flex: 0 0 auto;
+        padding: .18rem .35rem;
+        font-size: .62rem;
+    }
+
+    .main-content #listingsContainer .listing-card p {
+        font-size: .72rem;
+        line-height: 1.35;
+    }
+
+    .main-content #listingsContainer .listing-card .price-tag {
+        font-size: .9rem;
+    }
+
+    .main-content #listingsContainer .listing-card .row {
+        --bs-gutter-x: .35rem;
+    }
+
+    /* Home and dashboard */
+    .main-content .overview-card,
+    .main-content .my-listings-card,
+    .main-content .upload-card,
+    .main-content .market-card,
+    .main-content .feed-card {
+        border-radius: 11px;
+    }
+
+    .main-content .overview-number,
+    .main-content .listing-count {
+        font-size: 1.4rem;
+    }
+
+    .main-content .overview-list .list-group-item {
+        padding: .6rem .75rem;
+    }
+
+    .main-content .dashboard-header {
+        padding: .8rem !important;
+    }
+
+    .main-content .summary-card-body {
+        min-height: 0 !important;
+        padding: .7rem !important;
+    }
+
+    .main-content .summary-chart-area {
+        min-height: 135px;
+        max-height: 150px;
+        margin-bottom: .5rem;
+    }
+
+    .main-content .summary-chart-area canvas {
+        height: 130px !important;
+    }
+
+    .main-content .chart-container {
+        min-height: 180px;
+    }
+
+    /* Harvest upload, inventory, and seller profile */
+    .main-content .upload-card-header,
+    .main-content .upload-card-body,
+    .main-content .manual-entry {
+        padding: .85rem !important;
+    }
+
+    .main-content .upload-card-header {
+        font-size: .95rem;
+    }
+
+    .main-content .drop-zone {
+        padding: 1rem .75rem;
+    }
+
+    .main-content .drop-zone i {
+        margin-bottom: .5rem;
+        font-size: 2rem;
+    }
+
+    .page-wrap .hero {
+        padding: 1rem !important;
+    }
+
+    .page-wrap .metric,
+    .page-wrap .table-card > .border-bottom {
+        padding: .75rem !important;
+    }
+
+    .page-wrap .metric .number {
+        font-size: 1.25rem;
+    }
+
+    .page-wrap .empty {
+        padding: 1.25rem .75rem;
+    }
+
+    .profile-hero,
+    .profile-card {
+        padding: .85rem !important;
+    }
+
+    .profile-hero .avatar {
+        width: 72px;
+        height: 72px;
+        font-size: 1.7rem;
+    }
+
+    /* Knowledge hub and article reading */
+    .main-content .hub-hero {
+        padding: .9rem !important;
+        border-radius: 12px;
+    }
+
+    .main-content .hub-hero::after {
+        font-size: 5rem;
+    }
+
+    .main-content .hub-toolbar {
+        gap: .4rem;
+        margin: .75rem 0;
+    }
+
+    .main-content .hub-toolbar .btn {
+        min-height: 34px;
+        padding: .3rem .45rem;
+        font-size: .8rem;
+    }
+
+    .main-content .hub-panel,
+    .main-content .hub-post-body {
+        padding: .75rem !important;
+    }
+
+    .main-content .hub-stat {
+        padding: .65rem .75rem;
+    }
+
+    .main-content .hub-stat .stat-value {
+        font-size: 1.3rem;
+    }
+
+    .main-content .hub-empty {
+        padding: 1.25rem .75rem;
+    }
+
+    .main-content .article-content,
+    .main-content .comments-card {
+        padding: .85rem !important;
+    }
+
+    .main-content .article-cover {
+        max-height: 220px;
+    }
+
+    .main-content .article-title {
+        margin: .6rem 0;
+        font-size: 1.4rem !important;
+    }
+
+    .main-content .article-body {
+        margin-top: 1rem;
+        font-size: .93rem;
+        line-height: 1.6;
+    }
+
+    .main-content .article-actions {
+        gap: .45rem;
+        margin-top: 1rem;
+        padding-top: .8rem;
+    }
+
+    .main-content .reply-item,
+    .main-content .reply-form {
+        margin-left: .75rem;
+    }
+
+    /* Notifications, cart, orders, and listing management */
+    .main-content .notification-card {
+        display: flex;
+        gap: .65rem;
+        padding: .75rem !important;
+        margin-bottom: .6rem;
+    }
+
+    .main-content .notification-icon {
+        width: 34px;
+        height: 34px;
+        flex: 0 0 34px;
+    }
+
+    .main-content .empty-state {
+        padding: 1.2rem .75rem !important;
+    }
+
+    .main-content .cart-header,
+    .main-content .cart-summary,
+    .main-content .delivery-address-card,
+    .main-content .transaction-hero,
+    .main-content .transaction-card .card-body,
+    .main-content .purchase-card .card-body {
+        padding: .8rem !important;
+    }
+
+    .main-content .cart-item {
+        padding: .65rem !important;
+    }
+
+    .main-content .cart-item-image,
+    .main-content .cart-item-image-placeholder {
+        width: 56px;
+        height: 56px;
+    }
+
+    .main-content .preorder-card-body,
+    .main-content .listing-card .card-body {
+        padding: .7rem !important;
+    }
+
+    .main-content .preorder-thumb,
+    .main-content .preorder-thumb-placeholder {
+        width: 58px;
+        height: 58px;
+    }
+
+    .main-content .listing-grid {
+        gap: .65rem;
+    }
+
+    .main-content .listing-grid .card-img-top,
+    .main-content .listing-grid .card-img-top-placeholder {
+        height: 110px;
+    }
+
+    .main-content .stage-summary .card-body {
+        gap: .5rem !important;
+        padding: .65rem !important;
+    }
+
+    .main-content .stage-icon {
+        width: 32px;
+        height: 32px;
+        flex-basis: 32px;
+    }
+
+    .main-content .filter-result-count {
+        font-size: .78rem;
+    }
+
+    .main-content .transaction-hero {
+        border-radius: 12px;
+    }
+
+    .main-content .transaction-hero .eyebrow,
+    .main-content .transaction-hero .text-muted {
+        font-size: .75rem;
+    }
+
+    .main-content .purchase-card,
+    .main-content .transaction-card,
+    .main-content .preorder-card,
+    .main-content .delivery-address-card {
+        border-radius: 11px;
+    }
+
+    .main-content .purchase-card .order-progress {
+        height: 5px;
+    }
+
+    .main-content .purchase-card .stage-section {
+        scroll-margin-top: 68px;
+    }
+
+    .main-content .product-image-container {
+        padding: .5rem !important;
+    }
+
+    .main-content .product-details {
+        padding: .85rem !important;
+    }
+
+    .main-content .price-large {
+        font-size: 1.5rem !important;
+    }
+
+    .main-content .thumbnail-wrapper img {
+        max-height: 58px;
+    }
+
+    /* Chat uses one viewport-height panel with an internal conversation
+       switcher; keep its chrome compact without changing that interaction. */
+    .main-content .chat-page {
+        height: calc(100dvh - 116px) !important;
+        min-height: 0 !important;
+    }
+
+    .main-content .conversation-header,
+    .main-content .chat-header {
+        min-height: 48px;
+        padding: .55rem .7rem;
+    }
+
+    .main-content .conversation-search {
+        padding: .45rem .6rem;
+    }
+
+    .main-content .conversation {
+        gap: .55rem;
+        padding: .55rem .65rem;
+    }
+
+    .main-content .conversation-avatar {
+        width: 36px;
+        height: 36px;
+    }
+
+    .main-content .conversation-name {
+        font-size: .84rem;
+    }
+
+    .main-content .conversation-preview,
+    .main-content .conversation-time {
+        font-size: .72rem;
+    }
+
+    .main-content .messages-area {
+        gap: .45rem;
+        padding: .65rem;
+    }
+
+    .main-content .message-bubble {
+        max-width: 88%;
+        padding: .5rem .65rem;
+        font-size: .85rem;
+        line-height: 1.4;
+    }
+
+    .main-content .chat-input-area {
+        padding: .5rem;
+    }
+
+    .main-content .mobile-conversations-back {
+        min-height: 34px;
+        margin-right: .4rem;
+        padding: .25rem .45rem;
+        font-size: .82rem;
+    }
+
+    /* Analytics and administration */
+    .analytics-content {
+        padding: 14px 10px 16px;
+    }
+
+    .analytics-page-header {
+        margin-bottom: .85rem;
+    }
+
+    .analytics-page .card-body {
+        padding: .75rem !important;
+    }
+
+    .analytics-page .card-header {
+        padding: .65rem .75rem !important;
+    }
+
+    .analytics-page .chart-card {
+        min-height: 220px;
+    }
+
+    .analytics-page .chart-card canvas {
+        max-height: 180px;
+    }
+
+    .analytics-page .analytics-summary-card {
+        min-height: 0;
+        padding: .65rem !important;
+    }
+
+    .analytics-page .analytics-summary-list {
+        max-height: 150px;
+    }
+
+    .analytics-page #map,
+    .analytics-page .map-empty {
+        min-height: 220px;
+    }
+
+    .admin-page main.container {
+        padding: .75rem !important;
+    }
+
+    .admin-page .page-heading {
+        margin-bottom: .85rem !important;
+    }
+
+    .admin-page .row.g-4 {
+        --bs-gutter-x: .65rem;
+        --bs-gutter-y: .65rem;
+    }
+
+    /* Keep Market Intelligence as compact as the marketplace on phones. */
+    .market-intelligence-page > .container-fluid {
+        padding: .5rem !important;
+    }
+
+    .market-intelligence-page .market-intelligence-header {
+        margin-bottom: .55rem;
+        padding: .65rem .75rem !important;
+        border-radius: 11px;
+    }
+
+    .market-intelligence-page .market-intelligence-header h2 {
+        margin-bottom: .2rem !important;
+        font-size: 1.2rem !important;
+        line-height: 1.25;
+    }
+
+    .market-intelligence-page .market-intelligence-header p {
+        font-size: .78rem;
+        line-height: 1.35;
+    }
+
+    .market-intelligence-page .market-intelligence-nav {
+        margin-bottom: .65rem;
+        padding: .45rem !important;
+        border-radius: 11px;
+    }
+
+    .market-intelligence-page .market-intelligence-nav .nav-pills {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: .3rem;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .market-intelligence-page .market-intelligence-nav .nav-pills::-webkit-scrollbar {
+        display: none;
+    }
+
+    .market-intelligence-page .market-intelligence-nav .nav-item {
+        flex: 0 0 auto;
+        min-width: max-content;
+    }
+
+    .market-intelligence-page .market-intelligence-nav .nav-link {
+        display: flex;
+        min-height: 34px;
+        align-items: center;
+        justify-content: center;
+        margin: 0;
+        padding: .35rem .55rem;
+        font-size: .76rem;
+        line-height: 1.2;
+        text-align: center;
+        white-space: nowrap;
+    }
+
+    .main-content > .container-fluid > .dashboard-market-brief,
+    .main-content > .container-fluid > .market-card {
+        display: block !important;
+        box-sizing: border-box;
+        flex: 0 0 100%;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0;
+    }
+
+    .main-content > .container-fluid > .dashboard-market-brief > .col-12,
+    .main-content > .container-fluid > .dashboard-market-brief .card,
+    .main-content > .container-fluid > .market-card > .d-flex,
+    .main-content > .container-fluid > .market-card > .d-flex > :first-child {
+        box-sizing: border-box;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0;
+    }
+
+    .market-intelligence-page .row.g-4,
+    .market-intelligence-page .row.g-4.mt-1 {
+        --bs-gutter-x: .55rem;
+        --bs-gutter-y: .55rem;
+    }
+
+    .market-intelligence-page .market-intelligence-summary-grid > [class*="col-"] {
+        flex: 0 0 50%;
+        width: 50%;
+        max-width: 50%;
+    }
+
+    .market-intelligence-page .stat-card,
+    .market-intelligence-page .chart-card {
+        padding: .7rem !important;
+        border-radius: 11px;
+    }
+
+    .market-intelligence-page .stat-card > .d-flex {
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: .35rem;
+        margin-bottom: .4rem !important;
+    }
+
+    .market-intelligence-page .stat-card .small-muted {
+        font-size: .68rem;
+        line-height: 1.25;
+    }
+
+    .market-intelligence-page .stat-card .soft-chip {
+        padding: .22rem .45rem;
+        font-size: .65rem;
+        line-height: 1.2;
+    }
+
+    .market-intelligence-page .stat-card .display-6 {
+        font-size: 1.25rem !important;
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+    }
+
+    .market-intelligence-page .stat-card p,
+    .market-intelligence-page .chart-card p {
+        font-size: .78rem;
+        line-height: 1.4;
+    }
+
+    .market-intelligence-page .chart-card h5,
+    .market-intelligence-page .chart-card h3 {
+        font-size: .95rem !important;
+    }
+
+    .market-intelligence-page .chart-card .border.rounded {
+        padding: .65rem !important;
+        margin-bottom: .55rem !important;
+    }
+
+    .purchase-page .filter-panel {
+        margin-bottom: .7rem !important;
+        padding: .65rem !important;
+        border-radius: 11px;
+    }
+
+    .purchase-page .filter-panel > .row {
+        --bs-gutter-x: .5rem;
+        --bs-gutter-y: .4rem;
+    }
+
+    .purchase-page .filter-panel .form-label {
+        margin-bottom: .2rem;
+        font-size: .74rem;
+        line-height: 1.2;
+    }
+
+    .purchase-page .filter-panel #purchase-search,
+    .purchase-page .filter-panel .input-group-text {
+        min-height: 34px !important;
+        height: 34px;
+        padding-top: .25rem;
+        padding-bottom: .25rem;
+        font-size: .82rem;
+    }
+
+    .purchase-page .filter-panel .form-select,
+    .purchase-page .filter-panel input[type="date"],
+    .purchase-page .filter-panel #purchase-filter-clear {
+        min-height: 36px !important;
+        height: 36px;
+        padding-top: .25rem;
+        padding-bottom: .25rem;
+        font-size: .82rem;
+    }
+
+    .purchase-page .filter-panel > .small {
+        margin-top: .45rem !important;
+        font-size: .72rem;
+    }
+}

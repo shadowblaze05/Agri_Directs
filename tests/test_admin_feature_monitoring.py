@@ -72,6 +72,12 @@ def monitoring_database():
             currency TEXT,
             received_at TEXT NOT NULL
         );
+        CREATE TABLE app_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT NOT NULL
+        );
+        INSERT INTO app_settings(setting_key, setting_value)
+        VALUES ('online_payments_enabled', '1');
         CREATE TABLE commodities (id INTEGER PRIMARY KEY);
         CREATE TABLE knowledge_posts (post_id INTEGER PRIMARY KEY);
         CREATE TABLE profile_reports (status TEXT);

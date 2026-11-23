@@ -101,12 +101,63 @@
 }
 
 @media (max-width: 575px) {
-    .analytics-sidebar { display: none; }
+    .analytics-page { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
+    .analytics-sidebar {
+        position: fixed;
+        inset: auto 0 0;
+        z-index: 1050;
+        display: block;
+        width: 100%;
+        height: calc(56px + env(safe-area-inset-bottom));
+        min-height: 0;
+        padding: 0 0 env(safe-area-inset-bottom);
+        overflow: hidden;
+        box-shadow: 0 -2px 12px rgba(0, 0, 0, .16);
+    }
+    .analytics-brand { display: none; }
+    .analytics-sidebar > nav {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: stretch;
+        width: 100%;
+        height: 56px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+    .analytics-sidebar > nav::-webkit-scrollbar { display: none; }
+    .analytics-sidebar .nav-link {
+        display: flex;
+        flex: 1 0 50px;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-width: 50px;
+        min-height: 52px;
+        margin: 0;
+        padding: .35rem .45rem;
+        border-radius: 0;
+        font-size: 0;
+        text-align: center;
+        white-space: nowrap;
+    }
+    .analytics-sidebar .nav-link span { display: none; }
+    .analytics-sidebar .nav-link i {
+        width: auto;
+        font-size: 1.15rem;
+        line-height: 1;
+    }
+    .analytics-sidebar .nav-link.active {
+        background: #2d5016;
+        box-shadow: inset 0 3px #83c56c;
+    }
     .analytics-topbar { inset-inline: 0; min-height: 62px; padding: 10px 14px; }
     .analytics-topbar-context { gap: 7px; font-size: .75rem; }
     .analytics-topbar-context > span { font-size: .58rem; }
     .analytics-user { display: none; }
-    .analytics-content { margin: 62px 0 0; padding: 24px 14px 32px; }
+    .analytics-content { margin: 62px 0 0; padding: 24px 14px 20px; }
     .analytics-page-header { align-items: flex-start; flex-direction: column; gap: 14px; }
     .analytics-page-header .btn { align-self: flex-start; }
     .analytics-page .card-body { padding: 17px; }

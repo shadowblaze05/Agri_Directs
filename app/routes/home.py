@@ -290,14 +290,12 @@ def crop_types():
 
     conn = get_db()
     cur = conn.cursor()
-    owner_filter = "" if current_role == "admin" else " WHERE i.farmer = ?"
-    owner_params = () if current_role == "admin" else (session["user"],)
     cur.execute(
         "SELECT c.commodity_name AS commodity_name, SUM(i.quantity) AS total "
-        "FROM inventory i JOIN commodities c ON c.id=i.commodity_id" +
-        owner_filter +
-        " GROUP BY i.commodity_id, c.commodity_name ORDER BY total DESC",
-        owner_params,
+        "FROM inventory i JOIN commodities c ON c.id=i.commodity_id "
+        "WHERE (? = 'admin' OR i.farmer = ?) "
+        "GROUP BY i.commodity_id, c.commodity_name ORDER BY total DESC",
+        (current_role, session["user"]),
     )
     commodities = cur.fetchall()
     crop_types_count = len(commodities)

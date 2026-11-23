@@ -180,7 +180,9 @@
             background: #f8d7da;
             color: #721c24;
         }
+
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/responsive.css') }}">
 </head>
 <body>
     <!-- Sidebar -->
@@ -292,7 +294,7 @@
             </div>
 
             <!-- Filters -->
-            <div class="row mb-4">
+            <div class="row mb-4 marketplace-filter-row">
                 <div class="col-md-3">
                     <input type="text" class="form-control" id="searchMarketplace" placeholder="Search listings..." oninput="filterListings()">
                 </div>
